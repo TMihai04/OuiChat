@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
     QLineEdit,
-    QLabel, QStackedLayout, QWidget, QHBoxLayout, QListWidget, QListWidgetItem,
+    QLabel, QStackedLayout, QWidget, QHBoxLayout, QListWidget, QListWidgetItem, QFormLayout,
 )
 
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
@@ -25,9 +25,6 @@ def make_request(domain: str, user: str, password: str):
 class LogInDialog(QDialog):
     def __init__(self):
         super().__init__()
-
-        # TO DO:
-        #   - change layout to QFormLayout
 
         description_label = QLabel()
         description_label.setText("Insert domain and credentials")
@@ -50,13 +47,20 @@ class LogInDialog(QDialog):
         self.error_message = QLabel()
         self.error_message.setStyleSheet("color: red;")
 
+        form_layout_widget = QWidget()
+        form_layout = QFormLayout()
+
+        form_layout.addRow("Domain:", self.domain_line_edit)
+        form_layout.addRow("Username:", self.username_line_edit)
+        form_layout.addRow("Password:", self.password_line_edit)
+
+        form_layout_widget.setLayout(form_layout)
+
         layout = QVBoxLayout()
         layout.addWidget(description_label, alignment=Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.domain_line_edit, alignment=Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.username_line_edit, alignment=Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.password_line_edit, alignment=Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(log_in_button, alignment=Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(form_layout_widget, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.error_message, alignment=Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(log_in_button, alignment=Qt.AlignmentFlag.AlignCenter)
 
         self.setLayout(layout)
 
