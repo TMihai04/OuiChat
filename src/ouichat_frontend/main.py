@@ -17,7 +17,7 @@ MAX_PASSWORD_LENGTH = 32
 USERNAME = ""
 TOKEN = ""
 
-def make_request(user: str, password: str):
+def make_request(domain: str, user: str, password: str):
     # TO BE IMPLEMENTED
     # RETURNS (TRUE, JWT Token) ON VALID CREDENTIALS AND (FALSE, $ERROR_MESSAGE) OTHERWISE
     return True, "TOKEN"
@@ -26,29 +26,33 @@ class LogInDialog(QDialog):
     def __init__(self):
         super().__init__()
 
+        # TO DO:
+        #   - change layout to QFormLayout
+
         description_label = QLabel()
-        description_label.setText("Insert credentials")
+        description_label.setText("Insert domain and credentials")
+
+        self.domain_line_edit = QLineEdit()
+        self.domain_line_edit.setPlaceholderText("Domain...")
 
         self.username_line_edit = QLineEdit()
         self.username_line_edit.setMaxLength(MAX_USERNAME_LENGTH)
         self.username_line_edit.setPlaceholderText("Username...")
-        self.username_line_edit.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         self.password_line_edit = QLineEdit()
         self.password_line_edit.setMaxLength(MAX_PASSWORD_LENGTH)
         self.password_line_edit.setPlaceholderText("Password...")
-        self.password_line_edit.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         log_in_button = QPushButton("Login")
         log_in_button.setFixedSize(200, 30)
         log_in_button.clicked.connect(self.__validate_credentials)
 
         self.error_message = QLabel()
-        self.error_message.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.error_message.setStyleSheet("color: red;")
 
         layout = QVBoxLayout()
         layout.addWidget(description_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.domain_line_edit, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.username_line_edit, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.password_line_edit, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(log_in_button, alignment=Qt.AlignmentFlag.AlignCenter)
@@ -59,8 +63,9 @@ class LogInDialog(QDialog):
     def __validate_credentials(self):
         username = self.username_line_edit.text()
         password = self.password_line_edit.text()
+        domain = self.domain_line_edit.text()
 
-        ret = make_request(username, password)
+        ret = make_request(domain, username, password)
 
         if ret[0]:
             global TOKEN, USERNAME
