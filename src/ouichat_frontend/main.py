@@ -23,6 +23,12 @@ def make_request(domain: str, user: str, password: str):
     return True, "TOKEN"
 
 class LogInDialog(QDialog):
+    """
+    TO DO:
+        - make hitting the enter key on a QLineEdit not do anything
+        - clear entries after login button
+    """
+
     def __init__(self):
         super().__init__()
 
@@ -118,6 +124,11 @@ class LogInDialog(QDialog):
             self.error_message.setText(ret[1])
 
 class LeftPanelInteractions(QWidget):
+    """
+    MODIFY:
+        - add user customization button
+    """
+
     settings_requested = pyqtSignal()
     user_personalization_requested = pyqtSignal()
     user_changed = pyqtSignal(str, str)
@@ -136,20 +147,6 @@ class LeftPanelInteractions(QWidget):
         settings_button.setIcon(QIcon("./Icons/settings_icon.png"))
         settings_button.clicked.connect(self.settings_requested.emit)
 
-        """
-        MODIFY:
-            - make it a drop-down table for the 3 users
-            - each user is a button that gets you to a customize profile
-            - include a button to add users and gray it out if 3 users already connected
-        """
-        # user_button = QPushButton()
-        # user_button.setFixedSize(180, 40)
-        # user_button.setIconSize(QSize(32, 32))
-        # user_button.setIcon(QIcon(USER_ICON))
-        # user_button.setText(USERNAME)
-        # user_button.setStyleSheet("text-align: left; padding-left: 10px;")
-        # user_button.clicked.connect(self.user_personalization_requested.emit)
-
         user_icon = QIcon(initial_user_icon_path)
         username = initial_user_username
         token = initial_user_token
@@ -159,9 +156,10 @@ class LeftPanelInteractions(QWidget):
         add_user_icon = QIcon("./Icons/plus_icon.png")
 
         self.users_dropdown = QComboBox()
+        self.users_dropdown.setFixedSize(180, 40)
         self.dropdown_model = QStandardItemModel()
         self.users_dropdown.setModel(self.dropdown_model)
-        self.users_dropdown.addItem(user_icon, username, userData={"token": token,
+        self.users_dropdown.addItem(user_icon, f"{username} ({domain})", userData={"token": token,
                                                               "password": password,
                                                               "domain": domain})
         self.users_dropdown.addItem(add_user_icon, "Add User")
@@ -192,7 +190,7 @@ class LeftPanelInteractions(QWidget):
                 domain = self.login_dialog.user_data['domain']
 
                 self.users_dropdown.blockSignals(True)
-                self.users_dropdown.insertItem(row, user_icon, username, userData={"token": token,
+                self.users_dropdown.insertItem(row, user_icon, f"{username} ({domain})", userData={"token": token,
                                                                            "password": password,
                                                                            "domain": domain})
                 self.users_dropdown.blockSignals(False)
@@ -235,7 +233,7 @@ class GenericList(QWidget, ABC, metaclass=QABCMeta):
         self.list_widget = QListWidget()
         self.list_widget.setIconSize(QSize(32, 32))
         self.list_widget.setFixedWidth(225)
-        self.list_widget.setMinimumHeight(180)
+        self.list_widget.setMinimumHeight(195)
         self.list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # no vertical scrollbar
         self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # no horizontal scrollbar
         self.list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -499,7 +497,6 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("OuiChat")
-        self.setBaseSize(900, 600)
 
         self.main_layout = QStackedLayout() # ADD ALL THE OTHER TABS HERE (SETTINGS, ETC.)
 
