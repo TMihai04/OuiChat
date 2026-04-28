@@ -1,19 +1,16 @@
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QMainWindow, QPushButton, QVBoxLayout, QLineEdit, QLabel, QStackedLayout,
-    QWidget, QHBoxLayout, QListWidget, QListWidgetItem, QFormLayout, QMenu,
+    QWidget, QHBoxLayout, QListWidget, QListWidgetItem, QFormLayout, QMenu, QComboBox,
 )
 
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QIcon, QStandardItemModel
 
 from abc import ABC, ABCMeta, abstractmethod
 
 MAX_USERNAME_LENGTH = 16
 MAX_PASSWORD_LENGTH = 32
-
-USERNAME = ""
-TOKEN = ""
-USER_ICON = "./Icons/default_user_icon.png"
+MAX_USERS = 3
 
 # TO BE IMPLEMENTED IN SOME OTHER WAY
 CHAT_PRIVILEGE = "admin" # {"default", "admin"}
@@ -28,6 +25,14 @@ def make_request(domain: str, user: str, password: str):
 class LogInDialog(QDialog):
     def __init__(self):
         super().__init__()
+
+        self.user_data = {
+            "username": "",
+            "password": "",
+            "token": "",
+            "icon_path": "",
+            "domain": ""
+        }
 
         description_label = QLabel()
         description_label.setText("Insert domain and credentials")
@@ -101,9 +106,13 @@ class LogInDialog(QDialog):
         ret = make_request(domain, username, password)
 
         if ret[0]:
-            global TOKEN, USERNAME
-            TOKEN = ret[1]
-            USERNAME = username
+            # IMPLEMENT INFO RETRIEVAL
+            self.user_data['username'] = username
+            self.user_data['password'] = password
+            self.user_data['token'] = ret[1]
+            self.user_data['icon_path'] = "./Icons/default_user_icon.png"
+            self.user_data['domain'] = domain
+
             self.accept()
         else:
             self.error_message.setText(ret[1])
@@ -111,9 +120,15 @@ class LogInDialog(QDialog):
 class LeftPanelInteractions(QWidget):
     settings_requested = pyqtSignal()
     user_personalization_requested = pyqtSignal()
+    user_changed = pyqtSignal(str, str)
 
-    def __init__(self):
+    def __init__(self, initial_user_username: str, initial_user_password: str,
+                 initial_user_token: str, initial_user_icon_path: str, initial_user_domain: str,
+                 login_dialog):
         super().__init__()
+
+        self.login_dialog = login_dialog
+        self.previous_user_row = 0
 
         settings_button = QPushButton()
         settings_button.setFixedSize(40, 40)
@@ -121,28 +136,88 @@ class LeftPanelInteractions(QWidget):
         settings_button.setIcon(QIcon("./Icons/settings_icon.png"))
         settings_button.clicked.connect(self.settings_requested.emit)
 
-        user_button = QPushButton()
-        user_button.setFixedSize(180, 40)
-        user_button.setIconSize(QSize(32, 32))
-        user_button.setIcon(QIcon(USER_ICON))
-        user_button.setText(USERNAME)
-        user_button.setStyleSheet("text-align: left; padding-left: 10px;")
-        user_button.clicked.connect(self.user_personalization_requested.emit)
+        """
+        MODIFY:
+            - make it a drop-down table for the 3 users
+            - each user is a button that gets you to a customize profile
+            - include a button to add users and gray it out if 3 users already connected
+        """
+        # user_button = QPushButton()
+        # user_button.setFixedSize(180, 40)
+        # user_button.setIconSize(QSize(32, 32))
+        # user_button.setIcon(QIcon(USER_ICON))
+        # user_button.setText(USERNAME)
+        # user_button.setStyleSheet("text-align: left; padding-left: 10px;")
+        # user_button.clicked.connect(self.user_personalization_requested.emit)
+
+        user_icon = QIcon(initial_user_icon_path)
+        username = initial_user_username
+        token = initial_user_token
+        password = initial_user_password
+        domain = initial_user_domain
+
+        add_user_icon = QIcon("./Icons/plus_icon.png")
+
+        self.users_dropdown = QComboBox()
+        self.dropdown_model = QStandardItemModel()
+        self.users_dropdown.setModel(self.dropdown_model)
+        self.users_dropdown.addItem(user_icon, username, userData={"token": token,
+                                                              "password": password,
+                                                              "domain": domain})
+        self.users_dropdown.addItem(add_user_icon, "Add User")
+        self.users_dropdown.currentIndexChanged.connect(self.handle_users_dropdown)
 
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(5)
 
-        layout.addWidget(user_button)
+        layout.addWidget(self.users_dropdown)
         layout.addWidget(settings_button)
 
         self.setLayout(layout)
+
+    def handle_users_dropdown(self, row:int):
+        num_entries = self.users_dropdown.count()
+        if row != num_entries - 1:
+            username = self.users_dropdown.itemText(row)
+            domain = self.users_dropdown.itemData(row)['domain']
+            self.user_changed.emit(username, domain)
+
+        else:
+            if self.login_dialog.exec() == QDialog.DialogCode.Accepted:
+                user_icon = QIcon(self.login_dialog.user_data['icon_path'])
+                username = self.login_dialog.user_data['username']
+                token = self.login_dialog.user_data['token']
+                password = self.login_dialog.user_data['password']
+                domain = self.login_dialog.user_data['domain']
+
+                self.users_dropdown.blockSignals(True)
+                self.users_dropdown.insertItem(row, user_icon, username, userData={"token": token,
+                                                                           "password": password,
+                                                                           "domain": domain})
+                self.users_dropdown.blockSignals(False)
+
+                self.users_dropdown.setCurrentIndex(row)
+                self.previous_user_row = row
+
+            else:
+                self.users_dropdown.blockSignals(True)
+                self.users_dropdown.setCurrentIndex(self.previous_user_row)
+                self.users_dropdown.blockSignals(False)
+
+        num_entries = self.users_dropdown.count()
+        if num_entries == MAX_USERS + 1:
+            # entry at `user_count` will always be `Add User`
+            self.dropdown_model.item(num_entries - 1).setEnabled(False)
+        else:
+            self.dropdown_model.item(num_entries - 1).setEnabled(True)
+
 
 class QABCMeta(type(QWidget), ABCMeta):
     pass
 
 class GenericList(QWidget, ABC, metaclass=QABCMeta):
-    entry_selected = pyqtSignal(int)
+    entry_selected = pyqtSignal(str) # chat_id
 
     def __init__(self,
                  search_bar_width: int, search_bar_height: int, enable_entry_selection: bool,
@@ -166,7 +241,7 @@ class GenericList(QWidget, ABC, metaclass=QABCMeta):
         self.list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list_widget.customContextMenuRequested.connect(self.show_context_menu)
         if enable_entry_selection:
-            self.list_widget.currentRowChanged.connect(self.entry_selected.emit)
+            self.list_widget.currentRowChanged.connect(self.emit_selected_id)
 
         self.layout = QVBoxLayout()
         self.layout.setContentsMargins(layout_margins[0], layout_margins[1], layout_margins[2], layout_margins[3])
@@ -200,6 +275,10 @@ class GenericList(QWidget, ABC, metaclass=QABCMeta):
         pass
 
     @abstractmethod
+    def emit_selected_id(self, row: int):
+        pass
+
+    @abstractmethod
     def show_context_menu(self, position):
         pass
 
@@ -211,8 +290,6 @@ class ChatList(GenericList):
         - automatically switch to previous chat (next if the current chat was the 1st one) when deleting current chat
             (MIGHT BE ALREADY IMPLEMENTED BY DEFAULT)
     """
-
-    chat_selected = pyqtSignal(int)
 
     def __init__(self):
         super().__init__(
@@ -228,7 +305,7 @@ class ChatList(GenericList):
                 "chat_privilege": CHAT_PRIVILEGE,
                 "chat_type": CHAT_TYPE,
                 "chat_setting": CHAT_SETTING,
-                "chat_id": idx
+                "chat_id": str(idx)
             }
             item.setData(Qt.ItemDataRole.UserRole, item_data)
             self.list_widget.addItem(item)
@@ -240,6 +317,11 @@ class ChatList(GenericList):
         self.new_chat_button.setText("New Chat")
 
         self.layout.addWidget(self.new_chat_button)
+
+    def emit_selected_id(self, row: int):
+        item = self.list_widget.item(row)
+        chat_data = item.data(Qt.ItemDataRole.UserRole)
+        self.entry_selected.emit(chat_data['chat_id'])
 
     def show_context_menu(self, position):
         item = self.list_widget.itemAt(position)
@@ -317,13 +399,16 @@ class LeftPanelMain(QWidget):
     user_personalization_requested = pyqtSignal()
     chat_selected = pyqtSignal(int)
 
-    def __init__(self):
+    def __init__(self, initial_user_username: str, initial_user_password: str,
+                 initial_user_token: str, initial_user_icon_path: str, initial_user_domain: str,
+                 login_dialog):
         super().__init__()
 
         chat_list = ChatList()
-        chat_list.chat_selected.connect(self.chat_selected.emit)
+        chat_list.entry_selected.connect(self.chat_selected.emit)
 
-        interactions = LeftPanelInteractions()
+        interactions = LeftPanelInteractions(initial_user_username, initial_user_password,
+                                             initial_user_token, initial_user_icon_path, initial_user_domain, login_dialog)
         interactions.settings_requested.connect(self.settings_requested.emit)
         interactions.user_personalization_requested.connect(self.user_personalization_requested.emit)
 
@@ -363,10 +448,13 @@ class RightPanelMain(QWidget):
 class MainScreen(QWidget):
     settings_requested = pyqtSignal()
 
-    def __init__(self):
+    def __init__(self, initial_user_username: str, initial_user_password: str,
+                 initial_user_token: str, initial_user_icon_path: str, initial_user_domain: str,
+                 login_dialog):
         super().__init__()
 
-        left_panel = LeftPanelMain()
+        left_panel = LeftPanelMain(initial_user_username, initial_user_password,
+                                   initial_user_token, initial_user_icon_path, initial_user_domain, login_dialog)
         left_panel.settings_requested.connect(self.settings_requested.emit)
 
         right_panel = RightPanelMain()
@@ -405,7 +493,9 @@ class SettingsScreen(QWidget):
         self.setLayout(layout)
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, initial_user_username: str, initial_user_password: str,
+                 initial_user_token: str, initial_user_icon_path: str, initial_user_domain: str,
+                 login_dialog):
         super().__init__()
 
         self.setWindowTitle("OuiChat")
@@ -413,7 +503,8 @@ class MainWindow(QMainWindow):
 
         self.main_layout = QStackedLayout() # ADD ALL THE OTHER TABS HERE (SETTINGS, ETC.)
 
-        main_screen_widget = MainScreen()
+        main_screen_widget = MainScreen(initial_user_username, initial_user_password,
+                                        initial_user_token, initial_user_icon_path, initial_user_domain, login_dialog)
         main_screen_widget.settings_requested.connect(self.go_to_settings)
 
         settings_screen_widget = SettingsScreen()
@@ -438,7 +529,9 @@ if __name__ == "__main__":
     login = LogInDialog()
 
     if login.exec() == QDialog.DialogCode.Accepted:
-        main_window = MainWindow()
+        main_window = MainWindow(login.user_data['username'], login.user_data['password'],
+                                 login.user_data['token'], login.user_data['icon_path'], login.user_data['domain'],
+                                 login)
         main_window.show()
         app.exec()
     else:
