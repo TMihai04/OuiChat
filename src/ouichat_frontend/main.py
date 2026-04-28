@@ -1,10 +1,12 @@
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QMainWindow, QPushButton, QVBoxLayout, QLineEdit, QLabel, QStackedLayout,
-    QWidget, QHBoxLayout, QListWidget, QListWidgetItem, QFormLayout, QMenu
+    QWidget, QHBoxLayout, QListWidget, QListWidgetItem, QFormLayout, QMenu,
 )
 
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QIcon
+
+from abc import ABC, ABCMeta, abstractmethod
 
 MAX_USERNAME_LENGTH = 16
 MAX_PASSWORD_LENGTH = 32
@@ -136,23 +138,21 @@ class LeftPanelInteractions(QWidget):
 
         self.setLayout(layout)
 
-class ChatList(QWidget):
-    """
-    TO DO:
-        - implement the context menus
-        - make list dynamically update when exiting/adding a new chat
-        - send signal to right panel to update when switching chats
-        - automatically switch to previous chat (next if the current chat was the 1st one) when deleting current chat
-    """
+class QABCMeta(type(QWidget), ABCMeta):
+    pass
 
-    chat_selected = pyqtSignal(int)
+class GenericList(QWidget, ABC, metaclass=QABCMeta):
+    entry_selected = pyqtSignal(int)
 
-    def __init__(self):
+    def __init__(self,
+                 search_bar_width: int, search_bar_height: int, enable_entry_selection: bool,
+                 layout_margins: tuple[int, int, int, int], layout_spacing: int
+                 ):
         super().__init__()
 
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Search...")
-        self.search_bar.setFixedSize(225, 25)
+        self.search_bar.setFixedSize(search_bar_width, search_bar_height)
         search_icon = QIcon("Icons/search_icon.png")
         self.search_bar.addAction(search_icon, QLineEdit.ActionPosition.LeadingPosition)
         self.search_bar.textChanged.connect(self.__search)
@@ -161,11 +161,65 @@ class ChatList(QWidget):
         self.list_widget.setIconSize(QSize(32, 32))
         self.list_widget.setFixedWidth(225)
         self.list_widget.setMinimumHeight(180)
-        self.list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff) # no vertical scrollbar
-        self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff) # no horizontal scrollbar
+        self.list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # no vertical scrollbar
+        self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # no horizontal scrollbar
         self.list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.list_widget.customContextMenuRequested.connect(self.__show_context_menu)
-        self.list_widget.currentRowChanged.connect(self.chat_selected.emit)
+        self.list_widget.customContextMenuRequested.connect(self.show_context_menu)
+        if enable_entry_selection:
+            self.list_widget.currentRowChanged.connect(self.entry_selected.emit)
+
+        self.layout = QVBoxLayout()
+        self.layout.setContentsMargins(layout_margins[0], layout_margins[1], layout_margins[2], layout_margins[3])
+        self.layout.setSpacing(layout_spacing)
+
+        self.layout.addWidget(self.search_bar)
+        self.layout.addWidget(self.list_widget)
+        self.setLayout(self.layout)
+
+    def find_item_by_data(self, key, value):
+        items = []
+        for row in range(self.list_widget.count()):
+            item = self.list_widget.item(row)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            val = item_data.get(key, None)
+            if val == value:
+                items.append(item)
+
+        return items
+
+    def __search(self, text):
+        for row in range(self.list_widget.count()):
+            item = self.list_widget.item(row)
+            if text == "" or text in item.text():
+                item.setHidden(False)
+            else:
+                item.setHidden(True)
+
+    def add_entry(self):
+        # TO BE IMPLEMENTED
+        pass
+
+    @abstractmethod
+    def show_context_menu(self, position):
+        pass
+
+class ChatList(GenericList):
+    """
+    TO DO:
+        - implement the context menus
+        - send signal to right panel to update when switching chats
+        - automatically switch to previous chat (next if the current chat was the 1st one) when deleting current chat
+            (MIGHT BE ALREADY IMPLEMENTED BY DEFAULT)
+    """
+
+    chat_selected = pyqtSignal(int)
+
+    def __init__(self):
+        super().__init__(
+            search_bar_width=225, search_bar_height=25,
+            enable_entry_selection=True,
+            layout_margins=(0, 0, 0, 0), layout_spacing=5
+        )
 
         self.chat_icon = QIcon("./Icons/chat_room_icon.png")
         for idx in range(10): # adding 10 chat rooms to the list
@@ -185,35 +239,9 @@ class ChatList(QWidget):
         self.new_chat_button.setIcon(QIcon("./Icons/plus_icon.png"))
         self.new_chat_button.setText("New Chat")
 
-        layout = QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(5)
+        self.layout.addWidget(self.new_chat_button)
 
-        layout.addWidget(self.search_bar)
-        layout.addWidget(self.list_widget)
-        layout.addWidget(self.new_chat_button)
-        self.setLayout(layout)
-
-    def __find_item_by_data(self, key, value):
-        items = []
-        for row in range(self.list_widget.count()):
-            item = self.list_widget.item(row)
-            item_data = item.data(Qt.ItemDataRole.UserRole)
-            val = item_data.get(key, None)
-            if val == value:
-                items.append(item)
-
-        return items
-
-    def __search(self, text):
-        for row in range(self.list_widget.count()):
-            item = self.list_widget.item(row)
-            if text == "" or text in item.text():
-                item.setHidden(False)
-            else:
-                item.setHidden(True)
-
-    def __show_context_menu(self, position):
+    def show_context_menu(self, position):
         item = self.list_widget.itemAt(position)
         if not item: return
 
@@ -221,7 +249,6 @@ class ChatList(QWidget):
         chat_privilege = chat_data.get("chat_privilege")
         chat_type = chat_data.get("chat_type")
         chat_id = chat_data.get("chat_id")
-        # print(f"\"{chat_id}\"")
 
         exit_chat_action = None
         manage_members_action = None
@@ -262,12 +289,9 @@ class ChatList(QWidget):
         elif selected_action == delete_chat_action:
             self.__delete_chat(chat_id)
 
-    def __add_chat(self):
-        return
-
     def __remove_chat(self, chat_id):
         # CHAT IDs ARE ALWAYS UNIQUE
-        item = self.__find_item_by_data("chat_id", chat_id)
+        item = self.find_item_by_data("chat_id", chat_id)
         row = self.list_widget.row(*item)
         self.list_widget.takeItem(row)
 
@@ -313,6 +337,10 @@ class LeftPanelMain(QWidget):
 
         self.setFixedWidth(225)
 
+class ChatHistory(QWidget):
+    def __init__(self):
+        super().__init__()
+
 class RightPanelMain(QWidget):
     """
     TO DO:
@@ -327,6 +355,10 @@ class RightPanelMain(QWidget):
 
     def __init__(self):
         super().__init__()
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
 
 class MainScreen(QWidget):
     settings_requested = pyqtSignal()
