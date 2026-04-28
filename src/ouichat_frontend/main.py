@@ -16,6 +16,7 @@ USER_ICON = "./Icons/default_user_icon.png"
 # TO BE IMPLEMENTED IN SOME OTHER WAY
 CHAT_PRIVILEGE = "admin" # {"default", "admin"}
 CHAT_TYPE = "chatroom" # {"p2p", "chatroom"}
+CHAT_SETTING = "rw" # {"ro", "rw"}
 
 def make_request(domain: str, user: str, password: str):
     # TO BE IMPLEMENTED
@@ -23,12 +24,6 @@ def make_request(domain: str, user: str, password: str):
     return True, "TOKEN"
 
 class LogInDialog(QDialog):
-    """
-    TO DO:
-        - modify layout to match the main window
-        - make things fixed size to your liking
-    """
-
     def __init__(self):
         super().__init__()
 
@@ -177,7 +172,9 @@ class ChatList(QWidget):
             item = QListWidgetItem(self.chat_icon, f"Chat {idx}")
             item_data = {
                 "chat_privilege": CHAT_PRIVILEGE,
-                "chat_type": CHAT_TYPE
+                "chat_type": CHAT_TYPE,
+                "chat_setting": CHAT_SETTING,
+                "chat_id": idx
             }
             item.setData(Qt.ItemDataRole.UserRole, item_data)
             self.list_widget.addItem(item)
@@ -197,6 +194,17 @@ class ChatList(QWidget):
         layout.addWidget(self.new_chat_button)
         self.setLayout(layout)
 
+    def __find_item_by_data(self, key, value):
+        items = []
+        for row in range(self.list_widget.count()):
+            item = self.list_widget.item(row)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            val = item_data.get(key, None)
+            if val == value:
+                items.append(item)
+
+        return items
+
     def __search(self, text):
         for row in range(self.list_widget.count()):
             item = self.list_widget.item(row)
@@ -212,6 +220,8 @@ class ChatList(QWidget):
         chat_data = item.data(Qt.ItemDataRole.UserRole)
         chat_privilege = chat_data.get("chat_privilege")
         chat_type = chat_data.get("chat_type")
+        chat_id = chat_data.get("chat_id")
+        # print(f"\"{chat_id}\"")
 
         exit_chat_action = None
         manage_members_action = None
@@ -245,14 +255,38 @@ class ChatList(QWidget):
             # TO BE IMPLEMENTED
             pass
         elif selected_action == exit_chat_action:
-            # TO BE IMPLEMENTED
-            pass
+            self.__exit_chat(chat_id)
         elif selected_action == manage_members_action:
             # TO BE IMPLEMENTED
             pass
         elif selected_action == delete_chat_action:
-            # TO BE IMPLEMENTED
-            pass
+            self.__delete_chat(chat_id)
+
+    def __add_chat(self):
+        return
+
+    def __remove_chat(self, chat_id):
+        # CHAT IDs ARE ALWAYS UNIQUE
+        item = self.__find_item_by_data("chat_id", chat_id)
+        row = self.list_widget.row(*item)
+        self.list_widget.takeItem(row)
+
+    def __exit_chat(self, chat_id):
+        self.__remove_chat(chat_id)
+        # IMPLEMENT REQUESTS TO SERVER
+
+    def __delete_chat(self, chat_id):
+        self.__remove_chat(chat_id)
+        # IMPLEMENT REQUESTS TO SERVER
+
+    def __manage_members(self):
+        return
+
+    def __block_user(self):
+        return
+
+    def __mark_read(self):
+        return
 
 class LeftPanelMain(QWidget):
     settings_requested = pyqtSignal()
