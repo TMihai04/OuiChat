@@ -12,6 +12,8 @@ MAX_USERNAME_LENGTH = 16
 MAX_PASSWORD_LENGTH = 32
 MAX_USERS = 3
 
+LEFT_PANEL_WIDTH = 270
+
 # TO BE IMPLEMENTED IN SOME OTHER WAY
 CHAT_PRIVILEGE = "admin" # {"default", "admin"}
 CHAT_TYPE = "chatroom" # {"p2p", "chatroom"}
@@ -23,12 +25,6 @@ def make_request(domain: str, user: str, password: str):
     return True, "TOKEN"
 
 class LogInDialog(QDialog):
-    """
-    TO DO:
-        - make hitting the enter key on a QLineEdit not do anything
-        - clear entries after login button
-    """
-
     def __init__(self):
         super().__init__()
 
@@ -90,6 +86,7 @@ class LogInDialog(QDialog):
 
         log_in_button = QPushButton("Login")
         log_in_button.setFixedSize(125, 25)
+        log_in_button.setAutoDefault(False)
         log_in_button.clicked.connect(self.__validate_credentials)
 
         layout = QVBoxLayout()
@@ -112,6 +109,10 @@ class LogInDialog(QDialog):
         ret = make_request(domain, username, password)
 
         if ret[0]:
+            self.username_line_edit.clear()
+            self.password_line_edit.clear()
+            self.domain_line_edit.clear()
+
             # IMPLEMENT INFO RETRIEVAL
             self.user_data['username'] = username
             self.user_data['password'] = password
@@ -124,11 +125,6 @@ class LogInDialog(QDialog):
             self.error_message.setText(ret[1])
 
 class LeftPanelInteractions(QWidget):
-    """
-    MODIFY:
-        - add user customization button
-    """
-
     settings_requested = pyqtSignal()
     user_personalization_requested = pyqtSignal()
     user_changed = pyqtSignal(str, str)
@@ -147,6 +143,12 @@ class LeftPanelInteractions(QWidget):
         settings_button.setIcon(QIcon("./Icons/settings_icon.png"))
         settings_button.clicked.connect(self.settings_requested.emit)
 
+        user_profile_button = QPushButton()
+        user_profile_button.setFixedSize(40, 40)
+        user_profile_button.setIconSize(QSize(32, 32))
+        user_profile_button.setIcon(QIcon("./Icons/user_settings_icon.png.png"))
+        user_profile_button.clicked.connect(self.user_personalization_requested.emit)
+
         user_icon = QIcon(initial_user_icon_path)
         username = initial_user_username
         token = initial_user_token
@@ -157,6 +159,7 @@ class LeftPanelInteractions(QWidget):
 
         self.users_dropdown = QComboBox()
         self.users_dropdown.setFixedSize(180, 40)
+        self.users_dropdown.setIconSize(QSize(32, 32))
         self.dropdown_model = QStandardItemModel()
         self.users_dropdown.setModel(self.dropdown_model)
         self.users_dropdown.addItem(user_icon, f"{username} ({domain})", userData={"token": token,
@@ -170,6 +173,7 @@ class LeftPanelInteractions(QWidget):
         layout.setSpacing(5)
 
         layout.addWidget(self.users_dropdown)
+        layout.addWidget(user_profile_button)
         layout.addWidget(settings_button)
 
         self.setLayout(layout)
@@ -219,12 +223,13 @@ class GenericList(QWidget, ABC, metaclass=QABCMeta):
 
     def __init__(self,
                  search_bar_width: int, search_bar_height: int, enable_entry_selection: bool,
-                 layout_margins: tuple[int, int, int, int], layout_spacing: int
+                 layout_margins: tuple[int, int, int, int], layout_spacing: int,
+                 fixed_width: bool, list_width: int | None, fixed_height: bool, list_height: int | None
                  ):
         super().__init__()
 
         self.search_bar = QLineEdit()
-        self.search_bar.setPlaceholderText("Search...")
+        self.search_bar.setPlaceholderText("Search chat...")
         self.search_bar.setFixedSize(search_bar_width, search_bar_height)
         search_icon = QIcon("Icons/search_icon.png")
         self.search_bar.addAction(search_icon, QLineEdit.ActionPosition.LeadingPosition)
@@ -232,8 +237,16 @@ class GenericList(QWidget, ABC, metaclass=QABCMeta):
 
         self.list_widget = QListWidget()
         self.list_widget.setIconSize(QSize(32, 32))
-        self.list_widget.setFixedWidth(225)
-        self.list_widget.setMinimumHeight(195)
+        if list_width is not None:
+            if fixed_width:
+                self.list_widget.setFixedWidth(list_width)
+            else:
+                self.list_widget.setMinimumWidth(list_width)
+        if list_height is not None:
+            if fixed_height:
+                self.list_widget.setFixedHeight(list_height)
+            else:
+                self.list_widget.setMinimumHeight(list_height)
         self.list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # no vertical scrollbar
         self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # no horizontal scrollbar
         self.list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -291,9 +304,11 @@ class ChatList(GenericList):
 
     def __init__(self):
         super().__init__(
-            search_bar_width=225, search_bar_height=25,
+            search_bar_width=LEFT_PANEL_WIDTH, search_bar_height=25,
             enable_entry_selection=True,
-            layout_margins=(0, 0, 0, 0), layout_spacing=5
+            layout_margins=(0, 0, 0, 0), layout_spacing=5,
+            fixed_width=True, list_width=LEFT_PANEL_WIDTH,
+            fixed_height=False, list_height=185
         )
 
         self.chat_icon = QIcon("./Icons/chat_room_icon.png")
@@ -309,7 +324,7 @@ class ChatList(GenericList):
             self.list_widget.addItem(item)
 
         self.new_chat_button = QPushButton()
-        self.new_chat_button.setFixedSize(225, 25)
+        self.new_chat_button.setFixedSize(LEFT_PANEL_WIDTH, 25)
         self.new_chat_button.setIconSize(QSize(16, 16))
         self.new_chat_button.setIcon(QIcon("./Icons/plus_icon.png"))
         self.new_chat_button.setText("New Chat")
@@ -418,7 +433,7 @@ class LeftPanelMain(QWidget):
         layout.addWidget(interactions)
         self.setLayout(layout)
 
-        self.setFixedWidth(225)
+        self.setFixedWidth(LEFT_PANEL_WIDTH)
 
 class ChatHistory(QWidget):
     def __init__(self):
