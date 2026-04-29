@@ -146,7 +146,7 @@ class LeftPanelInteractions(QWidget):
         user_profile_button = QPushButton()
         user_profile_button.setFixedSize(40, 40)
         user_profile_button.setIconSize(QSize(32, 32))
-        user_profile_button.setIcon(QIcon("./Icons/user_settings_icon.png.png"))
+        user_profile_button.setIcon(QIcon("./Icons/user_settings_icon.png"))
         user_profile_button.clicked.connect(self.user_personalization_requested.emit)
 
         user_icon = QIcon(initial_user_icon_path)
