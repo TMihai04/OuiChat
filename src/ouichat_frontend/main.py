@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QMainWindow, QPushButton, QVBoxLayout, QLineEdit, QLabel, QStackedLayout,
-    QWidget, QHBoxLayout, QListWidget, QListWidgetItem, QFormLayout, QMenu, QComboBox,
+    QWidget, QHBoxLayout, QListWidget, QListWidgetItem, QFormLayout, QMenu, QComboBox, QTextEdit,
 )
 
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
@@ -439,6 +439,79 @@ class ChatHistory(QWidget):
     def __init__(self):
         super().__init__()
 
+class ChatTextBox(QTextEdit):
+    def __init__(self):
+        super().__init__()
+
+        self.init_height = 25
+        self.max_height = 73
+
+        self.setPlaceholderText("Start typing...")
+        self.setFixedHeight(self.init_height)
+        self.setMinimumWidth(50)
+
+    def __send_message(self):
+        message = self.toPlainText().strip()
+        if message:
+            print(message)
+            # IMPLEMENT SEND MESSAGE REQUESTS
+            # MAKE SURE TO DELETE MESSAGE ONLY IF MESSAGE WAS SENT SUCCESSFULLY
+            self.clear()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                super().keyPressEvent(event)
+            else:
+                self.__send_message()
+                event.accept()
+        else:
+            super().keyPressEvent(event)
+
+class MessageWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        upload_file_button = QPushButton()
+        upload_file_button.setFixedSize(40, 40)
+        upload_file_button.setIconSize(QSize(32, 32))
+        upload_file_button.setIcon(QIcon("./Icons/upload_file_icon.png"))
+        upload_file_button.clicked.connect(self.__upload_file)
+
+        send_message_button = QPushButton()
+        send_message_button.setFixedSize(40, 40)
+        send_message_button.setIconSize(QSize(32, 32))
+        send_message_button.setIcon(QIcon("./Icons/send_message_icon.png"))
+        send_message_button.clicked.connect(self.__send_message)
+
+        self.text_box = ChatTextBox()
+        self.text_box.textChanged.connect(self.__resize_text_box)
+
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+
+        layout.addWidget(upload_file_button, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
+        layout.addWidget(self.text_box)
+        layout.addWidget(send_message_button, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
+
+        self.setLayout(layout)
+
+    def __resize_text_box(self):
+        text_height = int(self.text_box.document().size().height())
+        box_height = self.text_box.height()
+
+        if text_height > self.text_box.max_height: return
+        else:
+            if text_height != box_height:
+                self.text_box.setFixedHeight(text_height)
+
+    def __upload_file(self):
+        pass
+
+    def __send_message(self):
+        pass
+
 class RightPanelMain(QWidget):
     """
     TO DO:
@@ -454,9 +527,15 @@ class RightPanelMain(QWidget):
     def __init__(self):
         super().__init__()
 
+        message_window = MessageWindow()
+
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(5)
+
+        layout.addWidget(message_window, alignment=Qt.AlignmentFlag.AlignBottom)
+
+        self.setLayout(layout)
 
 class MainScreen(QWidget):
     settings_requested = pyqtSignal()
