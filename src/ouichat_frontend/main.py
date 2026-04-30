@@ -13,6 +13,7 @@ MAX_PASSWORD_LENGTH = 32
 MAX_USERS = 3
 
 LEFT_PANEL_WIDTH = 270
+RIGHT_PANE_MIN_WIDTH = 290
 
 # TO BE IMPLEMENTED IN SOME OTHER WAY
 CHAT_PRIVILEGE = "admin" # {"default", "admin"}
@@ -332,6 +333,10 @@ class ChatList(GenericList):
         self.layout.addWidget(self.new_chat_button)
 
     def emit_selected_id(self, row: int):
+        if row == -1:
+            self.entry_selected.emit("")
+            return
+
         item = self.list_widget.item(row)
         chat_data = item.data(Qt.ItemDataRole.UserRole)
         self.entry_selected.emit(chat_data['chat_id'])
@@ -410,7 +415,7 @@ class ChatList(GenericList):
 class LeftPanelMain(QWidget):
     settings_requested = pyqtSignal()
     user_personalization_requested = pyqtSignal()
-    chat_selected = pyqtSignal(int)
+    chat_selected = pyqtSignal(str)
 
     def __init__(self, initial_user_username: str, initial_user_password: str,
                  initial_user_token: str, initial_user_icon_path: str, initial_user_domain: str,
@@ -485,6 +490,7 @@ class MessageWindow(QWidget):
         send_message_button.clicked.connect(self.__send_message)
 
         self.text_box = ChatTextBox()
+        self.text_box.setMinimumWidth(200)
         self.text_box.textChanged.connect(self.__resize_text_box)
 
         layout = QHBoxLayout()
@@ -496,6 +502,13 @@ class MessageWindow(QWidget):
         layout.addWidget(send_message_button, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
 
         self.setLayout(layout)
+        self.setVisible(False) # initially not visible due to no chat being selected
+
+    def set_visibility(self, selection: str):
+        if selection != "":
+            self.setVisible(True)
+        else:
+            self.setVisible(False)
 
     def __resize_text_box(self):
         text_height = int(self.text_box.document().size().height())
@@ -527,15 +540,16 @@ class RightPanelMain(QWidget):
     def __init__(self):
         super().__init__()
 
-        message_window = MessageWindow()
+        self.message_window = MessageWindow()
 
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(5)
 
-        layout.addWidget(message_window, alignment=Qt.AlignmentFlag.AlignBottom)
+        layout.addWidget(self.message_window, alignment=Qt.AlignmentFlag.AlignBottom)
 
         self.setLayout(layout)
+        self.setMinimumWidth(RIGHT_PANE_MIN_WIDTH)
 
 class MainScreen(QWidget):
     settings_requested = pyqtSignal()
@@ -550,6 +564,7 @@ class MainScreen(QWidget):
         left_panel.settings_requested.connect(self.settings_requested.emit)
 
         right_panel = RightPanelMain()
+        left_panel.chat_selected.connect(right_panel.message_window.set_visibility)
 
         layout = QHBoxLayout()
         layout.setContentsMargins(10, 10, 10, 10)
