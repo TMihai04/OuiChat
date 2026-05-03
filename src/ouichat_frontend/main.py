@@ -1,19 +1,22 @@
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QMainWindow, QPushButton, QVBoxLayout, QLineEdit, QLabel, QStackedLayout,
-    QWidget, QHBoxLayout, QListWidget, QListWidgetItem, QFormLayout, QMenu, QComboBox, QTextEdit,
+    QWidget, QHBoxLayout, QListWidget, QListWidgetItem, QFormLayout, QMenu, QComboBox, QTextEdit, QSizePolicy,
+    QScrollArea, QBoxLayout,
 )
 
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
-from PyQt6.QtGui import QIcon, QStandardItemModel
+from PyQt6.QtGui import QIcon, QStandardItemModel, QPixmap, QFontMetrics
 
 from abc import ABC, ABCMeta, abstractmethod
+
+import time
 
 MAX_USERNAME_LENGTH = 16
 MAX_PASSWORD_LENGTH = 32
 MAX_USERS = 3
 
 LEFT_PANEL_WIDTH = 270
-RIGHT_PANE_MIN_WIDTH = 290
+RIGHT_PANE_MIN_WIDTH = 310
 
 # TO BE IMPLEMENTED IN SOME OTHER WAY
 CHAT_PRIVILEGE = "admin" # {"default", "admin"}
@@ -220,7 +223,7 @@ class QABCMeta(type(QWidget), ABCMeta):
     pass
 
 class GenericList(QWidget, ABC, metaclass=QABCMeta):
-    entry_selected = pyqtSignal(str) # chat_id
+    entry_selected = pyqtSignal(str, str) # chat_id + domain
 
     def __init__(self,
                  search_bar_width: int, search_bar_height: int, enable_entry_selection: bool,
@@ -312,15 +315,19 @@ class ChatList(GenericList):
             fixed_height=False, list_height=185
         )
 
+
         self.chat_icon = QIcon("./Icons/chat_room_icon.png")
-        for idx in range(10): # adding 10 chat rooms to the list
-            item = QListWidgetItem(self.chat_icon, f"Chat {idx}")
+        for idx in range(20): # adding 20 chat rooms to the list
+            item = QListWidgetItem()
+            item.setIcon(self.chat_icon)
             item_data = {
                 "chat_privilege": CHAT_PRIVILEGE,
                 "chat_type": CHAT_TYPE,
                 "chat_setting": CHAT_SETTING,
+                "domain": "test.test.ro" if idx < 10 else "test2.test2.ro",
                 "chat_id": str(idx)
             }
+            item.setText(f"{item_data["chat_id"]} ({item_data["domain"]})")
             item.setData(Qt.ItemDataRole.UserRole, item_data)
             self.list_widget.addItem(item)
 
@@ -334,12 +341,12 @@ class ChatList(GenericList):
 
     def emit_selected_id(self, row: int):
         if row == -1:
-            self.entry_selected.emit("")
+            self.entry_selected.emit(None, None)
             return
 
         item = self.list_widget.item(row)
         chat_data = item.data(Qt.ItemDataRole.UserRole)
-        self.entry_selected.emit(chat_data['chat_id'])
+        self.entry_selected.emit(chat_data['chat_id'], chat_data['domain'])
 
     def show_context_menu(self, position):
         item = self.list_widget.itemAt(position)
@@ -415,7 +422,7 @@ class ChatList(GenericList):
 class LeftPanelMain(QWidget):
     settings_requested = pyqtSignal()
     user_personalization_requested = pyqtSignal()
-    chat_selected = pyqtSignal(str)
+    chat_selected = pyqtSignal(str, str)
 
     def __init__(self, initial_user_username: str, initial_user_password: str,
                  initial_user_token: str, initial_user_icon_path: str, initial_user_domain: str,
@@ -440,9 +447,249 @@ class LeftPanelMain(QWidget):
 
         self.setFixedWidth(LEFT_PANEL_WIDTH)
 
+class ElidedLabel(QLabel):
+    def __init__(self, text: str = ""):
+        super().__init__()
+
+        self.full_text = text
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.update_elided_text()
+
+    def setText(self, text):
+        self.full_text = text
+        self.update_elided_text()
+
+    def resizeEvent(self, event):
+        self.update_elided_text()
+        super().resizeEvent(event)
+
+    def update_elided_text(self):
+        metrics = QFontMetrics(self.font())
+        elided = metrics.elidedText(self.full_text, Qt.TextElideMode.ElideRight, self.width())
+        super().setText(elided)
+
+    def minimumSizeHint(self):
+        return QSize(10, super().minimumSizeHint().height())
+
+    def sizeHint(self):
+        return QSize(100, super().sizeHint().height())
+
+class ChatMessage(QWidget):
+    def __init__(self, message_id: str, sender: str, sender_icon_path: str, was_edited: bool, is_reply: bool,
+                 reply_sender: str | None, reply_sender_icon_path: str | None, reply_snip: str | None, timestamp: str,
+                 text: str):
+        super().__init__()
+
+        self.message_id = message_id
+
+        self.sender = sender
+        self.sender_icon_path = sender_icon_path
+        sender_icon = QLabel()
+        sender_pixmap = QPixmap(sender_icon_path).scaled(32, 32)
+        sender_icon.setPixmap(sender_pixmap)
+
+        self.text = text
+        self.was_edited = was_edited
+
+        reply_area = QWidget()
+        reply_area.setFixedHeight(25)
+
+        if is_reply:
+            reply_area_layout = QHBoxLayout()
+            reply_area_layout.setContentsMargins(0, 0, 0, 0)
+            reply_area_layout.setSpacing(5)
+            reply_area.setLayout(reply_area_layout)
+
+            replied_to_label = QLabel()
+            replied_to_label.setText("Replied to:")
+            replied_to_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+            reply_sender_icon = QLabel()
+            reply_sender_pixmap = QPixmap(reply_sender_icon_path).scaled(24, 24)
+            reply_sender_icon.setPixmap(reply_sender_pixmap)
+
+            replied_to_user_label = QLabel()
+            replied_to_user_label.setText(reply_sender)
+            replied_to_user_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+            reply_snip_label = ElidedLabel()
+            reply_snip_label.setText(reply_snip)
+
+            reply_area_layout.addWidget(replied_to_label)
+            reply_area_layout.addWidget(reply_sender_icon)
+            reply_area_layout.addWidget(replied_to_user_label)
+            reply_area_layout.addWidget(reply_snip_label)
+
+        self.message_details = QLabel()
+        self.message_details.setFixedHeight(25)
+        self.message_details.setText(f"{sender} - {timestamp}{" (Edited)" if was_edited else ""}")
+        self.message_details.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+        self.message_text = QLabel()
+        self.message_text.setText(self.text)
+        self.message_text.setWordWrap(True)
+
+        message_area = QWidget()
+        message_area_layout = QVBoxLayout()
+        message_area_layout.setContentsMargins(0, 0, 0, 0)
+        message_area_layout.setSpacing(5)
+        message_area.setLayout(message_area_layout)
+
+        if is_reply:
+            message_area_layout.addWidget(reply_area)
+        message_area_layout.addWidget(self.message_details)
+        message_area_layout.addWidget(self.message_text)
+        message_area_layout.addStretch()
+
+        top_layout = QHBoxLayout()
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(5)
+        self.setLayout(top_layout)
+
+        top_layout.addWidget(sender_icon, alignment=Qt.AlignmentFlag.AlignTop)
+        top_layout.addWidget(message_area, stretch=1)
+
+    def edit_text(self, text):
+        self.message_text.setText(text)
+
+        if not self.was_edited:
+            old_message_details = self.message_details.text()
+            new_message_details = old_message_details + " (Edited)"
+            self.message_details.setText(new_message_details)
+            self.was_edited = True
+
+class ChatBubble(QScrollArea):
+    """
+    TO DO:
+        - finish implementing chat bubble
+        - add dummy messages to see how they get displayed (debug messages if needed)
+        - implement context menu for messages (reply, edit, delete)
+    """
+    def __init__(self, chat_id: str, domain:str, last_access_time: float):
+        super().__init__()
+
+        self.chat_id = chat_id
+        self.domain = domain
+        self.last_access_time = last_access_time
+
+        self.setWidgetResizable(True)
+
+        self.container = QWidget()
+        self.container_layout = QVBoxLayout()
+        self.container_layout.setContentsMargins(0, 0, 0, 0)
+        self.container_layout.setSpacing(5)
+        self.container_layout.setDirection(QBoxLayout.Direction.BottomToTop)
+        self.container.setLayout(self.container_layout)
+
+        self.setWidget(self.container)
+
+    def load_messages(self, message_count: int, last_loaded_message_id: str | None):
+
+        for idx in range(20):
+            is_reply = idx % 2 == 1
+            was_edited = idx % 4 == 0 or idx % 4 == 1
+
+            local_time = time.localtime(time.time())
+            formated_time = time.strftime("%H:%M:%S %d/%m/%Y", local_time)
+
+            message = ChatMessage(message_id=f"{idx}",
+                                  sender=f"TEST_SENDER_{idx}",
+                                  sender_icon_path="./Icons/default_user_icon.png",
+                                  was_edited=was_edited,
+                                  is_reply=is_reply,
+                                  reply_sender=f"TEST_REPLY_{idx}",
+                                  reply_sender_icon_path=f"./Icons/default_user_icon.png",
+                                  reply_snip="Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
+                                  timestamp=formated_time,
+                                  text="Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.")
+            self.container_layout.addWidget(message)
+
+        # REQUEST MESSAGES
+
+    def __send_message(self):
+        # SEND MESSAGE TO SERVER
+        pass
+
 class ChatHistory(QWidget):
+    """
+    TO DO:
+        - finish implementing chat history
+        - implement hard limit on the nr of bubbles
+        - implement least recently used cache for bubbles to figure which one to remove
+    """
     def __init__(self):
         super().__init__()
+
+        self.max_bubbles = 17 # 15 bubbles + 1 screen for no chats + 1 screen for loading messages
+
+        self.layout = QStackedLayout()
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(5)
+
+        self.setLayout(self.layout)
+
+        no_chats_label = QLabel()
+        no_chats_label.setText("Select a chat to vent to.")
+        no_chats_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.layout.insertWidget(0, no_chats_label)
+
+        loading_messages_label = QLabel()
+        loading_messages_label.setText("Loading messages ...")
+        loading_messages_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.layout.insertWidget(1, loading_messages_label)
+
+        self.layout.setCurrentIndex(0)
+
+    def show_chat(self, chat_id: str | None, chat_domain: str | None):
+        if chat_id is None and chat_domain is None:
+            self.layout.setCurrentIndex(0)
+            return
+
+        for idx in range(self.layout.count()):
+            widget = self.layout.widget(idx)
+            if isinstance(widget, ChatBubble):
+                if widget.chat_id == chat_id and widget.domain == chat_domain:
+                    self.layout.setCurrentIndex(idx)
+                    widget.last_access_time = time.time()
+                    return
+
+        self.__add_bubble(chat_id, chat_domain)
+
+    def remove_chat(self, chat_id: str, chat_domain: str):
+        for idx in range(self.layout.count()):
+            widget = self.layout.widget(idx)
+            if isinstance(widget, ChatBubble):
+                if widget.chat_id == chat_id and widget.domain == chat_domain:
+                    self.layout.removeWidget(widget)
+                    return
+
+    def __add_bubble(self, chat_id: str, chat_domain: str):
+        bubble_count = self.layout.count()
+        if bubble_count >= self.max_bubbles:
+            oldest_widget = None
+            oldest_access_time = time.time()
+            for idx in range(bubble_count):
+                widget = self.layout.widget(idx)
+                if isinstance(widget, ChatBubble):
+                    access_time = widget.last_access_time
+                    if access_time < oldest_access_time:
+                        oldest_widget = widget
+                        oldest_access_time = access_time
+
+            self.layout.removeWidget(oldest_widget)
+
+        current_time = time.time()
+        new_bubble = ChatBubble(chat_id, chat_domain, current_time)
+        self.layout.insertWidget(2, new_bubble)
+        # at index 0 there is a special screen for when there are no chats selected
+        # at index 1 there is a special screen for when messages are loading
+
+        self.layout.setCurrentIndex(1)
+        new_bubble.load_messages(50, None)
+        self.layout.setCurrentIndex(2)
+
+    def add_message(self, chat_id: str, chat_domain:str, message: ChatMessage):
+        pass
 
 class ChatTextBox(QTextEdit):
     def __init__(self):
@@ -458,7 +705,6 @@ class ChatTextBox(QTextEdit):
     def __send_message(self):
         message = self.toPlainText().strip()
         if message:
-            print(message)
             # IMPLEMENT SEND MESSAGE REQUESTS
             # MAKE SURE TO DELETE MESSAGE ONLY IF MESSAGE WAS SENT SUCCESSFULLY
             self.clear()
@@ -504,8 +750,8 @@ class MessageWindow(QWidget):
         self.setLayout(layout)
         self.setVisible(False) # initially not visible due to no chat being selected
 
-    def set_visibility(self, selection: str):
-        if selection != "":
+    def set_visibility(self, chat_id: str, domain: str):
+        if chat_id != "" and domain != "":
             self.setVisible(True)
         else:
             self.setVisible(False)
@@ -540,12 +786,14 @@ class RightPanelMain(QWidget):
     def __init__(self):
         super().__init__()
 
+        self.chat_history = ChatHistory()
         self.message_window = MessageWindow()
 
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(5)
 
+        layout.addWidget(self.chat_history)
         layout.addWidget(self.message_window, alignment=Qt.AlignmentFlag.AlignBottom)
 
         self.setLayout(layout)
@@ -561,10 +809,12 @@ class MainScreen(QWidget):
 
         left_panel = LeftPanelMain(initial_user_username, initial_user_password,
                                    initial_user_token, initial_user_icon_path, initial_user_domain, login_dialog)
-        left_panel.settings_requested.connect(self.settings_requested.emit)
 
         right_panel = RightPanelMain()
         left_panel.chat_selected.connect(right_panel.message_window.set_visibility)
+
+        left_panel.settings_requested.connect(self.settings_requested.emit)
+        left_panel.chat_selected.connect(right_panel.chat_history.show_chat)
 
         layout = QHBoxLayout()
         layout.setContentsMargins(10, 10, 10, 10)
