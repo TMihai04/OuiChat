@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QMainWindow, QPushButton, QVBoxLayout, QLineEdit, QLabel, QStackedLayout,
     QWidget, QHBoxLayout, QListWidget, QListWidgetItem, QFormLayout, QMenu, QComboBox, QTextEdit, QSizePolicy,
-    QScrollArea, QBoxLayout,
+    QScrollArea, QBoxLayout, QCheckBox
 )
 
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
@@ -84,14 +84,17 @@ class LogInDialog(QDialog):
 
         form_widget.setLayout(form_layout)
 
-        self.error_message = QLabel()
-        self.error_message.setStyleSheet("color: red;")
-        self.error_message.setFixedHeight(25)
+        self.register_checkbox = QCheckBox()
+        self.register_checkbox.setText("Register and Login")
 
         log_in_button = QPushButton("Login")
         log_in_button.setFixedSize(125, 25)
         log_in_button.setAutoDefault(False)
         log_in_button.clicked.connect(self.__validate_credentials)
+
+        self.error_message = QLabel()
+        self.error_message.setStyleSheet("color: red;")
+        self.error_message.setFixedHeight(25)
 
         layout = QVBoxLayout()
         layout.setContentsMargins(10, 10, 10, 10)
@@ -99,8 +102,9 @@ class LogInDialog(QDialog):
 
         layout.addWidget(description_label, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(form_widget)
-        layout.addWidget(self.error_message, alignment=Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.register_checkbox, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(log_in_button, alignment=Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.error_message, alignment=Qt.AlignmentFlag.AlignCenter)
 
         self.setLayout(layout)
         self.setMaximumSize(535, 195)
@@ -110,6 +114,13 @@ class LogInDialog(QDialog):
         password = self.password_line_edit.text()
         domain = self.domain_line_edit.text()
 
+        register = self.register_checkbox.isChecked()
+
+        if register:
+            # REGISTER REQUEST
+            pass
+
+        # LOGIN REQUEST
         ret = make_request(domain, username, password)
 
         if ret[0]:
@@ -119,7 +130,6 @@ class LogInDialog(QDialog):
 
             # IMPLEMENT INFO RETRIEVAL
             self.user_data['username'] = username
-            self.user_data['password'] = password
             self.user_data['token'] = ret[1]
             self.user_data['icon_path'] = "./Icons/default_user_icon.png"
             self.user_data['domain'] = domain
@@ -131,11 +141,9 @@ class LogInDialog(QDialog):
 class LeftPanelInteractions(QWidget):
     settings_requested = pyqtSignal()
     user_personalization_requested = pyqtSignal()
-    user_changed = pyqtSignal(str, str)
+    user_changed = pyqtSignal(dict)
 
-    def __init__(self, initial_user_username: str, initial_user_password: str,
-                 initial_user_token: str, initial_user_icon_path: str, initial_user_domain: str,
-                 login_dialog):
+    def __init__(self, initial_user_data: dict, login_dialog):
         super().__init__()
 
         self.login_dialog = login_dialog
@@ -153,11 +161,9 @@ class LeftPanelInteractions(QWidget):
         user_profile_button.setIcon(QIcon("./Icons/user_settings_icon.png"))
         user_profile_button.clicked.connect(self.user_personalization_requested.emit)
 
-        user_icon = QIcon(initial_user_icon_path)
-        username = initial_user_username
-        token = initial_user_token
-        password = initial_user_password
-        domain = initial_user_domain
+        user_icon = QIcon(initial_user_data['icon_path'])
+        username = initial_user_data['username']
+        domain = initial_user_data['domain']
 
         add_user_icon = QIcon("./Icons/plus_icon.png")
 
@@ -166,9 +172,7 @@ class LeftPanelInteractions(QWidget):
         self.users_dropdown.setIconSize(QSize(32, 32))
         self.dropdown_model = QStandardItemModel()
         self.users_dropdown.setModel(self.dropdown_model)
-        self.users_dropdown.addItem(user_icon, f"{username} ({domain})", userData={"token": token,
-                                                              "password": password,
-                                                              "domain": domain})
+        self.users_dropdown.addItem(user_icon, f"{username} ({domain})", userData=initial_user_data)
         self.users_dropdown.addItem(add_user_icon, "Add User")
         self.users_dropdown.currentIndexChanged.connect(self.handle_users_dropdown)
 
@@ -185,22 +189,27 @@ class LeftPanelInteractions(QWidget):
     def handle_users_dropdown(self, row:int):
         num_entries = self.users_dropdown.count()
         if row != num_entries - 1:
-            username = self.users_dropdown.itemText(row)
-            domain = self.users_dropdown.itemData(row)['domain']
-            self.user_changed.emit(username, domain)
+            item_data =  self.users_dropdown.itemData(row)
+            self.user_changed.emit(item_data)
 
         else:
             if self.login_dialog.exec() == QDialog.DialogCode.Accepted:
+                user_icon_path = self.login_dialog.user_data['icon_path']
                 user_icon = QIcon(self.login_dialog.user_data['icon_path'])
                 username = self.login_dialog.user_data['username']
                 token = self.login_dialog.user_data['token']
-                password = self.login_dialog.user_data['password']
                 domain = self.login_dialog.user_data['domain']
 
+                current_user_data = {
+                    "username": username,
+                    "domain": domain,
+                    "icon_path": user_icon_path,
+                    "request_token": token,
+                    "refresh_token": "REFRESH_TOKEN " + token,
+                }
+
                 self.users_dropdown.blockSignals(True)
-                self.users_dropdown.insertItem(row, user_icon, f"{username} ({domain})", userData={"token": token,
-                                                                           "password": password,
-                                                                           "domain": domain})
+                self.users_dropdown.insertItem(row, user_icon, f"{username} ({domain})", userData=current_user_data)
                 self.users_dropdown.blockSignals(False)
 
                 self.users_dropdown.setCurrentIndex(row)
@@ -223,7 +232,7 @@ class QABCMeta(type(QWidget), ABCMeta):
     pass
 
 class GenericList(QWidget, ABC, metaclass=QABCMeta):
-    entry_selected = pyqtSignal(str, str) # chat_id + domain
+    entry_selected = pyqtSignal(object) # chat_id + domain
 
     def __init__(self,
                  search_bar_width: int, search_bar_height: int, enable_entry_selection: bool,
@@ -237,7 +246,7 @@ class GenericList(QWidget, ABC, metaclass=QABCMeta):
         self.search_bar.setFixedSize(search_bar_width, search_bar_height)
         search_icon = QIcon("Icons/search_icon.png")
         self.search_bar.addAction(search_icon, QLineEdit.ActionPosition.LeadingPosition)
-        self.search_bar.textChanged.connect(self.__search)
+        self.search_bar.textChanged.connect(self.search)
 
         self.list_widget = QListWidget()
         self.list_widget.setIconSize(QSize(32, 32))
@@ -277,16 +286,12 @@ class GenericList(QWidget, ABC, metaclass=QABCMeta):
 
         return items
 
-    def __search(self, text):
-        for row in range(self.list_widget.count()):
-            item = self.list_widget.item(row)
-            if text == "" or text in item.text():
-                item.setHidden(False)
-            else:
-                item.setHidden(True)
-
     def add_entry(self):
         # TO BE IMPLEMENTED
+        pass
+
+    @abstractmethod
+    def search(self, text):
         pass
 
     @abstractmethod
@@ -301,9 +306,6 @@ class ChatList(GenericList):
     """
     TO DO:
         - implement the context menus
-        - send signal to right panel to update when switching chats
-        - automatically switch to previous chat (next if the current chat was the 1st one) when deleting current chat
-            (MIGHT BE ALREADY IMPLEMENTED BY DEFAULT)
     """
 
     def __init__(self):
@@ -315,6 +317,7 @@ class ChatList(GenericList):
             fixed_height=False, list_height=185
         )
 
+        self.current_user_data = None
 
         self.chat_icon = QIcon("./Icons/chat_room_icon.png")
         for idx in range(20): # adding 20 chat rooms to the list
@@ -325,9 +328,10 @@ class ChatList(GenericList):
                 "chat_type": CHAT_TYPE,
                 "chat_setting": CHAT_SETTING,
                 "domain": "test.test.ro" if idx < 10 else "test2.test2.ro",
-                "chat_id": str(idx)
+                "chat_id": str(idx),
+                "users": {"fifo"} if idx < 5 else {"fifo", "fifo2"} if idx < 10 else {"fifo2"},
             }
-            item.setText(f"{item_data["chat_id"]} ({item_data["domain"]})")
+            item.setText(f"{item_data["chat_id"]}")
             item.setData(Qt.ItemDataRole.UserRole, item_data)
             self.list_widget.addItem(item)
 
@@ -339,14 +343,40 @@ class ChatList(GenericList):
 
         self.layout.addWidget(self.new_chat_button)
 
+    def handle_user_change(self, data: dict):
+        self.current_user_data = data
+        self.list_widget.setCurrentRow(-1)
+        self.__set_visibility()
+
+    def __set_visibility(self):
+        for row in range(self.list_widget.count()):
+            item = self.list_widget.item(row)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            if item_data["domain"] == self.current_user_data["domain"] and self.current_user_data["username"] in item_data["users"]:
+                item.setHidden(False)
+            else:
+                item.setHidden(True)
+
+    def search(self, text):
+        for row in range(self.list_widget.count()):
+            item = self.list_widget.item(row)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            if item_data["domain"] == self.current_user_data["domain"] and self.current_user_data["username"] in item_data["users"]:
+                if text == "" or text in item.text():
+                    item.setHidden(False)
+                else:
+                    item.setHidden(True)
+            else:
+                item.setHidden(True)
+
     def emit_selected_id(self, row: int):
         if row == -1:
-            self.entry_selected.emit(None, None)
+            self.entry_selected.emit(None)
             return
 
         item = self.list_widget.item(row)
         chat_data = item.data(Qt.ItemDataRole.UserRole)
-        self.entry_selected.emit(chat_data['chat_id'], chat_data['domain'])
+        self.entry_selected.emit(chat_data)
 
     def show_context_menu(self, position):
         item = self.list_widget.itemAt(position)
@@ -422,20 +452,20 @@ class ChatList(GenericList):
 class LeftPanelMain(QWidget):
     settings_requested = pyqtSignal()
     user_personalization_requested = pyqtSignal()
-    chat_selected = pyqtSignal(str, str)
+    chat_selected = pyqtSignal(object)
 
-    def __init__(self, initial_user_username: str, initial_user_password: str,
-                 initial_user_token: str, initial_user_icon_path: str, initial_user_domain: str,
-                 login_dialog):
+    def __init__(self, initial_user_data:dict, login_dialog):
         super().__init__()
 
         chat_list = ChatList()
-        chat_list.entry_selected.connect(self.chat_selected.emit)
+        interactions = LeftPanelInteractions(initial_user_data, login_dialog)
 
-        interactions = LeftPanelInteractions(initial_user_username, initial_user_password,
-                                             initial_user_token, initial_user_icon_path, initial_user_domain, login_dialog)
+        chat_list.entry_selected.connect(self.chat_selected.emit)
+        chat_list.handle_user_change(initial_user_data)
+
         interactions.settings_requested.connect(self.settings_requested.emit)
         interactions.user_personalization_requested.connect(self.user_personalization_requested.emit)
+        interactions.user_changed.connect(chat_list.handle_user_change)
 
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -561,9 +591,8 @@ class ChatMessage(QWidget):
 class ChatBubble(QScrollArea):
     """
     TO DO:
-        - finish implementing chat bubble
-        - add dummy messages to see how they get displayed (debug messages if needed)
         - implement context menu for messages (reply, edit, delete)
+        - add spaces between messages
     """
     def __init__(self, chat_id: str, domain:str, last_access_time: float):
         super().__init__()
@@ -606,7 +635,7 @@ class ChatBubble(QScrollArea):
 
         # REQUEST MESSAGES
 
-    def __send_message(self):
+    def send_message(self):
         # SEND MESSAGE TO SERVER
         pass
 
@@ -614,8 +643,6 @@ class ChatHistory(QWidget):
     """
     TO DO:
         - finish implementing chat history
-        - implement hard limit on the nr of bubbles
-        - implement least recently used cache for bubbles to figure which one to remove
     """
     def __init__(self):
         super().__init__()
@@ -640,20 +667,20 @@ class ChatHistory(QWidget):
 
         self.layout.setCurrentIndex(0)
 
-    def show_chat(self, chat_id: str | None, chat_domain: str | None):
-        if chat_id is None and chat_domain is None:
+    def show_chat(self, chat_data: dict | None):
+        if chat_data is None:
             self.layout.setCurrentIndex(0)
             return
 
         for idx in range(self.layout.count()):
             widget = self.layout.widget(idx)
             if isinstance(widget, ChatBubble):
-                if widget.chat_id == chat_id and widget.domain == chat_domain:
+                if widget.chat_id == chat_data['chat_id'] and widget.domain == chat_data['domain']:
                     self.layout.setCurrentIndex(idx)
                     widget.last_access_time = time.time()
                     return
 
-        self.__add_bubble(chat_id, chat_domain)
+        self.__add_bubble(chat_data['chat_id'], chat_data['domain'])
 
     def remove_chat(self, chat_id: str, chat_domain: str):
         for idx in range(self.layout.count()):
@@ -692,6 +719,10 @@ class ChatHistory(QWidget):
         pass
 
 class ChatTextBox(QTextEdit):
+    """
+    TO DO:
+        - implement send message (without requests initially)
+    """
     def __init__(self):
         super().__init__()
 
@@ -750,8 +781,8 @@ class MessageWindow(QWidget):
         self.setLayout(layout)
         self.setVisible(False) # initially not visible due to no chat being selected
 
-    def set_visibility(self, chat_id: str, domain: str):
-        if chat_id != "" and domain != "":
+    def set_visibility(self, chat_data: dict | None):
+        if chat_data is not None:
             self.setVisible(True)
         else:
             self.setVisible(False)
@@ -776,11 +807,6 @@ class RightPanelMain(QWidget):
     TO DO:
         - make stacked widgets dynamically update when exiting a group chat
         - on the top add a button widget with the name of the chat to see its members and admins
-        - bottom-up list widget (see other ways if it doesn't allow complex formats) for messages
-            - complex formats: icon, username, edited flag, timestamp, replied to
-        - add text box to send messages
-        - add upload file button
-        - add send message button
     """
 
     def __init__(self):
@@ -802,13 +828,10 @@ class RightPanelMain(QWidget):
 class MainScreen(QWidget):
     settings_requested = pyqtSignal()
 
-    def __init__(self, initial_user_username: str, initial_user_password: str,
-                 initial_user_token: str, initial_user_icon_path: str, initial_user_domain: str,
-                 login_dialog):
+    def __init__(self, initial_user_data: dict, login_dialog):
         super().__init__()
 
-        left_panel = LeftPanelMain(initial_user_username, initial_user_password,
-                                   initial_user_token, initial_user_icon_path, initial_user_domain, login_dialog)
+        left_panel = LeftPanelMain(initial_user_data, login_dialog)
 
         right_panel = RightPanelMain()
         left_panel.chat_selected.connect(right_panel.message_window.set_visibility)
@@ -850,17 +873,14 @@ class SettingsScreen(QWidget):
         self.setLayout(layout)
 
 class MainWindow(QMainWindow):
-    def __init__(self, initial_user_username: str, initial_user_password: str,
-                 initial_user_token: str, initial_user_icon_path: str, initial_user_domain: str,
-                 login_dialog):
+    def __init__(self, initial_user_data: dict, login_dialog):
         super().__init__()
 
         self.setWindowTitle("OuiChat")
 
         self.main_layout = QStackedLayout() # ADD ALL THE OTHER TABS HERE (SETTINGS, ETC.)
 
-        main_screen_widget = MainScreen(initial_user_username, initial_user_password,
-                                        initial_user_token, initial_user_icon_path, initial_user_domain, login_dialog)
+        main_screen_widget = MainScreen(initial_user_data, login_dialog)
         main_screen_widget.settings_requested.connect(self.go_to_settings)
 
         settings_screen_widget = SettingsScreen()
@@ -885,9 +905,15 @@ if __name__ == "__main__":
     login = LogInDialog()
 
     if login.exec() == QDialog.DialogCode.Accepted:
-        main_window = MainWindow(login.user_data['username'], login.user_data['password'],
-                                 login.user_data['token'], login.user_data['icon_path'], login.user_data['domain'],
-                                 login)
+        user_data = {
+            "username": login.user_data['username'],
+            "domain": login.user_data['domain'],
+            "icon_path": login.user_data['icon_path'],
+            "request_token": login.user_data['token'],
+            "refresh_token": "REFRESH_TOKEN " + login.user_data['token'],
+        }
+
+        main_window = MainWindow(user_data, login)
         main_window.show()
         app.exec()
     else:
