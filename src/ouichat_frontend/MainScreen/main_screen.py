@@ -16,7 +16,10 @@ class MainScreen(QWidget):
         left_panel = ChatsAndUsersPanel(initial_user_data, login_dialog)
 
         right_panel = ChatEnvironment()
-        left_panel.chat_selected.connect(right_panel.message_window.set_visibility)
+        right_panel.chat_history.set_current_user(initial_user_data)
+        left_panel.chat_selected.connect(right_panel.message_window.set_visibility_dict)
+        left_panel.user_changed.connect(right_panel.chat_history.update_member_management_visibility)
+        left_panel.user_changed.connect(right_panel.chat_history.set_current_user)
 
         left_panel.settings_requested.connect(self.settings_requested.emit)
         left_panel.chat_selected.connect(right_panel.chat_history.show_chat)

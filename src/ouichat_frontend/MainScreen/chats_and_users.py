@@ -6,14 +6,11 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QIcon, QStandardItemModel
 
-from abc import ABC, ABCMeta, abstractmethod
-
 MAX_USERS = 3
 
 LEFT_PANEL_WIDTH = 270
 
 # TO BE IMPLEMENTED IN SOME OTHER WAY
-CHAT_PRIVILEGE = "admin" # {"default", "admin"}
 CHAT_TYPE = "chatroom" # {"p2p", "chatroom"}
 CHAT_SETTING = "rw" # {"ro", "rw"}
 
@@ -106,108 +103,51 @@ class LeftPanelInteractions(QWidget):
         else:
             self.dropdown_model.item(num_entries - 1).setEnabled(True)
 
+class ChatList(QWidget):
+    """
+    TO DO:
+        - implement the context menus
+    """
+    entry_selected = pyqtSignal(object)
 
-class QABCMeta(type(QWidget), ABCMeta):
-    pass
-
-class GenericList(QWidget, ABC, metaclass=QABCMeta):
-    entry_selected = pyqtSignal(object) # chat_id + domain
-
-    def __init__(self,
-                 search_bar_width: int, search_bar_height: int, enable_entry_selection: bool,
-                 layout_margins: tuple[int, int, int, int], layout_spacing: int,
-                 fixed_width: bool, list_width: int | None, fixed_height: bool, list_height: int | None
-                 ):
+    def __init__(self):
         super().__init__()
 
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Search chat...")
-        self.search_bar.setFixedSize(search_bar_width, search_bar_height)
+        self.search_bar.setFixedSize(LEFT_PANEL_WIDTH, 25)
         search_icon = QIcon("Icons/search_icon.png")
         self.search_bar.addAction(search_icon, QLineEdit.ActionPosition.LeadingPosition)
         self.search_bar.textChanged.connect(self.search)
 
         self.list_widget = QListWidget()
         self.list_widget.setIconSize(QSize(32, 32))
-        if list_width is not None:
-            if fixed_width:
-                self.list_widget.setFixedWidth(list_width)
-            else:
-                self.list_widget.setMinimumWidth(list_width)
-        if list_height is not None:
-            if fixed_height:
-                self.list_widget.setFixedHeight(list_height)
-            else:
-                self.list_widget.setMinimumHeight(list_height)
+        self.list_widget.setFixedWidth(LEFT_PANEL_WIDTH)
+        self.list_widget.setMinimumHeight(185)
         self.list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # no vertical scrollbar
         self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # no horizontal scrollbar
         self.list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list_widget.customContextMenuRequested.connect(self.show_context_menu)
-        if enable_entry_selection:
-            self.list_widget.currentRowChanged.connect(self.emit_selected_id)
+        self.list_widget.currentRowChanged.connect(self.emit_selected_id)
 
-        self.layout = QVBoxLayout()
-        self.layout.setContentsMargins(layout_margins[0], layout_margins[1], layout_margins[2], layout_margins[3])
-        self.layout.setSpacing(layout_spacing)
+        self.widget_layout = QVBoxLayout()
+        self.widget_layout.setContentsMargins(0, 0, 0, 0)
+        self.widget_layout.setSpacing(5)
 
-        self.layout.addWidget(self.search_bar)
-        self.layout.addWidget(self.list_widget)
-        self.setLayout(self.layout)
-
-    def find_item_by_data(self, key, value):
-        items = []
-        for row in range(self.list_widget.count()):
-            item = self.list_widget.item(row)
-            item_data = item.data(Qt.ItemDataRole.UserRole)
-            val = item_data.get(key, None)
-            if val == value:
-                items.append(item)
-
-        return items
-
-    def add_entry(self):
-        # TO BE IMPLEMENTED
-        pass
-
-    @abstractmethod
-    def search(self, text):
-        pass
-
-    @abstractmethod
-    def emit_selected_id(self, row: int):
-        pass
-
-    @abstractmethod
-    def show_context_menu(self, position):
-        pass
-
-class ChatList(GenericList):
-    """
-    TO DO:
-        - implement the context menus
-    """
-
-    def __init__(self):
-        super().__init__(
-            search_bar_width=LEFT_PANEL_WIDTH, search_bar_height=25,
-            enable_entry_selection=True,
-            layout_margins=(0, 0, 0, 0), layout_spacing=5,
-            fixed_width=True, list_width=LEFT_PANEL_WIDTH,
-            fixed_height=False, list_height=185
-        )
+        self.widget_layout.addWidget(self.search_bar)
+        self.widget_layout.addWidget(self.list_widget)
+        self.setLayout(self.widget_layout)
 
         self.current_user_data = None
 
-        self.chat_icon = QIcon("./Icons/chat_room_icon.png")
         for idx in range(20): # adding 20 chat rooms to the list
-            item = QListWidgetItem()
-            item.setIcon(self.chat_icon)
             item_data = {
-                "chat_privilege": CHAT_PRIVILEGE,
                 "chat_type": CHAT_TYPE,
                 "chat_setting": CHAT_SETTING,
                 "domain": "test.test.ro" if idx < 10 else "test2.test2.ro",
                 "chat_id": str(idx),
+                "chat_description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
+                "icon_path": "./Icons/chat_room_icon.png",
                 "users": [{"username": "fifo",
                           "icon_path": "./Icons/default_user_icon.png",
                           "is_admin": True}] if idx < 5 else
@@ -220,11 +160,8 @@ class ChatList(GenericList):
                          [{"username": "fifo2",
                            "icon_path": "./Icons/default_user_icon.png",
                            "is_admin": True}]
-
             }
-            item.setText(f"{item_data["chat_id"]}")
-            item.setData(Qt.ItemDataRole.UserRole, item_data)
-            self.list_widget.addItem(item)
+            self.add_entry(item_data)
 
         self.new_chat_button = QPushButton()
         self.new_chat_button.setFixedSize(LEFT_PANEL_WIDTH, 25)
@@ -232,7 +169,25 @@ class ChatList(GenericList):
         self.new_chat_button.setIcon(QIcon("./Icons/plus_icon.png"))
         self.new_chat_button.setText("New Chat")
 
-        self.layout.addWidget(self.new_chat_button)
+        self.widget_layout.addWidget(self.new_chat_button)
+
+    def find_item_by_data(self, key, value):
+        items = []
+        for row in range(self.list_widget.count()):
+            item = self.list_widget.item(row)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            val = item_data.get(key, None)
+            if val == value:
+                items.append(item)
+
+        return items
+
+    def add_entry(self, chat_data):
+        item = QListWidgetItem()
+        item.setIcon(QIcon(chat_data["icon_path"]))
+        item.setText(f"{chat_data["chat_id"]}")
+        item.setData(Qt.ItemDataRole.UserRole, chat_data)
+        self.list_widget.addItem(item)
 
     def handle_user_change(self, data: dict):
         self.current_user_data = data
@@ -350,6 +305,7 @@ class ChatsAndUsersPanel(QWidget):
     settings_requested = pyqtSignal()
     user_personalization_requested = pyqtSignal()
     chat_selected = pyqtSignal(object)
+    user_changed = pyqtSignal(dict)
 
     def __init__(self, initial_user_data:dict, login_dialog):
         super().__init__()
@@ -363,6 +319,7 @@ class ChatsAndUsersPanel(QWidget):
         interactions.settings_requested.connect(self.settings_requested.emit)
         interactions.user_personalization_requested.connect(self.user_personalization_requested.emit)
         interactions.user_changed.connect(chat_list.handle_user_change)
+        interactions.user_changed.connect(self.user_changed.emit)
 
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
