@@ -329,7 +329,19 @@ class ChatList(GenericList):
                 "chat_setting": CHAT_SETTING,
                 "domain": "test.test.ro" if idx < 10 else "test2.test2.ro",
                 "chat_id": str(idx),
-                "users": {"fifo"} if idx < 5 else {"fifo", "fifo2"} if idx < 10 else {"fifo2"},
+                "users": [{"username": "fifo",
+                          "icon_path": "./Icons/default_user_icon.png",
+                          "is_admin": True}] if idx < 5 else
+                         [{"username": "fifo",
+                          "icon_path": "./Icons/default_user_icon.png",
+                          "is_admin": True},
+                          {"username": "fifo2",
+                           "icon_path": "./Icons/default_user_icon.png",
+                           "is_admin": False}] if idx < 10 else
+                         [{"username": "fifo2",
+                           "icon_path": "./Icons/default_user_icon.png",
+                           "is_admin": True}]
+
             }
             item.setText(f"{item_data["chat_id"]}")
             item.setData(Qt.ItemDataRole.UserRole, item_data)
@@ -348,11 +360,17 @@ class ChatList(GenericList):
         self.list_widget.setCurrentRow(-1)
         self.__set_visibility()
 
+    def __current_user_in_list(self, users_list: list):
+        for item in users_list:
+            if self.current_user_data["username"] == item["username"]:
+                return True
+        return False
+
     def __set_visibility(self):
         for row in range(self.list_widget.count()):
             item = self.list_widget.item(row)
             item_data = item.data(Qt.ItemDataRole.UserRole)
-            if item_data["domain"] == self.current_user_data["domain"] and self.current_user_data["username"] in item_data["users"]:
+            if item_data["domain"] == self.current_user_data["domain"] and self.__current_user_in_list(item_data["users"]):
                 item.setHidden(False)
             else:
                 item.setHidden(True)
@@ -361,7 +379,7 @@ class ChatList(GenericList):
         for row in range(self.list_widget.count()):
             item = self.list_widget.item(row)
             item_data = item.data(Qt.ItemDataRole.UserRole)
-            if item_data["domain"] == self.current_user_data["domain"] and self.current_user_data["username"] in item_data["users"]:
+            if item_data["domain"] == self.current_user_data["domain"] and self.__current_user_in_list(item_data["users"]):
                 if text == "" or text in item.text():
                     item.setHidden(False)
                 else:
