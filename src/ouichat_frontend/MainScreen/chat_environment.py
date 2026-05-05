@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QPushButton, QVBoxLayout, QLabel, QStackedLayout, QWidget, QHBoxLayout,
-    QTextEdit, QSizePolicy, QScrollArea, QBoxLayout, QLineEdit, QListWidget, QAbstractItemView, QListWidgetItem
+    QTextEdit, QSizePolicy, QScrollArea, QLineEdit, QListWidget, QAbstractItemView, QListWidgetItem
 )
 
 from PyQt6.QtCore import Qt, QSize, pyqtSignal
@@ -136,10 +136,17 @@ class ChatMessagesArea(QScrollArea):
         self.container_layout = QVBoxLayout()
         self.container_layout.setContentsMargins(0, 5, 0, 10)
         self.container_layout.setSpacing(20)
-        self.container_layout.setDirection(QBoxLayout.Direction.BottomToTop)
         self.container.setLayout(self.container_layout)
 
+        self.scroll_bar = self.verticalScrollBar()
+        # noinspection PyUnresolvedReferences
+        # IDK why it gives a PyUnresolvedReferences here, but we'll roll with it
+        self.scroll_bar.rangeChanged.connect(self.__scroll_to_bottom)
+
         self.setWidget(self.container)
+
+    def __scroll_to_bottom(self, _: int, max_value: int):
+        self.scroll_bar.setValue(max_value)
 
     def load_messages(self, message_count: int, last_loaded_message_id: str | None):
 
@@ -164,9 +171,8 @@ class ChatMessagesArea(QScrollArea):
 
         # REQUEST MESSAGES
 
-    def send_message(self):
-        # SEND MESSAGE TO SERVER
-        pass
+    def add_message(self, message: ChatMessage):
+        self.container_layout.addWidget(message)
 
 class ChatMembersList(QWidget):
     def __init__(self, initial_members: list):
@@ -341,15 +347,14 @@ class ChatBubble(QWidget):
     def __init__(self, chat_details: dict, last_access_time: float, current_username: str):
         super().__init__()
 
-        self.chat_id = chat_details["chat_id"]
-        self.domain = chat_details["domain"]
+        self.chat_details = chat_details
         self.last_access_time = last_access_time
 
         self.chat = Chat(chat_details)
         self.chat.chat_details_requested.connect(self.display_chat_details)
 
-        self.chat_details = ChatDetails(chat_details, current_username)
-        self.chat_details.back_requested.connect(self.display_chat)
+        self.chat_details_widget = ChatDetails(chat_details, current_username)
+        self.chat_details_widget.back_requested.connect(self.display_chat)
 
         self.widget_layout = QStackedLayout()
         self.widget_layout.setContentsMargins(0, 0, 0, 0)
@@ -357,7 +362,7 @@ class ChatBubble(QWidget):
         self.setLayout(self.widget_layout)
 
         self.widget_layout.addWidget(self.chat)
-        self.widget_layout.addWidget(self.chat_details)
+        self.widget_layout.addWidget(self.chat_details_widget)
         self.widget_layout.setCurrentIndex(0)
 
     def handle_user_changed(self):
@@ -372,10 +377,6 @@ class ChatBubble(QWidget):
         self.change_textbox_visibility.emit(True)
 
 class ChatHistory(QWidget):
-    """
-    TO DO:
-        - finish implementing chat history
-    """
     change_textbox_visibility = pyqtSignal(bool)
 
     def __init__(self):
@@ -402,6 +403,13 @@ class ChatHistory(QWidget):
 
         self.widget_layout.setCurrentIndex(0)
 
+    def get_current_chat_details(self):
+        current_chat_idx = self.widget_layout.currentIndex()
+        current_widget = self.widget_layout.widget(current_chat_idx)
+        if isinstance(current_widget, ChatBubble):
+            return current_widget.chat_details
+        return None
+
     def show_chat(self, chat_data: dict | None):
         current_chat_idx = self.widget_layout.currentIndex()
         current_widget = self.widget_layout.widget(current_chat_idx)
@@ -413,7 +421,7 @@ class ChatHistory(QWidget):
         for idx in range(self.widget_layout.count()):
             widget = self.widget_layout.widget(idx)
             if isinstance(widget, ChatBubble):
-                if widget.chat_id == chat_data['chat_id'] and widget.domain == chat_data['domain']:
+                if widget.chat_details['chat_id'] == chat_data['chat_id'] and widget.chat_details['domain'] == chat_data['domain']:
                     self.widget_layout.setCurrentIndex(idx)
                     widget.last_access_time = time.time()
                     return
@@ -424,7 +432,7 @@ class ChatHistory(QWidget):
         for idx in range(self.widget_layout.count()):
             widget = self.widget_layout.widget(idx)
             if isinstance(widget, ChatBubble):
-                if widget.chat_id == chat_id and widget.domain == chat_domain:
+                if widget.chat_details['chat_id'] == chat_id and widget.chat_details['domain'] == chat_domain:
                     self.widget_layout.removeWidget(widget)
                     return
 
@@ -438,7 +446,7 @@ class ChatHistory(QWidget):
         for idx in range(bubble_count):
             widget = self.widget_layout.widget(idx)
             if isinstance(widget, ChatBubble):
-                widget.chat_details.update_button_visibility(username)
+                widget.chat_details_widget.update_button_visibility(username)
 
     def __add_bubble(self, chat_details: dict):
         bubble_count = self.widget_layout.count()
@@ -467,13 +475,19 @@ class ChatHistory(QWidget):
         self.widget_layout.setCurrentIndex(2)
 
     def add_message(self, chat_id: str, chat_domain:str, message: ChatMessage):
-        pass
+        for idx in range(self.widget_layout.count()):
+            widget = self.widget_layout.widget(idx)
+            if isinstance(widget, ChatBubble):
+                if widget.chat_details['chat_id'] == chat_id and widget.chat_details['domain'] == chat_domain:
+                    widget.chat.chat_messages.add_message(message)
 
 class ChatTextBox(QTextEdit):
     """
     TO DO:
         - implement send message (without requests initially)
     """
+    send_message = pyqtSignal()
+
     def __init__(self):
         super().__init__()
 
@@ -484,24 +498,27 @@ class ChatTextBox(QTextEdit):
         self.setFixedHeight(self.init_height)
         self.setMinimumWidth(50)
 
-    def __send_message(self):
+    def get_text(self):
         message = self.toPlainText().strip()
         if message:
-            # IMPLEMENT SEND MESSAGE REQUESTS
-            # MAKE SURE TO DELETE MESSAGE ONLY IF MESSAGE WAS SENT SUCCESSFULLY
-            self.clear()
+            return message
+        return None
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
             if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
                 super().keyPressEvent(event)
             else:
-                self.__send_message()
+                self.send_message.emit()
+                self.clear()
                 event.accept()
         else:
             super().keyPressEvent(event)
 
 class MessageWindow(QWidget):
+    send_message = pyqtSignal()
+    upload_file = pyqtSignal()
+
     def __init__(self):
         super().__init__()
 
@@ -509,17 +526,18 @@ class MessageWindow(QWidget):
         upload_file_button.setFixedSize(40, 40)
         upload_file_button.setIconSize(QSize(32, 32))
         upload_file_button.setIcon(QIcon("./Icons/upload_file_icon.png"))
-        upload_file_button.clicked.connect(self.__upload_file)
+        upload_file_button.clicked.connect(self.upload_file.emit)
 
         send_message_button = QPushButton()
         send_message_button.setFixedSize(40, 40)
         send_message_button.setIconSize(QSize(32, 32))
         send_message_button.setIcon(QIcon("./Icons/send_message_icon.png"))
-        send_message_button.clicked.connect(self.__send_message)
+        send_message_button.clicked.connect(self.emit_send_message)
 
         self.text_box = ChatTextBox()
         self.text_box.setMinimumWidth(200)
         self.text_box.textChanged.connect(self.__resize_text_box)
+        self.text_box.send_message.connect(self.send_message.emit)
 
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -547,17 +565,14 @@ class MessageWindow(QWidget):
             if text_height != box_height:
                 self.text_box.setFixedHeight(text_height)
 
-    def __upload_file(self):
-        pass
-
-    def __send_message(self):
-        pass
+    def emit_send_message(self):
+        self.send_message.emit()
+        self.text_box.clear()
 
 class ChatEnvironment(QWidget):
     """
     TO DO:
-        - make stacked widgets dynamically update when exiting a group chat
-        - on the top add a button widget with the name of the chat to see its members and admins
+        - make chat bubbles disappear when exiting a group chat
     """
 
     def __init__(self):
@@ -565,6 +580,8 @@ class ChatEnvironment(QWidget):
 
         self.chat_history = ChatHistory()
         self.message_window = MessageWindow()
+        self.message_window.send_message.connect(self.__send_message)
+        self.message_window.upload_file.connect(self.__upload_file)
 
         self.chat_history.change_textbox_visibility.connect(self.message_window.set_visibility_bool)
 
@@ -577,3 +594,40 @@ class ChatEnvironment(QWidget):
 
         self.setLayout(layout)
         self.setMinimumWidth(RIGHT_PANE_MIN_WIDTH)
+
+    def __send_message(self):
+        text = self.message_window.text_box.get_text()
+        if text is None: return
+        current_user = self.chat_history.current_user
+
+        chat_details = self.chat_history.get_current_chat_details()
+
+        # MAKE REQUESTS
+
+        message_id = "NEWLY_SENT_MESSAGE"
+        sender = current_user['username']
+        sender_icon_path = current_user['icon_path']
+        was_edited = False
+        is_reply = False
+        reply_sender = None
+        reply_sender_icon_path = None
+        reply_snip = None
+        local_time = time.localtime(time.time())
+        formated_time = time.strftime("%H:%M:%S %d/%m/%Y", local_time)
+
+        new_message = ChatMessage(
+            message_id=message_id,
+            sender=sender,
+            sender_icon_path=sender_icon_path,
+            was_edited=was_edited,
+            is_reply=is_reply,
+            reply_sender=reply_sender,
+            reply_sender_icon_path=reply_sender_icon_path,
+            reply_snip=reply_snip,
+            timestamp=formated_time,
+            text=text,
+        )
+        self.chat_history.add_message(chat_details['chat_id'], chat_details['domain'], new_message)
+
+    def __upload_file(self):
+        pass
