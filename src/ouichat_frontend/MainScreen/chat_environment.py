@@ -125,7 +125,6 @@ class ChatBubble(QScrollArea):
     """
     TO DO:
         - implement context menu for messages (reply, edit, delete)
-        - add spaces between messages
     """
     def __init__(self, chat_id: str, domain:str, last_access_time: float):
         super().__init__()
@@ -138,8 +137,8 @@ class ChatBubble(QScrollArea):
 
         self.container = QWidget()
         self.container_layout = QVBoxLayout()
-        self.container_layout.setContentsMargins(0, 0, 0, 0)
-        self.container_layout.setSpacing(5)
+        self.container_layout.setContentsMargins(0, 5, 0, 10)
+        self.container_layout.setSpacing(20)
         self.container_layout.setDirection(QBoxLayout.Direction.BottomToTop)
         self.container.setLayout(self.container_layout)
 
