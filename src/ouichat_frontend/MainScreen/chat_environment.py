@@ -1,10 +1,10 @@
 from PyQt6.QtWidgets import (
     QPushButton, QVBoxLayout, QLabel, QStackedLayout, QWidget, QHBoxLayout,
-    QTextEdit, QSizePolicy, QScrollArea, QLineEdit, QListWidget, QAbstractItemView, QListWidgetItem
+    QTextEdit, QSizePolicy, QScrollArea, QLineEdit, QListWidget, QAbstractItemView, QListWidgetItem, QMenu
 )
 
-from PyQt6.QtCore import Qt, QSize, pyqtSignal
-from PyQt6.QtGui import QIcon, QPixmap, QFontMetrics
+from PyQt6.QtCore import Qt, QSize, pyqtSignal, QEvent
+from PyQt6.QtGui import QIcon, QPixmap, QFontMetrics, QEnterEvent
 
 import time
 
@@ -39,12 +39,26 @@ class ElidedLabel(QLabel):
         return QSize(100, super().sizeHint().height())
 
 class ChatMessage(QWidget):
+    """
+    TO DO:
+        - beautify hover colors
+        - implement context menu
+    """
     def __init__(self, message_id: str, sender: str, sender_icon_path: str, was_edited: bool, is_reply: bool,
                  reply_sender: str | None, reply_sender_icon_path: str | None, reply_snip: str | None, timestamp: str,
                  text: str):
         super().__init__()
 
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setObjectName("ChatMessage")
+        self.setStyleSheet("#ChatMessage { background-color: transparent; border-radius: 5px; }")
+
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.show_context_menu)
+
         self.message_id = message_id
+
+        self.current_user = None
 
         self.sender = sender
         self.sender_icon_path = sender_icon_path
@@ -112,7 +126,10 @@ class ChatMessage(QWidget):
 
         top_layout.addWidget(sender_icon, alignment=Qt.AlignmentFlag.AlignTop)
         top_layout.addWidget(message_area, stretch=1)
-
+    
+    def update_current_user(self, user_data: dict):
+        self.current_user = user_data
+    
     def edit_text(self, text):
         self.message_text.setText(text)
 
@@ -121,6 +138,17 @@ class ChatMessage(QWidget):
             new_message_details = old_message_details + " (Edited)"
             self.message_details.setText(new_message_details)
             self.was_edited = True
+    
+    def show_context_menu(self, position):
+        pass
+    
+    def enterEvent(self, event: QEnterEvent):
+        self.setStyleSheet("#ChatMessage { background-color: #2D2D2D; border-radius: 5px; }")
+        super().enterEvent(event)
+
+    def leaveEvent(self, event: QEvent):
+        self.setStyleSheet("#ChatMessage { background-color: transparent; border-radius: 5px; }")
+        super().leaveEvent(event)
 
 class ChatMessagesArea(QScrollArea):
     """
@@ -170,7 +198,13 @@ class ChatMessagesArea(QScrollArea):
             self.container_layout.addWidget(message)
 
         # REQUEST MESSAGES
-
+    
+    def update_current_user(self, current_user: dict):
+        for idx in range(self.container_layout.count()):
+            message = self.container_layout.itemAt(idx).widget()
+            if isinstance(message, ChatMessage):
+                message.update_current_user(current_user)
+            
     def add_message(self, message: ChatMessage):
         self.container_layout.addWidget(message)
 
@@ -229,7 +263,7 @@ class ChatDetails(QScrollArea):
     """
     back_requested = pyqtSignal()
 
-    def __init__(self, chat_details: dict, current_username: str):
+    def __init__(self, chat_details: dict, current_user: dict):
         super().__init__()
 
         self.chat_type = chat_details['chat_type']
@@ -302,18 +336,18 @@ class ChatDetails(QScrollArea):
             self.container_layout.addWidget(self.chat_members_list)
             self.container_layout.addWidget(self.button_container)
 
-            self.update_button_visibility(current_username)
+            self.update_button_visibility(current_user)
 
         self.setWidget(self.container)
         self.setWidgetResizable(True)
 
-    def update_button_visibility(self, username: str):
+    def update_button_visibility(self, user: dict):
         if self.chat_type == 'p2p': return
 
         for row in range(self.chat_members_list.list_widget.count()):
             member = self.chat_members_list.list_widget.item(row)
             member_data = member.data(Qt.ItemDataRole.UserRole)
-            if member_data['username'] == username:
+            if member_data['username'] == user['username']:
                 self.button_container.setVisible(member_data['is_admin'])
                 return
 
@@ -344,16 +378,17 @@ class Chat(QWidget):
 class ChatBubble(QWidget):
     change_textbox_visibility = pyqtSignal(bool)
 
-    def __init__(self, chat_details: dict, last_access_time: float, current_username: str):
+    def __init__(self, chat_details: dict, last_access_time: float, current_user: dict):
         super().__init__()
 
         self.chat_details = chat_details
         self.last_access_time = last_access_time
 
         self.chat = Chat(chat_details)
+        self.chat.chat_messages.update_current_user(current_user)
         self.chat.chat_details_requested.connect(self.display_chat_details)
 
-        self.chat_details_widget = ChatDetails(chat_details, current_username)
+        self.chat_details_widget = ChatDetails(chat_details, current_user)
         self.chat_details_widget.back_requested.connect(self.display_chat)
 
         self.widget_layout = QStackedLayout()
@@ -364,10 +399,11 @@ class ChatBubble(QWidget):
         self.widget_layout.addWidget(self.chat)
         self.widget_layout.addWidget(self.chat_details_widget)
         self.widget_layout.setCurrentIndex(0)
-
-    def handle_user_changed(self):
-        self.display_chat()
-
+    
+    def update_current_user(self, current_user: dict):
+        self.chat.chat_messages.update_current_user(current_user)
+        self.chat_details_widget.update_button_visibility(current_user)
+    
     def display_chat_details(self):
         self.widget_layout.setCurrentIndex(1)
         self.change_textbox_visibility.emit(False)
@@ -415,6 +451,7 @@ class ChatHistory(QWidget):
         current_widget = self.widget_layout.widget(current_chat_idx)
         if isinstance(current_widget, ChatBubble):
             current_widget.display_chat()
+            current_widget.chat_details_widget.verticalScrollBar().setValue(0)
 
         if chat_data is None: return
 
@@ -436,17 +473,15 @@ class ChatHistory(QWidget):
                     self.widget_layout.removeWidget(widget)
                     return
 
-    def set_current_user(self, user_data: dict):
+    def update_current_user(self, user_data: dict):
         self.current_user = user_data
         self.widget_layout.setCurrentIndex(0)
 
-    def update_member_management_visibility(self, user_data: dict):
-        username = user_data['username']
         bubble_count = self.widget_layout.count()
         for idx in range(bubble_count):
             widget = self.widget_layout.widget(idx)
             if isinstance(widget, ChatBubble):
-                widget.chat_details_widget.update_button_visibility(username)
+                widget.update_current_user(user_data)
 
     def __add_bubble(self, chat_details: dict):
         bubble_count = self.widget_layout.count()
@@ -464,7 +499,7 @@ class ChatHistory(QWidget):
             self.widget_layout.removeWidget(oldest_widget)
 
         current_time = time.time()
-        new_bubble = ChatBubble(chat_details, current_time, self.current_user['username'])
+        new_bubble = ChatBubble(chat_details, current_time, self.current_user)
         new_bubble.change_textbox_visibility.connect(self.change_textbox_visibility.emit)
         self.widget_layout.insertWidget(2, new_bubble)
         # at index 0 there is a special screen for when there are no chats selected
@@ -484,7 +519,7 @@ class ChatHistory(QWidget):
 class ChatTextBox(QTextEdit):
     """
     TO DO:
-        - implement send message (without requests initially)
+        - implement send message with requests
     """
     send_message = pyqtSignal()
 
@@ -572,7 +607,6 @@ class MessageWindow(QWidget):
 class ChatEnvironment(QWidget):
     """
     TO DO:
-        - make chat bubbles disappear when exiting a group chat
     """
 
     def __init__(self):
