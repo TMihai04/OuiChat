@@ -46,7 +46,7 @@ class ChatMessage(QWidget):
     """
     def __init__(self, message_id: str, sender: str, sender_icon_path: str, was_edited: bool, is_reply: bool,
                  reply_sender: str | None, reply_sender_icon_path: str | None, reply_snip: str | None, timestamp: str,
-                 text: str):
+                 text: str, chat_details: dict):
         super().__init__()
 
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -59,6 +59,7 @@ class ChatMessage(QWidget):
         self.message_id = message_id
 
         self.current_user = None
+        self.chat_details = chat_details
 
         self.sender = sender
         self.sender_icon_path = sender_icon_path
@@ -126,7 +127,10 @@ class ChatMessage(QWidget):
 
         top_layout.addWidget(sender_icon, alignment=Qt.AlignmentFlag.AlignTop)
         top_layout.addWidget(message_area, stretch=1)
-    
+
+    def update_chat_details(self, chat_details: dict):
+        self.chat_details = chat_details
+
     def update_current_user(self, user_data: dict):
         self.current_user = user_data
     
@@ -140,7 +144,43 @@ class ChatMessage(QWidget):
             self.was_edited = True
     
     def show_context_menu(self, position):
-        pass
+
+        user_is_sender = self.sender == self.current_user['username']
+        print(user_is_sender)
+
+        user_is_admin = False
+        for user_data in self.chat_details['users']:
+            if user_data['username'] == self.current_user['username']:
+                user_is_admin = user_data['is_admin']
+
+        edit = None
+        delete = None
+
+        menu = QMenu()
+
+        reply = menu.addAction("Reply")
+
+        if user_is_admin:
+            menu.addSeparator()
+            delete = menu.addAction("Delete Message")
+        if user_is_sender:
+            menu.addSeparator()
+            edit = menu.addAction("Edit Message")
+
+        global_pos = self.mapToGlobal(position)
+        selected_action = menu.exec(global_pos)
+
+        # Check the message still exists before doing any of the options
+
+        if selected_action == reply:
+            # TO BE IMPLEMENTED
+            pass
+        elif selected_action == edit:
+            # TO BE IMPLEMENTED
+            pass
+        elif selected_action == delete:
+            # TO BE IMPLEMENTED
+            pass
     
     def enterEvent(self, event: QEnterEvent):
         self.setStyleSheet("#ChatMessage { background-color: #2D2D2D; border-radius: 5px; }")
@@ -176,7 +216,7 @@ class ChatMessagesArea(QScrollArea):
     def __scroll_to_bottom(self, _: int, max_value: int):
         self.scroll_bar.setValue(max_value)
 
-    def load_messages(self, message_count: int, last_loaded_message_id: str | None):
+    def load_messages(self, message_count: int, last_loaded_message_id: str | None, chat_details: dict):
 
         for idx in range(20):
             is_reply = idx % 2 == 1
@@ -194,7 +234,8 @@ class ChatMessagesArea(QScrollArea):
                                   reply_sender_icon_path=f"./Icons/default_user_icon.png",
                                   reply_snip="Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
                                   timestamp=formated_time,
-                                  text="Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.")
+                                  text="Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
+                                  chat_details=chat_details)
             self.container_layout.addWidget(message)
 
         # REQUEST MESSAGES
@@ -506,7 +547,8 @@ class ChatHistory(QWidget):
         # at index 1 there is a special screen for when messages are loading
 
         self.widget_layout.setCurrentIndex(1)
-        new_bubble.chat.chat_messages.load_messages(50, None)
+        new_bubble.chat.chat_messages.load_messages(50, None, chat_details)
+        new_bubble.update_current_user(self.current_user)
         self.widget_layout.setCurrentIndex(2)
 
     def add_message(self, chat_id: str, chat_domain:str, message: ChatMessage):
@@ -515,6 +557,7 @@ class ChatHistory(QWidget):
             if isinstance(widget, ChatBubble):
                 if widget.chat_details['chat_id'] == chat_id and widget.chat_details['domain'] == chat_domain:
                     widget.chat.chat_messages.add_message(message)
+                    widget.chat.chat_messages.update_current_user(self.current_user)
 
 class ChatTextBox(QTextEdit):
     """
@@ -660,6 +703,7 @@ class ChatEnvironment(QWidget):
             reply_snip=reply_snip,
             timestamp=formated_time,
             text=text,
+            chat_details=chat_details
         )
         self.chat_history.add_message(chat_details['chat_id'], chat_details['domain'], new_message)
 
