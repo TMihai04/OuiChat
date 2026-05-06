@@ -192,6 +192,7 @@ class ChatList(QWidget):
     def handle_user_change(self, data: dict):
         self.current_user_data = data
         self.list_widget.setCurrentRow(-1)
+        self.list_widget.verticalScrollBar().setValue(0)
         self.__set_visibility()
 
     def __current_user_in_list(self, users_list: list):
@@ -235,12 +236,17 @@ class ChatList(QWidget):
         if not item: return
 
         chat_data = item.data(Qt.ItemDataRole.UserRole)
-        chat_privilege = chat_data.get("chat_privilege")
+
+        user_is_admin = False
+        for idx in range(len(chat_data["users"])):
+            if chat_data["users"][idx]["username"] == self.current_user_data["username"]:
+                user_is_admin = chat_data["users"][idx]["is_admin"]
+                break
+
         chat_type = chat_data.get("chat_type")
         chat_id = chat_data.get("chat_id")
 
         exit_chat_action = None
-        manage_members_action = None
         delete_chat_action = None
         block_user_action = None
 
@@ -253,9 +259,8 @@ class ChatList(QWidget):
             block_user_action = menu.addAction("Block User")
         else:
             exit_chat_action = menu.addAction("Exit Chat")
-            if chat_privilege == "admin":
+            if user_is_admin:
                 menu.addSeparator()
-                manage_members_action = menu.addAction("Manage Members")
                 delete_chat_action = menu.addAction("Delete Chat")
 
         global_pos = self.list_widget.mapToGlobal(position)
@@ -272,9 +277,6 @@ class ChatList(QWidget):
             pass
         elif selected_action == exit_chat_action:
             self.__exit_chat(chat_id)
-        elif selected_action == manage_members_action:
-            # TO BE IMPLEMENTED
-            pass
         elif selected_action == delete_chat_action:
             self.__delete_chat(chat_id)
 
