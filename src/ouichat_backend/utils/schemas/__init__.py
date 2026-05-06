@@ -4,9 +4,12 @@ from .outputs import *
 
 __all__ = [
     # db.py
+    "UserProfileDocument",
     "UserPreferencesDocument",
     "UserDocument",
     # outputs.py
     "NewTokensResponse",
-    "GenericResponse",
+    "GenericMessageResponse",
+    "GenericItemsResponse",
+    "GenericItemResponse",
 ]

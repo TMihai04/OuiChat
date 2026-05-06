@@ -6,11 +6,7 @@ from pydantic import (
 )
 
 
-class UserPreferencesDocument(BaseModel):
-    blacklist: list[str] = Field(
-        default=[],
-        description="List of usernames this user has 'blocked'"
-    )
+class UserProfileDocument(BaseModel):
     status: str = Field(
         default="Hi there!",
         description="Short text displayed as a status",
@@ -21,6 +17,13 @@ class UserPreferencesDocument(BaseModel):
         default=None,
         description="Id of an attachement document",
         min_length=1,
+    )
+
+
+class UserPreferencesDocument(BaseModel):
+    blacklist: list[str] = Field(
+        default=[],
+        description="List of usernames this user has 'blocked'"
     )
 
 
@@ -35,15 +38,10 @@ class UserDocument(BaseModel):
         description="Hash of the password",
         min_length=1,
     )
-    # refresh_jti: str | None = Field(
-    #     default=None,
-    #     description="Jti of the refresh token that is currently is use for the user",
-    #     min_length=1,
-    # )
-    # refresh_jti_old: list[str] = Field(
-    #     default=[],
-    #     description="List of jtis from refresh tokens used by this user. Used as protection against token leaks"
-    # )
+    profile: UserProfileDocument = Field(
+        default=UserProfileDocument(),
+        description="User profile information"
+    )
     preferences: UserPreferencesDocument = Field(
         default=UserPreferencesDocument(),
         description="User preferences"

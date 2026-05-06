@@ -2,6 +2,13 @@
 
 from ouichat_backend.logger import logger
 from ouichat_backend.utils.constants import startup
+from ouichat_backend.utils.schemas import (
+    UserDocument,
+    UserPreferencesDocument,
+)
+from ouichat_backend.utils.methods import (
+    timestamp_now,
+)
 
 from pymongo import AsyncMongoClient
 
@@ -85,3 +92,98 @@ def get_chats_collection():
         startup.DB_NAME,
         startup.CHATS_COLLECTION_NAME
     )
+
+
+# ================================
+# Abstractions for checks
+# ================================
+
+async def user_exists(username: str) -> bool:
+    collection = get_users_collection()
+
+    one_doc = await collection.find_one(
+        filter={
+            "username": username,
+        }
+    )
+    if one_doc:
+        return True
+    return False
+
+
+# ================================
+# Abstractions for operations
+# ================================
+
+# User entries
+async def add_user(new_user: UserDocument):
+    collection = get_users_collection()
+
+    await collection.insert_one(
+        new_user.model_dump()
+    )
+
+    # Notify websocket of update
+
+
+async def get_user(
+    username: str,
+    **kwargs,
+):
+    collection = get_users_collection()
+    return await collection.find_one(
+        filter={
+            "username": username
+        },
+        **kwargs
+    )
+
+
+async def get_all_users(**kwargs) -> list:
+    collection = get_users_collection()
+    return await collection.find(
+        **kwargs,
+    ).to_list(length=None)
+
+
+async def delete_user(username: str):
+    collection = get_users_collection()
+
+    await collection.delete_one(
+        filter={
+            "username": username
+        }
+    )
+
+    # Notify websocket of update
+
+
+async def update_user(
+    username: str,
+    *,
+    update: dict,
+    **kwargs
+):
+    collection = get_users_collection()
+
+    ret = None
+    if update:
+        ret = await collection.update_one(
+            filter={
+                "username": username
+            },
+            update=update,
+            **kwargs
+        )
+    # Update time in different db operation
+    ret2 = await collection.update_one(
+        filter={
+            "username": username
+        },
+        update={
+            "$set": {"updated_at": timestamp_now()}
+        }
+    )
+
+    # Notify websocket of update
+    return ret or ret2

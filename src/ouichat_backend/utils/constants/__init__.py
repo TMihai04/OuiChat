@@ -1,5 +1,5 @@
 from .auth import *
-from .hardcoded import *
+from .tags import *
 
 
 __all__ = [
@@ -12,4 +12,7 @@ __all__ = [
     "OAUTH2_SCHEME",
     "REFRESH_SCHEME",
     "CREDENTIALS_EXCEPTION",
+    # tags.py
+    "EndpointTags",
+    "EndpointPrefixes"
 ]

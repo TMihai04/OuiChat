@@ -31,8 +31,22 @@ class NewTokensResponse(BaseModel):
 # Misc
 # =================================
 
-class GenericResponse(BaseModel):
+class GenericMessageResponse(BaseModel):
     message: str = Field(
         default="Success",
         description="Message for a generic response from the API"
+    )
+
+
+class GenericItemsResponse(BaseModel):
+    items: list = Field(
+        default=[],
+        description="List of items for a generic response from the API"
+    )
+
+
+class GenericItemResponse(BaseModel):
+    item: dict = Field(
+        default={},
+        description="Json object for a generic response from the API"
     )

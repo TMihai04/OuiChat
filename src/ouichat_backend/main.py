@@ -32,3 +32,4 @@ fapi = FastAPI(
 
 
 fapi.include_router(auth_router)
+fapi.include_router(index_router)

@@ -8,13 +8,15 @@ from ouichat_backend.utils.methods import (
     create_access_token,
     create_refresh_token,
     decode_token,
-    get_users_collection,
+    timestamp_now,
+    db,
 )
 from ouichat_backend.utils import (
     CREDENTIALS_EXCEPTION,
     OAUTH2_SCHEME,
     REFRESH_SCHEME,
     NewTokensResponse,
+    EndpointTags,
 )
 
 from fastapi import (
@@ -32,10 +34,15 @@ import jwt
 import uuid
 
 
-router = APIRouter()
+router = APIRouter(
+    tags=[EndpointTags.AUTHORIZATION]
+)
 
 
-@router.post("/login")
+@router.post(
+    "/login",
+    status_code=status.HTTP_201_CREATED
+)
 async def login_for_tokens(
     form_data: OAuth2PasswordRequestFormStrict = Depends(),
 ) -> NewTokensResponse:
@@ -44,11 +51,8 @@ async def login_for_tokens(
     logger.debug(f"Logging in user - username: {form_data.username}")
 
     # Check if user exists
-    users_collection = get_users_collection()
-    one_doc = await users_collection.find_one(
-        filter={
-            "username": form_data.username
-        },
+    one_doc = await db.get_user(
+        form_data.username,
         projection={
             "_id": 0,
             "pwd_hash": 1,
@@ -66,6 +70,13 @@ async def login_for_tokens(
     access_token = create_access_token(form_data.username)
     refresh_token = create_refresh_token(form_data.username, refresh_token_id)
 
+    await db.update_user(
+        form_data.username,
+        update={
+            "$set": {"last_updated": timestamp_now()}
+        }
+    )
+
     logger.debug(f"access: {access_token}\n\trefresh: {refresh_token}")
     logger.info(f"Successfully logged in and generated keys - username: {form_data.username}")
 
@@ -75,7 +86,10 @@ async def login_for_tokens(
     )
     
 
-@router.post("/refresh")
+@router.post(
+    "/refresh",
+    status_code=status.HTTP_201_CREATED
+)
 async def refresh_for_tokens(
     credentials: HTTPAuthorizationCredentials = Depends(REFRESH_SCHEME),
 ) -> NewTokensResponse:
@@ -102,9 +116,3 @@ async def refresh_for_tokens(
         refresh_token=refresh_token,
     )
 
-
-@router.get("/test")
-async def test(
-    token: str = Depends(OAUTH2_SCHEME),
-):
-    return {"ok": 1}

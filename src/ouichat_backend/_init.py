@@ -5,7 +5,7 @@ from ouichat_backend.utils.constants import startup
 from ouichat_backend.utils.methods import (
     get_env_bool,
     get_env_str,
-    connect_client,
+    db,
 )
 
 
@@ -38,7 +38,7 @@ async def init_mongo_client():
         f"Mongo Uri: {db_uri}"
     )
     
-    if not await connect_client(db_uri):
+    if not await db.connect_client(db_uri):
         raise ValueError("Something went wrong when connecting to mongdb")
     logger.info(
         "Successfully connected to mongdb"

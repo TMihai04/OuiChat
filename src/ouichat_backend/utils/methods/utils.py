@@ -3,6 +3,7 @@
 from ouichat_backend.logger import logger
 
 from dotenv import load_dotenv
+from datetime import datetime, timezone
 
 import os
 
@@ -41,3 +42,7 @@ def get_env_bool(env_name: str) -> bool:
         f"(bool) `{env_name}` {warning_msg}"
     )
     return False
+
+
+def timestamp_now() -> int:
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
