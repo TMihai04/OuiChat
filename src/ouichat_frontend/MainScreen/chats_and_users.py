@@ -70,7 +70,7 @@ class LeftPanelInteractions(QWidget):
             item_text = item_text[::-1].split("( ", maxsplit=1) # inverting the text so that our separator (initially ' (' and now '( ') is the first
             username = item_text[1][::-1] # gets the username
             domain = item_text[0][:0:-1] # gets the domain and removes the trailing parentheses
-            self.brain.interaction_panel_current_user_changed.emit(username, domain)
+            self.brain.current_user_changed.emit(username, domain)
 
         else:
             if self.login_dialog.exec() == QDialog.DialogCode.Accepted:
@@ -106,7 +106,7 @@ class ChatList(QWidget):
         super().__init__()
 
         self.brain = brain
-        self.brain.interaction_panel_current_user_changed.connect(self.handle_current_user_changed)
+        self.brain.current_user_changed.connect(self.handle_current_user_changed)
 
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Search chat...")
@@ -193,13 +193,13 @@ class ChatList(QWidget):
 
     def emit_selected_chat_id_and_domain(self, row: int):
         if row == -1:
-            self.brain.interaction_panel_chat_selected.emit("", "")
+            self.brain.chat_selected.emit("", "")
             return
 
         item = self.list_widget.item(row)
         chat_id = item.text()
         chat_domain = item.data(Qt.ItemDataRole.UserRole)['domain']
-        self.brain.interaction_panel_chat_selected.emit(chat_id, chat_domain)
+        self.brain.chat_selected.emit(chat_id, chat_domain)
 
     def show_context_menu(self, position):
         item = self.list_widget.itemAt(position)

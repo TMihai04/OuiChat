@@ -8,6 +8,8 @@ from PyQt6.QtGui import QIcon, QPixmap, QFontMetrics, QEnterEvent
 
 import time
 
+from ouichat_frontend.brain import Brain
+
 RIGHT_PANE_MIN_WIDTH = 310
 MEMBERS_SEARCH_BAR_WIDTH = 200
 
@@ -560,14 +562,10 @@ class ChatHistory(QWidget):
                     widget.chat.chat_messages.update_current_user(self.current_user)
 
 class ChatTextBox(QTextEdit):
-    """
-    TO DO:
-        - implement send message with requests
-    """
-    send_message = pyqtSignal()
-
-    def __init__(self):
+    def __init__(self, brain: Brain):
         super().__init__()
+
+        self.brain = brain
 
         self.init_height = 25
         self.max_height = 73
@@ -576,46 +574,41 @@ class ChatTextBox(QTextEdit):
         self.setFixedHeight(self.init_height)
         self.setMinimumWidth(50)
 
-    def get_text(self):
-        message = self.toPlainText().strip()
-        if message:
-            return message
-        return None
-
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
             if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
                 super().keyPressEvent(event)
             else:
-                self.send_message.emit()
-                self.clear()
+                self.brain.send_message.emit()
                 event.accept()
         else:
             super().keyPressEvent(event)
 
 class MessageWindow(QWidget):
-    send_message = pyqtSignal()
-    upload_file = pyqtSignal()
-
-    def __init__(self):
+    """
+    TO DO:
+        - implement send_message without requests after `Brain` modification
+        - implement upload_file with requests
+    """
+    def __init__(self, brain: Brain):
         super().__init__()
+
+        self.brain = brain
 
         upload_file_button = QPushButton()
         upload_file_button.setFixedSize(40, 40)
         upload_file_button.setIconSize(QSize(32, 32))
         upload_file_button.setIcon(QIcon("./Icons/upload_file_icon.png"))
-        upload_file_button.clicked.connect(self.upload_file.emit)
+        upload_file_button.clicked.connect(self.upload_file)
 
         send_message_button = QPushButton()
         send_message_button.setFixedSize(40, 40)
         send_message_button.setIconSize(QSize(32, 32))
         send_message_button.setIcon(QIcon("./Icons/send_message_icon.png"))
-        send_message_button.clicked.connect(self.emit_send_message)
+        send_message_button.clicked.connect(self.send_message)
 
-        self.text_box = ChatTextBox()
+        self.text_box = ChatTextBox(brain)
         self.text_box.setMinimumWidth(200)
-        self.text_box.textChanged.connect(self.__resize_text_box)
-        self.text_box.send_message.connect(self.send_message.emit)
 
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -627,6 +620,11 @@ class MessageWindow(QWidget):
 
         self.setLayout(layout)
         self.setVisible(False) # initially not visible due to no chat being selected
+
+        self.brain.textbox_text_changed.connect(self.__resize_text_box)
+        self.brain.send_message.connect(self.send_message)
+        self.brain.change_textbox_visibility.connect(self.set_visibility_bool)
+        self.brain.chat_selected.connect(self.set_visibility_dict)
 
     def set_visibility_bool(self, is_visible: bool):
         self.setVisible(is_visible)
@@ -643,24 +641,31 @@ class MessageWindow(QWidget):
             if text_height != box_height:
                 self.text_box.setFixedHeight(text_height)
 
-    def emit_send_message(self):
-        self.send_message.emit()
-        self.text_box.clear()
+    def send_message(self):
+
+        text = self.text_box.toPlainText().strip()
+        if text == "": return
+
+        # SEND MESSAGE REQUEST
+        # ON RESPONSE = OK, CLEAR THE TEXTBOX AND SET REPLY DETAILS AND EDIT DETAILS TO NONE
+
+        pass
+
+    def upload_file(self):
+        pass
 
 class ChatEnvironment(QWidget):
     """
     TO DO:
+        - implement `Brain` modification to EVERYTHING in ChatHistory
     """
-
-    def __init__(self):
+    def __init__(self, brain: Brain):
         super().__init__()
 
-        self.chat_history = ChatHistory()
-        self.message_window = MessageWindow()
-        self.message_window.send_message.connect(self.__send_message)
-        self.message_window.upload_file.connect(self.__upload_file)
+        self.brain = brain
 
-        self.chat_history.change_textbox_visibility.connect(self.message_window.set_visibility_bool)
+        self.chat_history = ChatHistory(brain)
+        self.message_window = MessageWindow(brain)
 
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -671,41 +676,3 @@ class ChatEnvironment(QWidget):
 
         self.setLayout(layout)
         self.setMinimumWidth(RIGHT_PANE_MIN_WIDTH)
-
-    def __send_message(self):
-        text = self.message_window.text_box.get_text()
-        if text is None: return
-        current_user = self.chat_history.current_user
-
-        chat_details = self.chat_history.get_current_chat_details()
-
-        # MAKE REQUESTS
-
-        message_id = "NEWLY_SENT_MESSAGE"
-        sender = current_user['username']
-        sender_icon_path = current_user['icon_path']
-        was_edited = False
-        is_reply = False
-        reply_sender = None
-        reply_sender_icon_path = None
-        reply_snip = None
-        local_time = time.localtime(time.time())
-        formated_time = time.strftime("%H:%M:%S %d/%m/%Y", local_time)
-
-        new_message = ChatMessage(
-            message_id=message_id,
-            sender=sender,
-            sender_icon_path=sender_icon_path,
-            was_edited=was_edited,
-            is_reply=is_reply,
-            reply_sender=reply_sender,
-            reply_sender_icon_path=reply_sender_icon_path,
-            reply_snip=reply_snip,
-            timestamp=formated_time,
-            text=text,
-            chat_details=chat_details
-        )
-        self.chat_history.add_message(chat_details['chat_id'], chat_details['domain'], new_message)
-
-    def __upload_file(self):
-        pass

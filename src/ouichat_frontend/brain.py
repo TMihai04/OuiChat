@@ -1,18 +1,25 @@
 from PyQt6.QtCore import QObject, pyqtSignal
 
+from ouichat_frontend.MainScreen.chat_environment import ChatMessage
+
 class Brain(QObject):
     chat_added = pyqtSignal(dict)
     chat_removed = pyqtSignal(dict)
 
     user_added = pyqtSignal(dict)
     user_removed = pyqtSignal(dict)
-    interaction_panel_current_user_changed = pyqtSignal(dict)
+    current_user_changed = pyqtSignal(str, str)
+    chat_selected = pyqtSignal(str, str)
+    change_textbox_visibility = pyqtSignal(bool)
+    textbox_text_changed = pyqtSignal(str)
+
+    add_new_message = pyqtSignal(ChatMessage)
+
+    send_message = pyqtSignal()
 
     main_window_settings_requested = pyqtSignal()
     main_window_comms_requested = pyqtSignal()
     main_window_user_settings_requested = pyqtSignal()
-
-    interaction_panel_chat_selected = pyqtSignal(str, str)
 
     def __init__(self):
         super().__init__()
@@ -21,6 +28,41 @@ class Brain(QObject):
         self.chats_list = []
 
         self.current_user = None
+        self.current_chat = None
+
+        self.is_reply = False
+        self.reply_user = None
+        self.reply_user_icon_path = None
+        self.reply_snip = None
+
+        self.is_edit = False
+        self.edit_message_id = None
+
+        self.chat_selected.connect(self.set_current_chat)
+
+    def set_edit(self, is_edit: bool, message_id: str = None):
+        self.is_edit = is_edit
+        self.edit_message_id = message_id
+
+    def get_edit_details(self):
+        return {
+            "is_edit": self.is_edit,
+            "edit_message_id": self.edit_message_id,
+        }
+
+    def set_reply(self, is_reply: bool, reply_user: str = None, reply_user_icon_path: str = None, reply_snip: str = None):
+        self.is_reply = is_reply
+        self.reply_user = reply_user
+        self.reply_user_icon_path = reply_user_icon_path
+        self.reply_snip = reply_snip
+
+    def get_reply_details(self):
+        return {
+            "is_reply": self.is_reply,
+            "reply_user": self.reply_user,
+            "reply_user_icon_path": self.reply_user_icon_path,
+            "reply_snip": self.reply_snip
+        }
 
     def get_current_user(self):
         return self.current_user
@@ -37,7 +79,7 @@ class Brain(QObject):
     def add_user(self, user_data: dict):
         self.users_list.append(user_data)
         self.current_user = user_data
-        self.interaction_panel_current_user_changed.emit(user_data)
+        self.current_user_changed.emit(user_data['username'], user_data['domain'])
 
     def remove_user(self, user_data: dict):
         self.users_list.remove(user_data)
@@ -58,6 +100,16 @@ class Brain(QObject):
         })[0]
         self.remove_user(user)
 
+    def set_current_chat(self, chat_id: str, domain: str):
+        if chat_id == "" and domain == "":
+            self.current_chat = None
+            return
+
+        self.current_chat = self.find_chats({
+            "chat_id": chat_id,
+            "domain": domain
+        })[0]
+
     def get_chat_ids(self):
         return map(lambda chat: chat['chat_id'], self.chats_list)
 
@@ -73,6 +125,12 @@ class Brain(QObject):
             "domain": domain
         })[0]
         return map(lambda user: user['username'], chat['users'])
+
+    def get_current_chat_id(self):
+        return self.current_chat['chat_id']
+
+    def get_current_chat_domain(self):
+        return self.current_chat['domain']
 
     def get_chat_type(self, chat_id: str, domain: str):
         chat = self.find_chats({

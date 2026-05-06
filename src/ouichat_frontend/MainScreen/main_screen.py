@@ -15,9 +15,8 @@ class MainScreen(QWidget):
         right_panel = ChatEnvironment(brain)
         right_panel.chat_history.update_current_user(brain.get_current_user())
 
-        brain.interaction_panel_chat_selected.connect(right_panel.message_window.set_visibility_dict)
-        brain.interaction_panel_chat_selected.connect(right_panel.chat_history.show_chat)
-        brain.interaction_panel_current_user_changed.connect(right_panel.chat_history.update_current_user)
+        brain.chat_selected.connect(right_panel.chat_history.show_chat)
+        brain.current_user_changed.connect(right_panel.chat_history.update_current_user)
 
         layout = QHBoxLayout()
         layout.setContentsMargins(10, 10, 10, 10)
