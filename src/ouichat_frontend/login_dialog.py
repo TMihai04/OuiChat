@@ -142,8 +142,7 @@ class LogInDialog(QDialog):
 
                 self.brain.add_chat(chat_data)
 
-            self.brain.add_user(user_data)
-            self.brain.update_current_user(user_data)
+            self.brain.add_user(user_data) # also sets it as the current user
 
             self.accept()
 

@@ -72,25 +72,14 @@ class LeftPanelInteractions(QWidget):
             domain = item_text[0][:0:-1] # gets the domain and removes the trailing parentheses
             self.brain.interaction_panel_current_user_changed.emit(username, domain)
 
-        # CONTINUE UPDATING DOWNWARDS
         else:
             if self.login_dialog.exec() == QDialog.DialogCode.Accepted:
-                user_icon_path = self.login_dialog.user_data['icon_path']
-                user_icon = QIcon(self.login_dialog.user_data['icon_path'])
-                username = self.login_dialog.user_data['username']
-                token = self.login_dialog.user_data['token']
-                domain = self.login_dialog.user_data['domain']
-
-                current_user_data = {
-                    "username": username,
-                    "domain": domain,
-                    "icon_path": user_icon_path,
-                    "request_token": token,
-                    "refresh_token": "REFRESH_TOKEN " + token,
-                }
-
                 self.users_dropdown.blockSignals(True)
-                self.users_dropdown.insertItem(row, user_icon, f"{username} ({domain})", userData=current_user_data)
+                current_user_icon_path = self.brain.get_current_user_icon()
+                current_user_icon = QIcon(current_user_icon_path)
+                current_user_username = self.brain.get_current_user_username()
+                current_user_domain = self.brain.get_current_user_domain()
+                self.users_dropdown.insertItem(row, current_user_icon, f"{current_user_username} ({current_user_domain})")
                 self.users_dropdown.blockSignals(False)
 
                 self.users_dropdown.setCurrentIndex(row)
@@ -103,7 +92,7 @@ class LeftPanelInteractions(QWidget):
 
         num_entries = self.users_dropdown.count()
         if num_entries == MAX_USERS + 1:
-            # entry at `user_count` will always be `Add User`
+            # entry at `idx = MAX_USERS` will always be `Add User`
             self.dropdown_model.item(num_entries - 1).setEnabled(False)
         else:
             self.dropdown_model.item(num_entries - 1).setEnabled(True)

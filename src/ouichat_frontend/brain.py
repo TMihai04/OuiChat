@@ -32,14 +32,12 @@ class Brain(QObject):
         return self.current_user["domain"]
 
     def get_current_user_icon(self):
-        return self.current_user["icon_pah"]
-
-    def update_current_user(self, user_data: dict):
-        self.current_user = user_data
-        self.interaction_panel_current_user_changed.emit(user_data)
+        return self.current_user["icon_path"]
 
     def add_user(self, user_data: dict):
         self.users_list.append(user_data)
+        self.current_user = user_data
+        self.interaction_panel_current_user_changed.emit(user_data)
 
     def remove_user(self, user_data: dict):
         self.users_list.remove(user_data)
