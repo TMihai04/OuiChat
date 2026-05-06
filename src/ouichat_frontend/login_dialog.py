@@ -4,6 +4,8 @@ from PyQt6.QtWidgets import (
 
 from PyQt6.QtCore import Qt
 
+from ouichat_frontend.brain import Brain
+
 MAX_USERNAME_LENGTH = 16
 MAX_PASSWORD_LENGTH = 32
 
@@ -13,16 +15,10 @@ def make_request(domain: str, user: str, password: str):
     return True, "TOKEN"
 
 class LogInDialog(QDialog):
-    def __init__(self):
+    def __init__(self, brain: Brain):
         super().__init__()
 
-        self.user_data = {
-            "username": "",
-            "password": "",
-            "token": "",
-            "icon_path": "",
-            "domain": ""
-        }
+        self.brain = brain
 
         description_label = QLabel()
         description_label.setText("Insert domain and credentials")
@@ -113,11 +109,43 @@ class LogInDialog(QDialog):
             self.domain_line_edit.clear()
 
             # IMPLEMENT INFO RETRIEVAL
-            self.user_data['username'] = username
-            self.user_data['token'] = ret[1]
-            self.user_data['icon_path'] = "./Icons/default_user_icon.png"
-            self.user_data['domain'] = domain
+
+            user_data = {
+                "username": username,
+                "domain": domain,
+                "icon_path": "./Icons/default_user_icon.png",
+                "request_token": "TOKEN",
+                "refresh_token": "REFRESH_TOKEN",
+            }
+
+            for idx in range(20):  # adding 20 chat rooms to the list
+                chat_data = {
+                    "chat_type": "chatroom", # {"chatroom", "p2p"}
+                    "chat_setting": "rw", # {"rw", "ro"}
+                    "domain": "test.test.ro" if idx < 10 else "test2.test2.ro",
+                    "chat_id": str(idx),
+                    "chat_description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
+                    "icon_path": "./Icons/chat_room_icon.png",
+                    "users":    [{"username": "fifo",
+                                  "icon_path": "./Icons/default_user_icon.png",
+                                  "is_admin": True}] if idx < 5 else
+                                [{"username": "fifo",
+                                  "icon_path": "./Icons/default_user_icon.png",
+                                  "is_admin": True},
+                                 {"username": "fifo2",
+                                  "icon_path": "./Icons/default_user_icon.png",
+                                  "is_admin": False}] if idx < 10 else
+                                [{"username": "fifo2",
+                                  "icon_path": "./Icons/default_user_icon.png",
+                                  "is_admin": True}]
+                }
+
+                self.brain.add_chat(chat_data)
+
+            self.brain.add_user(user_data)
+            self.brain.update_current_user(user_data)
 
             self.accept()
+
         else:
             self.error_message.setText(ret[1])
