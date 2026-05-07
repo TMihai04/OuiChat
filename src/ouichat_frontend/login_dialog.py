@@ -118,30 +118,6 @@ class LogInDialog(QDialog):
                 "refresh_token": "REFRESH_TOKEN",
             }
 
-            for idx in range(20):  # adding 20 chat rooms to the list
-                chat_data = {
-                    "chat_type": "chatroom", # {"chatroom", "p2p"}
-                    "chat_setting": "rw", # {"rw", "ro"}
-                    "domain": "test.test.ro" if idx < 10 else "test2.test2.ro",
-                    "chat_id": str(idx),
-                    "chat_description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-                    "icon_path": "./Icons/chat_room_icon.png",
-                    "users":    [{"username": "fifo",
-                                  "icon_path": "./Icons/default_user_icon.png",
-                                  "is_admin": True}] if idx < 5 else
-                                [{"username": "fifo",
-                                  "icon_path": "./Icons/default_user_icon.png",
-                                  "is_admin": True},
-                                 {"username": "fifo2",
-                                  "icon_path": "./Icons/default_user_icon.png",
-                                  "is_admin": False}] if idx < 10 else
-                                [{"username": "fifo2",
-                                  "icon_path": "./Icons/default_user_icon.png",
-                                  "is_admin": True}]
-                }
-
-                self.brain.add_chat(chat_data)
-
             self.brain.add_user(user_data) # also sets it as the current user
 
             self.accept()

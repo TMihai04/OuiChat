@@ -1,6 +1,7 @@
 from PyQt6.QtCore import QObject, pyqtSignal
 
-from ouichat_frontend.MainScreen.chat_environment import ChatMessage
+from .MainScreen.chat_environment import ChatMessage
+from socket_manager import SocketManager
 
 class Brain(QObject):
     chat_added = pyqtSignal(dict)
@@ -13,7 +14,10 @@ class Brain(QObject):
     change_textbox_visibility = pyqtSignal(bool)
     textbox_text_changed = pyqtSignal(str)
 
-    add_new_message = pyqtSignal(ChatMessage)
+    chat_details_back_requested = pyqtSignal()
+    chat_chat_details_requested = pyqtSignal()
+
+    add_new_messages = pyqtSignal(str, str, list[ChatMessage])
 
     send_message = pyqtSignal()
 
@@ -21,8 +25,12 @@ class Brain(QObject):
     main_window_comms_requested = pyqtSignal()
     main_window_user_settings_requested = pyqtSignal()
 
+    MAX_CHAT_BUBBLES = 15
+
     def __init__(self):
         super().__init__()
+
+        self.socket_manager = SocketManager()
 
         self.users_list = []
         self.chats_list = []
@@ -39,6 +47,12 @@ class Brain(QObject):
         self.edit_message_id = None
 
         self.chat_selected.connect(self.set_current_chat)
+
+    def load_messages(self, chat_id: str, domain: str, oldest_message_id: str = None, message_nr: int = 50):
+        messages = self.socket_manager.request_messages(chat_id, domain, oldest_message_id, message_nr)
+        for message in messages:
+            message.brain = self
+        return messages
 
     def set_edit(self, is_edit: bool, message_id: str = None):
         self.is_edit = is_edit
@@ -81,6 +95,9 @@ class Brain(QObject):
         self.current_user = user_data
         self.current_user_changed.emit(user_data['username'], user_data['domain'])
 
+        chats = self.socket_manager.request_chats(user_data['username'], user_data['domain'])
+        self.add_chats(chats)
+
     def remove_user(self, user_data: dict):
         self.users_list.remove(user_data)
 
@@ -90,7 +107,8 @@ class Brain(QObject):
             for key in key_val_pairs.keys():
                 if user[key] != key_val_pairs[key]:
                     break
-            found_users.append(user)
+            else:
+                found_users.append(user)
         return found_users
 
     def remove_user_by_username_and_domain(self, username: str, domain: str):
@@ -111,20 +129,20 @@ class Brain(QObject):
         })[0]
 
     def get_chat_ids(self):
-        return map(lambda chat: chat['chat_id'], self.chats_list)
+        return list(map(lambda chat: chat['chat_id'], self.chats_list))
 
     def get_chat_icons(self):
-        return map(lambda chat: chat['icon_pah'], self.chats_list)
+        return list(map(lambda chat: chat['icon_path'], self.chats_list))
 
     def get_chat_domains(self):
-        return map(lambda chat: chat['domain'], self.chats_list)
+        return list(map(lambda chat: chat['domain'], self.chats_list))
 
     def get_chat_user_usernames(self, chat_id: str, domain: str):
         chat = self.find_chats({
             "chat_id": chat_id,
             "domain": domain
         })[0]
-        return map(lambda user: user['username'], chat['users'])
+        return list(map(lambda user: user['username'], chat['users']))
 
     def get_current_chat_id(self):
         return self.current_chat['chat_id']
@@ -132,12 +150,33 @@ class Brain(QObject):
     def get_current_chat_domain(self):
         return self.current_chat['domain']
 
+    def get_chat_icon_path(self, chat_id: str, domain: str):
+        chat = self.find_chats({
+            "chat_id": chat_id,
+            "domain": domain
+        })[0]
+        return chat['icon_path']
+
     def get_chat_type(self, chat_id: str, domain: str):
         chat = self.find_chats({
             "chat_id": chat_id,
             "domain": domain
         })[0]
         return chat['chat_type']
+
+    def get_chat_description(self, chat_id: str, domain: str):
+        chat = self.find_chats({
+            "chat_id": chat_id,
+            "domain": domain
+        })[0]
+        return chat['chat_description']
+
+    def get_chat_users(self, chat_id: str, domain: str):
+        chat = self.find_chats({
+            "chat_id": chat_id,
+            "domain": domain
+        })[0]
+        return chat['users']
 
     def user_is_admin(self, chat_id: str, domain: str, username: str):
         chat = self.find_chats({
@@ -149,9 +188,10 @@ class Brain(QObject):
                 return user['is_admin']
         return False
 
-    def add_chat(self, chat_data: dict):
-        if not self.chat_exists(chat_data):
-            self.chats_list.append(chat_data)
+    def add_chats(self, chat_data: list[dict]):
+        for chat in chat_data:
+            if not self.chat_exists(chat):
+                self.chats_list.append(chat)
 
     def remove_chat(self, chat_data: dict):
         self.chats_list.remove(chat_data)
@@ -168,7 +208,8 @@ class Brain(QObject):
             for key in key_val_pairs.keys():
                 if chat[key] != key_val_pairs[key]:
                     break
-            found_chats.append(chat)
+            else:
+                found_chats.append(chat)
         return found_chats
 
     def remove_chat_by_username_and_domain(self, chat_id: str, domain: str):

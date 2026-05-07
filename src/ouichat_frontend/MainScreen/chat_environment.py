@@ -43,12 +43,12 @@ class ElidedLabel(QLabel):
 class ChatMessage(QWidget):
     """
     TO DO:
-        - beautify hover colors
         - implement context menu
     """
-    def __init__(self, message_id: str, sender: str, sender_icon_path: str, was_edited: bool, is_reply: bool,
+    def __init__(self, chat_id: str, domain: str,
+                 message_id: str, sender: str, sender_icon_path: str, was_edited: bool, is_reply: bool,
                  reply_sender: str | None, reply_sender_icon_path: str | None, reply_snip: str | None, timestamp: str,
-                 text: str, chat_details: dict):
+                 text: str):
         super().__init__()
 
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -58,10 +58,11 @@ class ChatMessage(QWidget):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
 
-        self.message_id = message_id
+        self.brain = None
 
-        self.current_user = None
-        self.chat_details = chat_details
+        self.chat_id = chat_id
+        self.domain = domain
+        self.message_id = message_id
 
         self.sender = sender
         self.sender_icon_path = sender_icon_path
@@ -130,12 +131,9 @@ class ChatMessage(QWidget):
         top_layout.addWidget(sender_icon, alignment=Qt.AlignmentFlag.AlignTop)
         top_layout.addWidget(message_area, stretch=1)
 
-    def update_chat_details(self, chat_details: dict):
-        self.chat_details = chat_details
+    def set_brain(self, brain: Brain):
+        self.brain = brain
 
-    def update_current_user(self, user_data: dict):
-        self.current_user = user_data
-    
     def edit_text(self, text):
         self.message_text.setText(text)
 
@@ -147,20 +145,20 @@ class ChatMessage(QWidget):
     
     def show_context_menu(self, position):
 
-        user_is_sender = self.sender == self.current_user['username']
-        print(user_is_sender)
+        user_is_sender = self.sender == self.brain.get_current_user() and self.domain == self.brain.get_current_user_domain()
 
-        user_is_admin = False
-        for user_data in self.chat_details['users']:
-            if user_data['username'] == self.current_user['username']:
-                user_is_admin = user_data['is_admin']
-
-        edit = None
-        delete = None
+        current_user_username = self.brain.get_current_user_username()
+        current_user_domain = self.brain.get_current_user_domain()
+        if current_user_domain == self.domain:
+            user_is_admin = self.brain.user_is_admin(self.chat_id, self.domain, current_user_username)
+        else:
+            user_is_admin = False
 
         menu = QMenu()
 
         reply = menu.addAction("Reply")
+        delete = None
+        edit = None
 
         if user_is_admin:
             menu.addSeparator()
@@ -193,12 +191,13 @@ class ChatMessage(QWidget):
         super().leaveEvent(event)
 
 class ChatMessagesArea(QScrollArea):
-    """
-    TO DO:
-        - implement context menu for messages (reply, edit, delete)
-    """
-    def __init__(self):
+    def __init__(self, brain: Brain, chat_id: str, domain: str):
         super().__init__()
+
+        self.brain = brain
+
+        self.chat_id = chat_id
+        self.domain = domain
 
         self.setWidgetResizable(True)
 
@@ -209,51 +208,47 @@ class ChatMessagesArea(QScrollArea):
         self.container.setLayout(self.container_layout)
 
         self.scroll_bar = self.verticalScrollBar()
-        # noinspection PyUnresolvedReferences
         # IDK why it gives a PyUnresolvedReferences here, but we'll roll with it
+        # noinspection PyUnresolvedReferences
         self.scroll_bar.rangeChanged.connect(self.__scroll_to_bottom)
+        # noinspection PyUnresolvedReferences
+        self.scroll_bar.valueChanged.connect(self.__height_changed)
 
         self.setWidget(self.container)
+
+        self.load_old_messages(None)
 
     def __scroll_to_bottom(self, _: int, max_value: int):
         self.scroll_bar.setValue(max_value)
 
-    def load_messages(self, message_count: int, last_loaded_message_id: str | None, chat_details: dict):
+    def __height_changed(self, value: int):
+        if value == 0:
+            oldest_message = self.container_layout.itemAt(0)
+            if oldest_message is None:
+                self.load_old_messages(None)
 
-        for idx in range(20):
-            is_reply = idx % 2 == 1
-            was_edited = idx % 4 == 0 or idx % 4 == 1
+    def load_old_messages(self, oldest_message_id: str | None):
+        messages = self.brain.load_messages(self.chat_id, self.domain, oldest_message_id)
+        self.add_messages(messages, 0)
 
-            local_time = time.localtime(time.time())
-            formated_time = time.strftime("%H:%M:%S %d/%m/%Y", local_time)
+    def add_messages(self, messages: list[ChatMessage], starting_position: int = -1):
+        # -1 --> ADD TO THE PEAK
 
-            message = ChatMessage(message_id=f"{idx}",
-                                  sender=f"TEST_SENDER_{idx}",
-                                  sender_icon_path="./Icons/default_user_icon.png",
-                                  was_edited=was_edited,
-                                  is_reply=is_reply,
-                                  reply_sender=f"TEST_REPLY_{idx}",
-                                  reply_sender_icon_path=f"./Icons/default_user_icon.png",
-                                  reply_snip="Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-                                  timestamp=formated_time,
-                                  text="Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-                                  chat_details=chat_details)
-            self.container_layout.addWidget(message)
-
-        # REQUEST MESSAGES
-    
-    def update_current_user(self, current_user: dict):
-        for idx in range(self.container_layout.count()):
-            message = self.container_layout.itemAt(idx).widget()
-            if isinstance(message, ChatMessage):
-                message.update_current_user(current_user)
-            
-    def add_message(self, message: ChatMessage):
-        self.container_layout.addWidget(message)
+        if starting_position == -1:
+            position = self.container_layout.count() - 1
+        else:
+            position = starting_position
+        for msg in messages:
+            self.container_layout.insertWidget(position, msg)
+            position += 1
 
 class ChatMembersList(QWidget):
-    def __init__(self, initial_members: list):
+    def __init__(self, brain: Brain, chat_id: str, domain: str):
         super().__init__()
+
+        self.brain = brain
+        self.chat_id = chat_id
+        self.domain = domain
 
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Search member...")
@@ -277,7 +272,8 @@ class ChatMembersList(QWidget):
         self.widget_layout.addWidget(self.list_widget)
         self.setLayout(self.widget_layout)
 
-        self.initialize_members(initial_members)
+        chat_users = self.brain.get_chat_users(self.chat_id, self.domain)
+        self.initialize_members(chat_users)
 
     def search(self, text):
         for row in range(self.list_widget.count()):
@@ -304,29 +300,31 @@ class ChatDetails(QScrollArea):
         - add 'remove members' button dialog
         - add 'add members' button dialog
     """
-    back_requested = pyqtSignal()
-
-    def __init__(self, chat_details: dict, current_user: dict):
+    def __init__(self, brain: Brain, chat_id: str, domain: str):
         super().__init__()
 
-        self.chat_type = chat_details['chat_type']
+        self.brain = brain
+        self.chat_id = chat_id
+        self.domain = domain
 
         self.back_button = QPushButton()
         self.back_button.setIconSize(QSize(20, 20))
         self.back_button.setFixedSize(30, 30)
         self.back_button.setIcon(QIcon("./Icons/close_icon.png"))
-        self.back_button.clicked.connect(self.back_requested)
+        self.back_button.clicked.connect(self.brain.chat_details_back_requested.emit)
 
         chat_icon = QPushButton()
         chat_icon.setIconSize(QSize(64, 64))
         chat_icon.setFixedSize(70, 70)
-        chat_icon.setIcon(QIcon(chat_details['icon_path']))
+        chat_icon_path = self.brain.get_chat_icon_path(self.chat_id, self.domain)
+        chat_icon.setIcon(QIcon(chat_icon_path))
 
         chat_description_label = QLabel()
         chat_description_label.setText('Description:')
 
         chat_description_text = QLabel()
-        chat_description_text.setText(chat_details['chat_description'])
+        chat_description = self.brain.get_chat_description(self.chat_id, self.domain)
+        chat_description_text.setText(chat_description)
         chat_description_text.setWordWrap(True)
 
         change_chat_description_button = QPushButton()
@@ -354,8 +352,9 @@ class ChatDetails(QScrollArea):
         self.container_layout.addWidget(chat_icon, alignment=Qt.AlignmentFlag.AlignCenter)
         self.container_layout.addWidget(chat_description)
 
-        if chat_details['chat_type'] == 'chatroom':
-            self.chat_members_list = ChatMembersList(chat_details['users'])
+        chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
+        if chat_type == 'chatroom':
+            self.chat_members_list = ChatMembersList(brain, chat_id, domain)
 
             add_members_button = QPushButton()
             add_members_button.setIcon(QIcon("./Icons/plus_icon.png"))
@@ -379,60 +378,70 @@ class ChatDetails(QScrollArea):
             self.container_layout.addWidget(self.chat_members_list)
             self.container_layout.addWidget(self.button_container)
 
-            self.update_button_visibility(current_user)
+            current_user_username = self.brain.get_current_user_username()
+            current_user_domain = self.brain.get_current_user_domain()
+            self.update_button_visibility(current_user_username, current_user_domain)
+
+            self.brain.current_user_changed.connect(self.update_button_visibility)
 
         self.setWidget(self.container)
         self.setWidgetResizable(True)
 
-    def update_button_visibility(self, user: dict):
-        if self.chat_type == 'p2p': return
+    def update_button_visibility(self, username: str, domain: str):
 
-        for row in range(self.chat_members_list.list_widget.count()):
-            member = self.chat_members_list.list_widget.item(row)
-            member_data = member.data(Qt.ItemDataRole.UserRole)
-            if member_data['username'] == user['username']:
-                self.button_container.setVisible(member_data['is_admin'])
-                return
+        chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
+        if chat_type == 'p2p': return
 
-        self.button_container.setVisible(False)
+        if domain == self.domain:
+            self.button_container.setVisible(self.brain.user_is_admin(self.chat_id, domain, username))
+        else:
+            self.button_container.setVisible(False)
 
 class Chat(QWidget):
     chat_details_requested = pyqtSignal()
 
-    def __init__(self, chat_details: dict):
+    def __init__(self, brain: Brain, chat_id: str, domain: str):
         super().__init__()
+
+        self.brain = brain
+        self.chat_id = chat_id
+        self.domain = domain
 
         self.widget_layout = QVBoxLayout()
         self.widget_layout.setContentsMargins(0, 0, 0, 0)
         self.widget_layout.setSpacing(5)
         self.setLayout(self.widget_layout)
 
-        self.chat_messages = ChatMessagesArea()
+        self.chat_messages = ChatMessagesArea(brain, chat_id, domain)
 
         self.chat_details_button = QPushButton()
-        self.chat_details_button.setText(f"{chat_details['chat_id']} ({chat_details['domain']})")
-        self.chat_details_button.setIcon(QIcon(chat_details["icon_path"]))
+        self.chat_details_button.setText(f"{chat_id}")
+        chat_icon_path = self.brain.get_chat_icon_path(self.chat_id, self.domain)
+        self.chat_details_button.setIcon(QIcon(chat_icon_path))
         self.chat_details_button.setFixedHeight(25)
-        self.chat_details_button.clicked.connect(self.chat_details_requested.emit)
+        self.chat_details_button.clicked.connect(self.brain.chat_chat_details_requested.emit)
 
         self.widget_layout.addWidget(self.chat_details_button)
         self.widget_layout.addWidget(self.chat_messages)
 
-class ChatBubble(QWidget):
-    change_textbox_visibility = pyqtSignal(bool)
+    def add_messages(self, messages: list[ChatMessage]):
+        self.chat_messages.add_messages(messages)
 
-    def __init__(self, chat_details: dict, last_access_time: float, current_user: dict):
+class ChatBubble(QWidget):
+    def __init__(self, brain: Brain, chat_id: str, domain: str):
         super().__init__()
 
-        self.chat_details = chat_details
-        self.last_access_time = last_access_time
+        self.brain = brain
 
-        self.chat = Chat(chat_details)
-        self.chat.chat_messages.update_current_user(current_user)
-        self.chat.chat_details_requested.connect(self.display_chat_details)
+        self.chat_id = chat_id
+        self.domain = domain
+        self.last_access_time = time.time()
 
-        self.chat_details_widget = ChatDetails(chat_details, current_user)
-        self.chat_details_widget.back_requested.connect(self.display_chat)
+        self.chat = Chat(brain, chat_id, domain)
+        self.brain.chat_chat_details_requested.connect(self.display_chat_details)
+
+        self.chat_details_widget = ChatDetails(brain, chat_id, domain)
+        self.brain.chat_details_back_requested.connect(self.display_chat)
 
         self.widget_layout = QStackedLayout()
         self.widget_layout.setContentsMargins(0, 0, 0, 0)
@@ -443,26 +452,24 @@ class ChatBubble(QWidget):
         self.widget_layout.addWidget(self.chat_details_widget)
         self.widget_layout.setCurrentIndex(0)
     
-    def update_current_user(self, current_user: dict):
-        self.chat.chat_messages.update_current_user(current_user)
-        self.chat_details_widget.update_button_visibility(current_user)
-    
     def display_chat_details(self):
         self.widget_layout.setCurrentIndex(1)
-        self.change_textbox_visibility.emit(False)
+        self.brain.change_textbox_visibility.emit(False)
 
     def display_chat(self):
         self.widget_layout.setCurrentIndex(0)
-        self.change_textbox_visibility.emit(True)
+        self.brain.change_textbox_visibility.emit(True)
+
+    def add_messages(self, messages: list[ChatMessage]):
+        self.chat.add_messages(messages)
 
 class ChatHistory(QWidget):
-    change_textbox_visibility = pyqtSignal(bool)
-
-    def __init__(self):
+    def __init__(self, brain: Brain):
         super().__init__()
 
-        self.current_user = None
-        self.max_bubbles = 17 # 15 bubbles + 1 screen for no chats + 1 screen for loading messages
+        self.brain = brain
+
+        self.max_bubbles = Brain.MAX_CHAT_BUBBLES + 1 # 1 screen for no chats
 
         self.widget_layout = QStackedLayout()
         self.widget_layout.setContentsMargins(0, 0, 0, 0)
@@ -475,58 +482,45 @@ class ChatHistory(QWidget):
         no_chats_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.widget_layout.insertWidget(0, no_chats_label)
 
-        loading_messages_label = QLabel()
-        loading_messages_label.setText("Loading messages ...")
-        loading_messages_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.widget_layout.insertWidget(1, loading_messages_label)
-
         self.widget_layout.setCurrentIndex(0)
 
-    def get_current_chat_details(self):
-        current_chat_idx = self.widget_layout.currentIndex()
-        current_widget = self.widget_layout.widget(current_chat_idx)
-        if isinstance(current_widget, ChatBubble):
-            return current_widget.chat_details
-        return None
+        self.brain.chat_selected.connect(self.show_chat)
+        self.brain.current_user_changed.connect(self.handle_current_user_change)
+        self.brain.add_new_messages.connect(self.add_messages)
 
-    def show_chat(self, chat_data: dict | None):
+    def show_chat(self, chat_id: str, domain: str):
         current_chat_idx = self.widget_layout.currentIndex()
         current_widget = self.widget_layout.widget(current_chat_idx)
         if isinstance(current_widget, ChatBubble):
             current_widget.display_chat()
             current_widget.chat_details_widget.verticalScrollBar().setValue(0)
 
-        if chat_data is None: return
+        if chat_id == "" and domain == "":
+            self.widget_layout.setCurrentIndex(0)
+            return
 
         for idx in range(self.widget_layout.count()):
             widget = self.widget_layout.widget(idx)
             if isinstance(widget, ChatBubble):
-                if widget.chat_details['chat_id'] == chat_data['chat_id'] and widget.chat_details['domain'] == chat_data['domain']:
+                if widget.chat_id == chat_id and widget.domain == domain:
                     self.widget_layout.setCurrentIndex(idx)
                     widget.last_access_time = time.time()
                     return
 
-        self.__add_bubble(chat_data)
+        self.__add_bubble(chat_id, domain)
 
     def remove_chat(self, chat_id: str, chat_domain: str):
         for idx in range(self.widget_layout.count()):
             widget = self.widget_layout.widget(idx)
             if isinstance(widget, ChatBubble):
-                if widget.chat_details['chat_id'] == chat_id and widget.chat_details['domain'] == chat_domain:
+                if widget.chat_id == chat_id and widget.domain == chat_domain:
                     self.widget_layout.removeWidget(widget)
                     return
 
-    def update_current_user(self, user_data: dict):
-        self.current_user = user_data
+    def handle_current_user_change(self):
         self.widget_layout.setCurrentIndex(0)
 
-        bubble_count = self.widget_layout.count()
-        for idx in range(bubble_count):
-            widget = self.widget_layout.widget(idx)
-            if isinstance(widget, ChatBubble):
-                widget.update_current_user(user_data)
-
-    def __add_bubble(self, chat_details: dict):
+    def __add_bubble(self, chat_id: str, domain: str):
         bubble_count = self.widget_layout.count()
         if bubble_count >= self.max_bubbles:
             oldest_widget = None
@@ -541,25 +535,18 @@ class ChatHistory(QWidget):
 
             self.widget_layout.removeWidget(oldest_widget)
 
-        current_time = time.time()
-        new_bubble = ChatBubble(chat_details, current_time, self.current_user)
-        new_bubble.change_textbox_visibility.connect(self.change_textbox_visibility.emit)
-        self.widget_layout.insertWidget(2, new_bubble)
+        new_bubble = ChatBubble(self.brain, chat_id, domain)
         # at index 0 there is a special screen for when there are no chats selected
-        # at index 1 there is a special screen for when messages are loading
-
+        self.widget_layout.insertWidget(1, new_bubble)
         self.widget_layout.setCurrentIndex(1)
-        new_bubble.chat.chat_messages.load_messages(50, None, chat_details)
-        new_bubble.update_current_user(self.current_user)
-        self.widget_layout.setCurrentIndex(2)
 
-    def add_message(self, chat_id: str, chat_domain:str, message: ChatMessage):
+    def add_messages(self, chat_id: str, chat_domain:str, messages: list[ChatMessage]):
         for idx in range(self.widget_layout.count()):
             widget = self.widget_layout.widget(idx)
             if isinstance(widget, ChatBubble):
-                if widget.chat_details['chat_id'] == chat_id and widget.chat_details['domain'] == chat_domain:
-                    widget.chat.chat_messages.add_message(message)
-                    widget.chat.chat_messages.update_current_user(self.current_user)
+                if widget.chat_id == chat_id and widget.domain == chat_domain:
+                    widget.add_messages(messages)
+                    return
 
 class ChatTextBox(QTextEdit):
     def __init__(self, brain: Brain):

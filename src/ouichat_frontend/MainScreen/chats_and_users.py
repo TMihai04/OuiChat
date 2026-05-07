@@ -17,6 +17,11 @@ CHAT_TYPE = "chatroom" # {"p2p", "chatroom"}
 CHAT_SETTING = "rw" # {"ro", "rw"}
 
 class LeftPanelInteractions(QWidget):
+    """
+    TO DO:
+        - handle case where all users logged out (and by default handle the case of the first user to login)
+            HINT:   - maybe smth to do with checking how many users are currently logged in
+    """
     user_changed = pyqtSignal(dict)
 
     def __init__(self, brain: Brain, login_dialog):
@@ -63,9 +68,14 @@ class LeftPanelInteractions(QWidget):
 
         self.setLayout(layout)
 
+    def set_initial_user(self):
+        pass
+
     def handle_users_dropdown(self, row:int):
         num_entries = self.users_dropdown.count()
         if row != num_entries - 1:
+            if row == self.previous_user_row: return
+
             item_text =  self.users_dropdown.itemText(row)
             item_text = item_text[::-1].split("( ", maxsplit=1) # inverting the text so that our separator (initially ' (' and now '( ') is the first
             username = item_text[1][::-1] # gets the username
@@ -79,7 +89,9 @@ class LeftPanelInteractions(QWidget):
                 current_user_icon = QIcon(current_user_icon_path)
                 current_user_username = self.brain.get_current_user_username()
                 current_user_domain = self.brain.get_current_user_domain()
-                self.users_dropdown.insertItem(row, current_user_icon, f"{current_user_username} ({current_user_domain})")
+                self.users_dropdown.insertItem(row, current_user_icon, f"{current_user_username} ({current_user_domain})",
+                                               {"username": current_user_username,
+                                                "domain": current_user_domain})
                 self.users_dropdown.blockSignals(False)
 
                 self.users_dropdown.setCurrentIndex(row)
