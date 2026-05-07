@@ -19,6 +19,8 @@ CHAT_SETTING = "rw" # {"ro", "rw"}
 class LeftPanelInteractions(QWidget):
     """
     TO DO:
+        - IMPLEMENT USER LOGOUT
+        - IMPLEMENT USER SETTINGS
         - handle case where all users logged out (and by default handle the case of the first user to login)
             HINT:   - maybe smth to do with checking how many users are currently logged in
     """
@@ -44,8 +46,8 @@ class LeftPanelInteractions(QWidget):
         user_profile_button.clicked.connect(self.brain.main_window_user_settings_requested.emit)
 
         user_icon = QIcon(self.brain.get_current_user_icon())
-        username = self.brain.get_current_user_username()
-        domain = self.brain.get_current_user_domain()
+        current_user_username = self.brain.get_current_user_username()
+        current_user_domain = self.brain.get_current_user_domain()
 
         add_user_icon = QIcon("./Icons/plus_icon.png")
 
@@ -54,7 +56,10 @@ class LeftPanelInteractions(QWidget):
         self.users_dropdown.setIconSize(QSize(32, 32))
         self.dropdown_model = QStandardItemModel()
         self.users_dropdown.setModel(self.dropdown_model)
-        self.users_dropdown.addItem(user_icon, f"{username} ({domain})")
+        self.users_dropdown.addItem(user_icon, f"{current_user_username} ({current_user_domain})",
+                                    {"username": current_user_username,
+                                     "domain": current_user_domain}
+                                    )
         self.users_dropdown.addItem(add_user_icon, "Add User")
         self.users_dropdown.currentIndexChanged.connect(self.handle_users_dropdown)
 
@@ -75,12 +80,9 @@ class LeftPanelInteractions(QWidget):
         num_entries = self.users_dropdown.count()
         if row != num_entries - 1:
             if row == self.previous_user_row: return
-
-            item_text =  self.users_dropdown.itemText(row)
-            item_text = item_text[::-1].split("( ", maxsplit=1) # inverting the text so that our separator (initially ' (' and now '( ') is the first
-            username = item_text[1][::-1] # gets the username
-            domain = item_text[0][:0:-1] # gets the domain and removes the trailing parentheses
-            self.brain.current_user_changed.emit(username, domain)
+            item_data =  self.users_dropdown.itemData(row)
+            self.brain.set_current_user(item_data['username'], item_data['domain'])
+            self.previous_user_row = row
 
         else:
             if self.login_dialog.exec() == QDialog.DialogCode.Accepted:
@@ -92,10 +94,9 @@ class LeftPanelInteractions(QWidget):
                 self.users_dropdown.insertItem(row, current_user_icon, f"{current_user_username} ({current_user_domain})",
                                                {"username": current_user_username,
                                                 "domain": current_user_domain})
-                self.users_dropdown.blockSignals(False)
-
                 self.users_dropdown.setCurrentIndex(row)
                 self.previous_user_row = row
+                self.users_dropdown.blockSignals(False)
 
             else:
                 self.users_dropdown.blockSignals(True)
@@ -112,7 +113,7 @@ class LeftPanelInteractions(QWidget):
 class ChatList(QWidget):
     """
     TO DO:
-        - implement the context menus
+        - FULLY IMPLEMENT CONTEXT MENU WITHOUT REQUESTS
     """
     def __init__(self, brain: Brain):
         super().__init__()
@@ -222,9 +223,9 @@ class ChatList(QWidget):
         chat_type = self.brain.get_chat_type(chat_id, chat_domain)
         user_is_admin = self.brain.user_is_admin(chat_id, chat_domain, self.brain.get_current_user_username())
 
-        exit_chat_action = None
-        delete_chat_action = None
-        block_user_action = None
+        exit_chat_action = object()
+        delete_chat_action = object()
+        block_user_action = object()
 
         menu = QMenu()
 

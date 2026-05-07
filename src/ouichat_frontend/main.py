@@ -20,7 +20,7 @@ class MainWindow(QMainWindow):
         main_screen_widget = MainScreen(brain, login_dialog)
         self.brain.main_window_settings_requested.connect(self.go_to_settings)
 
-        settings_screen_widget = SettingsScreen()
+        settings_screen_widget = SettingsScreen(brain)
         self.brain.main_window_comms_requested.connect(self.go_to_comms)
 
         # user_settings_widget = UserSettings()

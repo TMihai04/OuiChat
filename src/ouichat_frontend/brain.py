@@ -1,6 +1,5 @@
 from PyQt6.QtCore import QObject, pyqtSignal
 
-from .MainScreen.chat_environment import ChatMessage
 from socket_manager import SocketManager
 
 class Brain(QObject):
@@ -17,7 +16,8 @@ class Brain(QObject):
     chat_details_back_requested = pyqtSignal()
     chat_chat_details_requested = pyqtSignal()
 
-    add_new_messages = pyqtSignal(str, str, list[ChatMessage])
+    add_new_messages = pyqtSignal(str, str, list)
+    set_textbox_text = pyqtSignal(str)
 
     send_message = pyqtSignal()
 
@@ -49,14 +49,12 @@ class Brain(QObject):
         self.chat_selected.connect(self.set_current_chat)
 
     def load_messages(self, chat_id: str, domain: str, oldest_message_id: str = None, message_nr: int = 50):
-        messages = self.socket_manager.request_messages(chat_id, domain, oldest_message_id, message_nr)
-        for message in messages:
-            message.brain = self
-        return messages
+        return self.socket_manager.request_messages(chat_id, domain, oldest_message_id, message_nr)
 
     def set_edit(self, is_edit: bool, message_id: str = None):
         self.is_edit = is_edit
         self.edit_message_id = message_id
+        self.set_reply(False)
 
     def get_edit_details(self):
         return {
@@ -69,6 +67,7 @@ class Brain(QObject):
         self.reply_user = reply_user
         self.reply_user_icon_path = reply_user_icon_path
         self.reply_snip = reply_snip
+        self.set_edit(False)
 
     def get_reply_details(self):
         return {
@@ -80,6 +79,14 @@ class Brain(QObject):
 
     def get_current_user(self):
         return self.current_user
+
+    def set_current_user(self, username: str, domain: str):
+        user = self.find_users({
+            "username": username,
+            "domain": domain
+        })[0]
+        self.current_user = user
+        self.current_user_changed.emit(user['username'], user['domain'])
 
     def get_current_user_username(self):
         return self.current_user["username"]

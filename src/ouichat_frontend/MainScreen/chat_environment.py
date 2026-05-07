@@ -9,6 +9,7 @@ from PyQt6.QtGui import QIcon, QPixmap, QFontMetrics, QEnterEvent
 import time
 
 from ouichat_frontend.brain import Brain
+from ouichat_frontend.socket_manager import message_args_to_dict
 
 RIGHT_PANE_MIN_WIDTH = 310
 MEMBERS_SEARCH_BAR_WIDTH = 200
@@ -43,13 +44,17 @@ class ElidedLabel(QLabel):
 class ChatMessage(QWidget):
     """
     TO DO:
-        - implement context menu
+        - FINISH IMPLEMENTING CONTEXT MENU WITHOUT REQUESTS
     """
-    def __init__(self, chat_id: str, domain: str,
+    remove_requested = pyqtSignal(str)
+
+    def __init__(self, brain: Brain, chat_id: str, domain: str,
                  message_id: str, sender: str, sender_icon_path: str, was_edited: bool, is_reply: bool,
                  reply_sender: str | None, reply_sender_icon_path: str | None, reply_snip: str | None, timestamp: str,
                  text: str):
         super().__init__()
+
+        self.brain = brain
 
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setObjectName("ChatMessage")
@@ -57,8 +62,6 @@ class ChatMessage(QWidget):
 
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
-
-        self.brain = None
 
         self.chat_id = chat_id
         self.domain = domain
@@ -131,9 +134,6 @@ class ChatMessage(QWidget):
         top_layout.addWidget(sender_icon, alignment=Qt.AlignmentFlag.AlignTop)
         top_layout.addWidget(message_area, stretch=1)
 
-    def set_brain(self, brain: Brain):
-        self.brain = brain
-
     def edit_text(self, text):
         self.message_text.setText(text)
 
@@ -157,8 +157,8 @@ class ChatMessage(QWidget):
         menu = QMenu()
 
         reply = menu.addAction("Reply")
-        delete = None
-        edit = None
+        delete = object
+        edit = object
 
         if user_is_admin:
             menu.addSeparator()
@@ -170,16 +170,29 @@ class ChatMessage(QWidget):
         global_pos = self.mapToGlobal(position)
         selected_action = menu.exec(global_pos)
 
-        # Check the message still exists before doing any of the options
+        try:
+            self.objectName()
+        except RuntimeError:
+            return
+
+        parent = self.parentWidget()
+        if parent is None or parent.layout() is None or parent.layout().indexOf(self) == -1:
+            return
 
         if selected_action == reply:
-            # TO BE IMPLEMENTED
-            pass
+            print("reply")
+            self.brain.set_reply(True, self.sender, self.sender_icon_path, self.text)
+            self.brain.set_textbox_text.emit("")
+            # SHOW SOME MESSAGE WITH WHO YOU'RE REPLYING TO
+
         elif selected_action == edit:
-            # TO BE IMPLEMENTED
-            pass
+            print("edit")
+            self.brain.set_edit(True, self.message_id)
+            self.brain.set_textbox_text.emit(self.text)
+
         elif selected_action == delete:
-            # TO BE IMPLEMENTED
+            print("delete")
+            # MAKE REQUESTS AND REMOVE MESSAGE ONLY ON UPDATE FROM SERVER
             pass
     
     def enterEvent(self, event: QEnterEvent):
@@ -231,15 +244,30 @@ class ChatMessagesArea(QScrollArea):
         messages = self.brain.load_messages(self.chat_id, self.domain, oldest_message_id)
         self.add_messages(messages, 0)
 
-    def add_messages(self, messages: list[ChatMessage], starting_position: int = -1):
+    def add_messages(self, messages: list, starting_position: int = -1):
         # -1 --> ADD TO THE PEAK
 
         if starting_position == -1:
             position = self.container_layout.count() - 1
         else:
             position = starting_position
-        for msg in messages:
-            self.container_layout.insertWidget(position, msg)
+        for message in messages:
+            message_widget = ChatMessage(
+                brain = self.brain,
+                chat_id = message['chat_id'],
+                domain = message['domain'],
+                message_id = message['message_id'],
+                sender = message['sender'],
+                sender_icon_path = message['sender_icon_path'],
+                was_edited = message['was_edited'],
+                is_reply = message['is_reply'],
+                reply_sender = message['reply_sender'],
+                reply_sender_icon_path = message['reply_sender_icon_path'],
+                reply_snip = message['reply_snip'],
+                timestamp = message['timestamp'],
+                text = message['text']
+            )
+            self.container_layout.insertWidget(position, message_widget)
             position += 1
 
 class ChatMembersList(QWidget):
@@ -299,6 +327,7 @@ class ChatDetails(QScrollArea):
     TO DO:
         - add 'remove members' button dialog
         - add 'add members' button dialog
+        - make edit description tag appear only for admins
     """
     def __init__(self, brain: Brain, chat_id: str, domain: str):
         super().__init__()
@@ -561,6 +590,11 @@ class ChatTextBox(QTextEdit):
         self.setFixedHeight(self.init_height)
         self.setMinimumWidth(50)
 
+        self.brain.set_textbox_text.connect(self.set_text)
+
+    def set_text(self, text):
+        self.setPlainText(text)
+
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
             if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
@@ -574,7 +608,8 @@ class ChatTextBox(QTextEdit):
 class MessageWindow(QWidget):
     """
     TO DO:
-        - implement send_message without requests after `Brain` modification
+        - ASAP: FIX send_message CRASH
+        - implement send_message with requests
         - implement upload_file with requests
     """
     def __init__(self, brain: Brain):
@@ -611,13 +646,13 @@ class MessageWindow(QWidget):
         self.brain.textbox_text_changed.connect(self.__resize_text_box)
         self.brain.send_message.connect(self.send_message)
         self.brain.change_textbox_visibility.connect(self.set_visibility_bool)
-        self.brain.chat_selected.connect(self.set_visibility_dict)
+        self.brain.chat_selected.connect(self.set_visibility_str)
 
     def set_visibility_bool(self, is_visible: bool):
         self.setVisible(is_visible)
 
-    def set_visibility_dict(self, chat_data: dict | None):
-        self.setVisible(chat_data is not None)
+    def set_visibility_str(self, chat_id: str, domain: str):
+        self.setVisible(chat_id != "" and domain != "")
 
     def __resize_text_box(self):
         text_height = int(self.text_box.document().size().height())
@@ -630,13 +665,51 @@ class MessageWindow(QWidget):
 
     def send_message(self):
 
-        text = self.text_box.toPlainText().strip()
-        if text == "": return
-
         # SEND MESSAGE REQUEST
         # ON RESPONSE = OK, CLEAR THE TEXTBOX AND SET REPLY DETAILS AND EDIT DETAILS TO NONE
 
-        pass
+        text = self.text_box.toPlainText().strip()
+        if text == "": return
+
+        current_chat_id = self.brain.get_current_chat_id()
+        current_chat_domain = self.brain.get_current_chat_domain()
+        current_user_username = self.brain.get_current_user_username()
+        current_user_domain = self.brain.get_current_user_domain()
+        current_user_icon_path = self.brain.get_current_user_icon()
+
+        if current_chat_domain != current_user_domain: return
+
+        edit_details = self.brain.get_edit_details()
+
+        if edit_details['is_edit']:
+            # process different requests
+            self.brain.set_edit(False)
+            pass
+
+        reply_details = self.brain.get_reply_details()
+
+        # MAKE REQUEST
+        # ONLY ADD AND DISPLAY MESSAGE ON SERVER UPDATE
+
+        local_time = time.localtime(time.time())
+        formated_time = time.strftime("%H:%M:%S %d/%m/%Y", local_time)
+
+        message = message_args_to_dict(
+            chat_id = current_chat_id,
+            domain = current_chat_domain,
+            message_id = "NEWLY_SENT_MESSAGE",
+            sender = current_user_username,
+            sender_icon_path = current_user_icon_path,
+            was_edited = False,
+            is_reply = reply_details['is_reply'],
+            reply_sender = reply_details['reply_sender'],
+            reply_sender_icon_path = reply_details['reply_sender_icon_path'],
+            reply_snip = reply_details['reply_snip'],
+            timestamp = formated_time,
+            text = text
+        )
+
+        self.brain.add_new_messages([message])
 
     def upload_file(self):
         pass
@@ -644,7 +717,7 @@ class MessageWindow(QWidget):
 class ChatEnvironment(QWidget):
     """
     TO DO:
-        - implement `Brain` modification to EVERYTHING in ChatHistory
+        - verify and refine implementation for p2p chats
     """
     def __init__(self, brain: Brain):
         super().__init__()

@@ -2,9 +2,9 @@ from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout
 )
 
-from .chats_and_users import ChatsAndUsersPanel
-from .chat_environment import ChatEnvironment
-from ..brain import Brain
+from ouichat_frontend.MainScreen.chats_and_users import ChatsAndUsersPanel
+from ouichat_frontend.MainScreen.chat_environment import ChatEnvironment
+from ouichat_frontend.brain import Brain
 
 class MainScreen(QWidget):
     def __init__(self, brain: Brain, login_dialog):
