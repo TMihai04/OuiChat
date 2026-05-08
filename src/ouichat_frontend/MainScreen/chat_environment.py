@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QPushButton, QVBoxLayout, QLabel, QStackedLayout, QWidget, QHBoxLayout,
-    QTextEdit, QSizePolicy, QScrollArea, QLineEdit, QListWidget, QAbstractItemView, QListWidgetItem, QMenu, QSpacerItem
+    QTextEdit, QSizePolicy, QScrollArea, QLineEdit, QListWidget, QAbstractItemView, QListWidgetItem, QMenu
 )
 
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QEvent, QTimer
@@ -44,7 +44,7 @@ class ElidedLabel(QLabel):
 class ChatMessage(QWidget):
     """
     TO DO:
-        - FINISH IMPLEMENTING CONTEXT MENU WITHOUT REQUESTS
+        - implement context menu with requests
     """
     def __init__(self, brain: Brain, chat_id: str, domain: str,
                  message_id: str, sender: str, sender_icon_path: str, was_edited: bool, is_reply: bool,
