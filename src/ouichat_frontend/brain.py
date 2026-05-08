@@ -16,8 +16,10 @@ class Brain(QObject):
     chat_details_back_requested = pyqtSignal()
     chat_chat_details_requested = pyqtSignal()
 
-    add_new_messages = pyqtSignal(str, str, list)
+    add_new_messages = pyqtSignal(list)
     set_textbox_text = pyqtSignal(str)
+
+    message_context_changed = pyqtSignal()
 
     send_message = pyqtSignal()
 
@@ -45,21 +47,34 @@ class Brain(QObject):
 
         self.is_edit = False
         self.edit_message_id = None
+        self.sender = None
+        self.sender_icon_path = None
+        self.message_snip = None
 
         self.chat_selected.connect(self.set_current_chat)
 
     def load_messages(self, chat_id: str, domain: str, oldest_message_id: str = None, message_nr: int = 50):
         return self.socket_manager.request_messages(chat_id, domain, oldest_message_id, message_nr)
 
-    def set_edit(self, is_edit: bool, message_id: str = None):
+    def set_edit(self, is_edit: bool, message_id: str = None, sender: str = None, sender_icon_path: str = None, message_snip: str = None):
         self.is_edit = is_edit
         self.edit_message_id = message_id
-        self.set_reply(False)
+        self.sender = sender
+        self.sender_icon_path = sender_icon_path
+        self.message_snip = message_snip
+        if is_edit:
+            self.message_context_changed.emit()
+            self.set_reply(False)
+        else:
+            self.set_textbox_text.emit("")
 
     def get_edit_details(self):
         return {
             "is_edit": self.is_edit,
             "edit_message_id": self.edit_message_id,
+            "sender": self.sender,
+            "sender_icon_path": self.sender_icon_path,
+            "message_snip": self.message_snip
         }
 
     def set_reply(self, is_reply: bool, reply_user: str = None, reply_user_icon_path: str = None, reply_snip: str = None):
@@ -67,13 +82,15 @@ class Brain(QObject):
         self.reply_user = reply_user
         self.reply_user_icon_path = reply_user_icon_path
         self.reply_snip = reply_snip
-        self.set_edit(False)
+        if is_reply:
+            self.message_context_changed.emit()
+            self.set_edit(False)
 
     def get_reply_details(self):
         return {
             "is_reply": self.is_reply,
-            "reply_user": self.reply_user,
-            "reply_user_icon_path": self.reply_user_icon_path,
+            "reply_sender": self.reply_user,
+            "reply_sender_icon_path": self.reply_user_icon_path,
             "reply_snip": self.reply_snip
         }
 

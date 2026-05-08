@@ -94,7 +94,7 @@ class ChatMessage(QWidget):
             reply_sender_icon.setPixmap(reply_sender_pixmap)
 
             replied_to_user_label = QLabel()
-            replied_to_user_label.setText(reply_sender)
+            replied_to_user_label.setText(f"{reply_sender}:")
             replied_to_user_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
             reply_snip_label = ElidedLabel()
@@ -144,11 +144,11 @@ class ChatMessage(QWidget):
             self.was_edited = True
     
     def show_context_menu(self, position):
-
-        user_is_sender = self.sender == self.brain.get_current_user() and self.domain == self.brain.get_current_user_domain()
-
         current_user_username = self.brain.get_current_user_username()
         current_user_domain = self.brain.get_current_user_domain()
+
+        user_is_sender = self.sender == current_user_username and self.domain == current_user_domain
+
         if current_user_domain == self.domain:
             user_is_admin = self.brain.user_is_admin(self.chat_id, self.domain, current_user_username)
         else:
@@ -180,14 +180,11 @@ class ChatMessage(QWidget):
             return
 
         if selected_action == reply:
-            print("reply")
             self.brain.set_reply(True, self.sender, self.sender_icon_path, self.text)
-            self.brain.set_textbox_text.emit("")
             # SHOW SOME MESSAGE WITH WHO YOU'RE REPLYING TO
 
         elif selected_action == edit:
-            print("edit")
-            self.brain.set_edit(True, self.message_id)
+            self.brain.set_edit(True, self.message_id, self.sender, self.sender_icon_path, self.text)
             self.brain.set_textbox_text.emit(self.text)
 
         elif selected_action == delete:
@@ -248,9 +245,10 @@ class ChatMessagesArea(QScrollArea):
         # -1 --> ADD TO THE PEAK
 
         if starting_position == -1:
-            position = self.container_layout.count() - 1
+            position = self.container_layout.count()
         else:
             position = starting_position
+
         for message in messages:
             message_widget = ChatMessage(
                 brain = self.brain,
@@ -569,13 +567,19 @@ class ChatHistory(QWidget):
         self.widget_layout.insertWidget(1, new_bubble)
         self.widget_layout.setCurrentIndex(1)
 
-    def add_messages(self, chat_id: str, chat_domain:str, messages: list[ChatMessage]):
+    def add_messages(self, messages: list):
+        sorted_messages = dict()
+        for message in messages:
+            if (message['chat_id'], message['domain']) not in sorted_messages.keys():
+                sorted_messages[(message['chat_id'], message['domain'])] = [message]
+            else :
+                sorted_messages[(message['chat_id'], message['domain'])].append(message)
+
         for idx in range(self.widget_layout.count()):
             widget = self.widget_layout.widget(idx)
             if isinstance(widget, ChatBubble):
-                if widget.chat_id == chat_id and widget.domain == chat_domain:
-                    widget.add_messages(messages)
-                    return
+                if (widget.chat_id, widget.domain) in sorted_messages.keys():
+                    widget.add_messages(sorted_messages[(widget.chat_id, widget.domain)])
 
 class ChatTextBox(QTextEdit):
     def __init__(self, brain: Brain):
@@ -605,6 +609,70 @@ class ChatTextBox(QTextEdit):
         else:
             super().keyPressEvent(event)
 
+class MessageContext(QWidget):
+    def __init__(self, brain: Brain):
+        super().__init__()
+
+        self.brain = brain
+
+        self.setFixedHeight(25)
+
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+        self.setLayout(layout)
+
+        self.context_label = QLabel()
+        self.context_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+
+        self.context_sender_icon = QLabel()
+        # reply_sender_pixmap = QPixmap(reply_sender_icon_path).scaled(24, 24)
+        # reply_sender_icon.setPixmap(reply_sender_pixmap)
+
+        self.context_user_label = QLabel()
+        self.context_user_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+        self.context_snip_label = ElidedLabel()
+
+        exit_context_button = QPushButton()
+        exit_context_button.setFixedSize(24, 24)
+        exit_context_button.setIconSize(QSize(24, 24))
+        exit_context_button.setIcon(QIcon("./Icons/close_icon.png"))
+        exit_context_button.clicked.connect(self.reset_context)
+
+        layout.addWidget(exit_context_button)
+        layout.addWidget(self.context_label)
+        layout.addWidget(self.context_sender_icon)
+        layout.addWidget(self.context_user_label)
+        layout.addWidget(self.context_snip_label)
+
+        self.brain.message_context_changed.connect(self.context_changed)
+
+        self.setVisible(False)
+
+    def reset_context(self):
+        self.brain.set_reply(False)
+        self.brain.set_edit(False)
+        self.brain.message_context_changed.emit()
+
+    def context_changed(self):
+        reply_details = self.brain.get_reply_details()
+        edit_details = self.brain.get_edit_details()
+        if reply_details['is_reply']:
+            self.context_label.setText("Replying to:")
+            self.context_sender_icon.setPixmap(QPixmap(reply_details['reply_sender_icon_path']).scaled(24, 24))
+            self.context_user_label.setText(f"{reply_details['reply_sender']}:")
+            self.context_snip_label.setText(f"{reply_details['reply_snip']}:")
+            self.setVisible(True)
+        elif edit_details['is_edit']:
+            self.context_label.setText("Editing:")
+            self.context_sender_icon.setPixmap(QPixmap(edit_details['sender_icon_path']).scaled(24, 24))
+            self.context_user_label.setText(f"{edit_details['sender']}:")
+            self.context_snip_label.setText(f"{edit_details['message_snip']}:")
+            self.setVisible(True)
+        else:
+            self.setVisible(False)
+
 class MessageWindow(QWidget):
     """
     TO DO:
@@ -616,6 +684,20 @@ class MessageWindow(QWidget):
         super().__init__()
 
         self.brain = brain
+
+        top_layout = QVBoxLayout()
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(5)
+        self.setLayout(top_layout)
+
+        context_widget = MessageContext(brain)
+
+        bottom_widget = QWidget()
+
+        bottom_layout = QHBoxLayout()
+        bottom_layout.setContentsMargins(0, 0, 0, 0)
+        bottom_layout.setSpacing(5)
+        bottom_widget.setLayout(bottom_layout)
 
         upload_file_button = QPushButton()
         upload_file_button.setFixedSize(40, 40)
@@ -632,15 +714,13 @@ class MessageWindow(QWidget):
         self.text_box = ChatTextBox(brain)
         self.text_box.setMinimumWidth(200)
 
-        layout = QHBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(5)
+        bottom_layout.addWidget(upload_file_button, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
+        bottom_layout.addWidget(self.text_box)
+        bottom_layout.addWidget(send_message_button, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
 
-        layout.addWidget(upload_file_button, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
-        layout.addWidget(self.text_box)
-        layout.addWidget(send_message_button, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
+        top_layout.addWidget(context_widget)
+        top_layout.addWidget(bottom_widget)
 
-        self.setLayout(layout)
         self.setVisible(False) # initially not visible due to no chat being selected
 
         self.brain.textbox_text_changed.connect(self.__resize_text_box)
@@ -684,7 +764,7 @@ class MessageWindow(QWidget):
         if edit_details['is_edit']:
             # process different requests
             self.brain.set_edit(False)
-            pass
+            self.brain.message_context_changed.emit()
 
         reply_details = self.brain.get_reply_details()
 
@@ -709,7 +789,11 @@ class MessageWindow(QWidget):
             text = text
         )
 
-        self.brain.add_new_messages([message])
+        self.brain.add_new_messages.emit([message])
+        self.brain.set_edit(False)
+        self.brain.set_reply(False)
+        self.brain.message_context_changed.emit()
+        self.text_box.clear()
 
     def upload_file(self):
         pass
