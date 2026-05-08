@@ -626,8 +626,6 @@ class MessageContext(QWidget):
         self.context_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
 
         self.context_sender_icon = QLabel()
-        # reply_sender_pixmap = QPixmap(reply_sender_icon_path).scaled(24, 24)
-        # reply_sender_icon.setPixmap(reply_sender_pixmap)
 
         self.context_user_label = QLabel()
         self.context_user_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -676,7 +674,6 @@ class MessageContext(QWidget):
 class MessageWindow(QWidget):
     """
     TO DO:
-        - ASAP: FIX send_message CRASH
         - implement send_message with requests
         - implement upload_file with requests
     """

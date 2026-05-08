@@ -57,6 +57,8 @@ class Brain(QObject):
         return self.socket_manager.request_messages(chat_id, domain, oldest_message_id, message_nr)
 
     def set_edit(self, is_edit: bool, message_id: str = None, sender: str = None, sender_icon_path: str = None, message_snip: str = None):
+        if self.is_edit and not is_edit:
+            self.set_textbox_text.emit("")
         self.is_edit = is_edit
         self.edit_message_id = message_id
         self.sender = sender
@@ -65,8 +67,6 @@ class Brain(QObject):
         if is_edit:
             self.message_context_changed.emit()
             self.set_reply(False)
-        else:
-            self.set_textbox_text.emit("")
 
     def get_edit_details(self):
         return {
