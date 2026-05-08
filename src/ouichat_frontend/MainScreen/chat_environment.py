@@ -1,9 +1,9 @@
 from PyQt6.QtWidgets import (
     QPushButton, QVBoxLayout, QLabel, QStackedLayout, QWidget, QHBoxLayout,
-    QTextEdit, QSizePolicy, QScrollArea, QLineEdit, QListWidget, QAbstractItemView, QListWidgetItem, QMenu
+    QTextEdit, QSizePolicy, QScrollArea, QLineEdit, QListWidget, QAbstractItemView, QListWidgetItem, QMenu, QSpacerItem
 )
 
-from PyQt6.QtCore import Qt, QSize, pyqtSignal, QEvent
+from PyQt6.QtCore import Qt, QSize, pyqtSignal, QEvent, QTimer
 from PyQt6.QtGui import QIcon, QPixmap, QFontMetrics, QEnterEvent
 
 import time
@@ -46,8 +46,6 @@ class ChatMessage(QWidget):
     TO DO:
         - FINISH IMPLEMENTING CONTEXT MENU WITHOUT REQUESTS
     """
-    remove_requested = pyqtSignal(str)
-
     def __init__(self, brain: Brain, chat_id: str, domain: str,
                  message_id: str, sender: str, sender_icon_path: str, was_edited: bool, is_reply: bool,
                  reply_sender: str | None, reply_sender_icon_path: str | None, reply_snip: str | None, timestamp: str,
@@ -124,7 +122,6 @@ class ChatMessage(QWidget):
             message_area_layout.addWidget(reply_area)
         message_area_layout.addWidget(self.message_details)
         message_area_layout.addWidget(self.message_text)
-        message_area_layout.addStretch()
 
         top_layout = QHBoxLayout()
         top_layout.setContentsMargins(0, 0, 0, 0)
@@ -181,16 +178,16 @@ class ChatMessage(QWidget):
 
         if selected_action == reply:
             self.brain.set_reply(True, self.sender, self.sender_icon_path, self.text)
-            # SHOW SOME MESSAGE WITH WHO YOU'RE REPLYING TO
 
         elif selected_action == edit:
             self.brain.set_edit(True, self.message_id, self.sender, self.sender_icon_path, self.text)
             self.brain.set_textbox_text.emit(self.text)
 
         elif selected_action == delete:
-            print("delete")
-            # MAKE REQUESTS AND REMOVE MESSAGE ONLY ON UPDATE FROM SERVER
-            pass
+            message_data = {
+                (self.chat_id, self.domain): [self.message_id],
+            }
+            self.brain.remove_messages.emit(message_data)
     
     def enterEvent(self, event: QEnterEvent):
         self.setStyleSheet("#ChatMessage { background-color: #2D2D2D; border-radius: 5px; }")
@@ -215,37 +212,51 @@ class ChatMessagesArea(QScrollArea):
         self.container_layout = QVBoxLayout()
         self.container_layout.setContentsMargins(0, 5, 0, 10)
         self.container_layout.setSpacing(20)
+        self.container_layout.addStretch(1)
         self.container.setLayout(self.container_layout)
 
         self.scroll_bar = self.verticalScrollBar()
         # IDK why it gives a PyUnresolvedReferences here, but we'll roll with it
         # noinspection PyUnresolvedReferences
-        self.scroll_bar.rangeChanged.connect(self.__scroll_to_bottom)
-        # noinspection PyUnresolvedReferences
         self.scroll_bar.valueChanged.connect(self.__height_changed)
+        # noinspection PyUnresolvedReferences
+        self.scroll_bar.rangeChanged.connect(self.__scroll_to_bottom)
 
         self.setWidget(self.container)
 
+        self.execute_scroll = False
         self.load_old_messages(None)
-
-    def __scroll_to_bottom(self, _: int, max_value: int):
-        self.scroll_bar.setValue(max_value)
 
     def __height_changed(self, value: int):
         if value == 0:
             oldest_message = self.container_layout.itemAt(0)
-            if oldest_message is None:
+            if oldest_message.spacerItem() is not None:
                 self.load_old_messages(None)
+            else:
+                oldest_message = oldest_message.widget()
+                if isinstance(oldest_message, ChatMessage):
+                    self.load_old_messages(oldest_message.message_id)
+
+    def __reset_execute_scroll(self):
+        self.execute_scroll = False
+
+    def __scroll_to_bottom(self):
+        if self.execute_scroll:
+            self.scroll_bar.setValue(self.scroll_bar.maximum())
+            QTimer.singleShot(0, self.__reset_execute_scroll)
 
     def load_old_messages(self, oldest_message_id: str | None):
         messages = self.brain.load_messages(self.chat_id, self.domain, oldest_message_id)
         self.add_messages(messages, 0)
+        if oldest_message_id is None:
+            self.execute_scroll = True
 
     def add_messages(self, messages: list, starting_position: int = -1):
         # -1 --> ADD TO THE PEAK
 
         if starting_position == -1:
-            position = self.container_layout.count()
+            position = self.container_layout.count() - 1
+            self.execute_scroll = True
         else:
             position = starting_position
 
@@ -267,6 +278,14 @@ class ChatMessagesArea(QScrollArea):
             )
             self.container_layout.insertWidget(position, message_widget)
             position += 1
+
+    def remove_messages(self, messages: list[str]):
+        for row in reversed(range(self.container_layout.count())):
+            widget = self.container_layout.itemAt(row).widget()
+            if isinstance(widget, ChatMessage):
+                if widget.message_id in messages:
+                    self.container_layout.removeWidget(widget)
+                    widget.deleteLater()
 
 class ChatMembersList(QWidget):
     def __init__(self, brain: Brain, chat_id: str, domain: str):
@@ -451,8 +470,11 @@ class Chat(QWidget):
         self.widget_layout.addWidget(self.chat_details_button)
         self.widget_layout.addWidget(self.chat_messages)
 
-    def add_messages(self, messages: list[ChatMessage]):
+    def add_messages(self, messages: list):
         self.chat_messages.add_messages(messages)
+
+    def remove_messages(self, messages: list[str]):
+        self.chat_messages.remove_messages(messages)
 
 class ChatBubble(QWidget):
     def __init__(self, brain: Brain, chat_id: str, domain: str):
@@ -487,8 +509,11 @@ class ChatBubble(QWidget):
         self.widget_layout.setCurrentIndex(0)
         self.brain.change_textbox_visibility.emit(True)
 
-    def add_messages(self, messages: list[ChatMessage]):
+    def add_messages(self, messages: list):
         self.chat.add_messages(messages)
+
+    def remove_messages(self, messages: list):
+        self.chat.remove_messages(messages)
 
 class ChatHistory(QWidget):
     def __init__(self, brain: Brain):
@@ -514,6 +539,7 @@ class ChatHistory(QWidget):
         self.brain.chat_selected.connect(self.show_chat)
         self.brain.current_user_changed.connect(self.handle_current_user_change)
         self.brain.add_new_messages.connect(self.add_messages)
+        self.brain.remove_messages.connect(self.remove_messages)
 
     def show_chat(self, chat_id: str, domain: str):
         current_chat_idx = self.widget_layout.currentIndex()
@@ -542,6 +568,7 @@ class ChatHistory(QWidget):
             if isinstance(widget, ChatBubble):
                 if widget.chat_id == chat_id and widget.domain == chat_domain:
                     self.widget_layout.removeWidget(widget)
+                    widget.deleteLater()
                     return
 
     def handle_current_user_change(self):
@@ -561,25 +588,26 @@ class ChatHistory(QWidget):
                         oldest_access_time = access_time
 
             self.widget_layout.removeWidget(oldest_widget)
+            oldest_widget.deleteLater()
 
         new_bubble = ChatBubble(self.brain, chat_id, domain)
         # at index 0 there is a special screen for when there are no chats selected
         self.widget_layout.insertWidget(1, new_bubble)
         self.widget_layout.setCurrentIndex(1)
 
-    def add_messages(self, messages: list):
-        sorted_messages = dict()
-        for message in messages:
-            if (message['chat_id'], message['domain']) not in sorted_messages.keys():
-                sorted_messages[(message['chat_id'], message['domain'])] = [message]
-            else :
-                sorted_messages[(message['chat_id'], message['domain'])].append(message)
-
+    def add_messages(self, messages: dict):
         for idx in range(self.widget_layout.count()):
             widget = self.widget_layout.widget(idx)
             if isinstance(widget, ChatBubble):
-                if (widget.chat_id, widget.domain) in sorted_messages.keys():
-                    widget.add_messages(sorted_messages[(widget.chat_id, widget.domain)])
+                if (widget.chat_id, widget.domain) in messages.keys():
+                    widget.add_messages(messages[(widget.chat_id, widget.domain)])
+
+    def remove_messages(self, messages: dict):
+        for idx in range(self.widget_layout.count()):
+            widget = self.widget_layout.widget(idx)
+            if isinstance(widget, ChatBubble):
+                if (widget.chat_id, widget.domain) in messages.keys():
+                    widget.remove_messages(messages[(widget.chat_id, widget.domain)])
 
 class ChatTextBox(QTextEdit):
     def __init__(self, brain: Brain):
@@ -786,7 +814,9 @@ class MessageWindow(QWidget):
             text = text
         )
 
-        self.brain.add_new_messages.emit([message])
+        self.brain.add_new_messages.emit({
+            (current_chat_id, current_chat_domain): [message]
+        })
         self.brain.set_edit(False)
         self.brain.set_reply(False)
         self.brain.message_context_changed.emit()

@@ -16,8 +16,9 @@ class Brain(QObject):
     chat_details_back_requested = pyqtSignal()
     chat_chat_details_requested = pyqtSignal()
 
-    add_new_messages = pyqtSignal(list)
+    add_new_messages = pyqtSignal(dict)
     set_textbox_text = pyqtSignal(str)
+    remove_messages = pyqtSignal(dict)
 
     message_context_changed = pyqtSignal()
 
