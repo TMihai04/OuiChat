@@ -120,6 +120,7 @@ class ChatList(QWidget):
 
         self.brain = brain
         self.brain.current_user_changed.connect(self.handle_current_user_changed)
+        self.brain.chat_updated.connect(self.update_chat)
 
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Search chat...")
@@ -161,40 +162,65 @@ class ChatList(QWidget):
         for row in range(self.list_widget.count()):
             item = self.list_widget.item(row)
             item_data = item.data(Qt.ItemDataRole.UserRole)
-            chat_name = item.text()
-            chat_domain = item_data["domain"]
-            if chat_name == chat_id and chat_domain == domain:
+            item_chat_id = item_data['chat_id']
+            item_domain = item_data["domain"]
+            if item_chat_id == chat_id and item_domain == domain:
                 return item
         return None
 
     def set_chats(self):
-        chat_ids = self.brain.get_chat_ids()
-        chat_domains = self.brain.get_chat_domains()
-        chat_icons = self.brain.get_chat_icons()
-        num_chats = len(chat_ids)
-        for idx in range(num_chats):
-            self.add_chat(chat_ids[idx], chat_domains[idx], chat_icons[idx])
+        chats_data = self.brain.get_chats()
+        for chat in chats_data:
+            self.add_chat(chat['chat_id'], chat['domain'])
 
-    def add_chat(self, chat_id: str, chat_domain: str, icon_path: str):
-        item = QListWidgetItem()
+    def __set_entry_characteristics(self, item: QListWidgetItem, chat_id: str, chat_domain: str):
+        icon_path = self.brain.get_chat_icon_path(chat_id, chat_domain)
         item.setIcon(QIcon(icon_path))
-        item.setText(f"{chat_id}")
-        item.setData(Qt.ItemDataRole.UserRole, {"domain": chat_domain})
+        name = self.brain.get_chat_display_name(chat_id, chat_domain)
+        item.setText(f"{name}")
+
+    def add_chat(self, chat_id: str, chat_domain: str):
+        item = QListWidgetItem()
+        self.__set_entry_characteristics(item, chat_id, chat_domain)
+        chat_type = self.brain.get_chat_type(chat_id, chat_domain)
+        item.setData(Qt.ItemDataRole.UserRole,
+                     {
+                         "chat_id": chat_id,
+                         "domain": chat_domain,
+                         "type": chat_type
+                     })
         item.setHidden(True) # initially all chats are hidden
         self.list_widget.addItem(item)
 
     def handle_current_user_changed(self):
         self.list_widget.setCurrentRow(-1)
         self.list_widget.verticalScrollBar().setValue(0)
+        self.update_p2p_chats()
         self.search("")
+
+    def update_chat(self, chat_id: str, domain: str):
+        for row in range(self.list_widget.count()):
+            item = self.list_widget.item(row)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            if item_data['chat_id'] == chat_id and item_data['domain'] == domain:
+                self.__set_entry_characteristics(item, item_data["chat_id"], item_data["domain"])
+
+    def update_p2p_chats(self):
+        current_user_domain = self.brain.get_current_user_domain()
+        for row in range(self.list_widget.count()):
+            item = self.list_widget.item(row)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            if item_data['domain'] == current_user_domain == item_data["type"] == "p2p":
+                self.__set_entry_characteristics(item, item_data["chat_id"], item_data["domain"])
 
     def search(self, text: str):
         current_user_username = self.brain.get_current_user_username()
         current_user_domain = self.brain.get_current_user_domain()
         for row in range(self.list_widget.count()):
             item = self.list_widget.item(row)
-            chat_id = item.text()
-            chat_domain = item.data(Qt.ItemDataRole.UserRole)['domain']
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            chat_id = item_data['chat_id']
+            chat_domain = item_data['domain']
             chat_user_usernames = self.brain.get_chat_user_usernames(chat_id, chat_domain)
             if chat_domain == current_user_domain and current_user_username in chat_user_usernames:
                 if text == "" or text in item.text():
@@ -210,16 +236,18 @@ class ChatList(QWidget):
             return
 
         item = self.list_widget.item(row)
-        chat_id = item.text()
-        chat_domain = item.data(Qt.ItemDataRole.UserRole)['domain']
+        item_data = item.data(Qt.ItemDataRole.UserRole)
+        chat_id = item_data['chat_id']
+        chat_domain = item_data['domain']
         self.brain.chat_selected.emit(chat_id, chat_domain)
 
     def show_context_menu(self, position):
         item = self.list_widget.itemAt(position)
         if not item: return
 
-        chat_id = item.text()
-        chat_domain = item.data(Qt.ItemDataRole.UserRole)['domain']
+        item_data = item.data(Qt.ItemDataRole.UserRole)
+        chat_id = item_data['chat_id']
+        chat_domain = item_data['domain']
         chat_type = self.brain.get_chat_type(chat_id, chat_domain)
         user_is_admin = self.brain.user_is_admin(chat_id, chat_domain, self.brain.get_current_user_username())
 

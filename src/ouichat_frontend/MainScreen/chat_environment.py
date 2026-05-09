@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (
     QTextEdit, QSizePolicy, QScrollArea, QLineEdit, QListWidget, QAbstractItemView, QListWidgetItem, QMenu
 )
 
-from PyQt6.QtCore import Qt, QSize, pyqtSignal, QEvent, QTimer
+from PyQt6.QtCore import Qt, QSize, pyqtSignal, QEvent
 from PyQt6.QtGui import QIcon, QPixmap, QFontMetrics, QEnterEvent, QTextOption
 
 import time
@@ -235,14 +235,17 @@ class ChatMessagesArea(QScrollArea):
         # noinspection PyUnresolvedReferences
         self.scroll_bar.valueChanged.connect(self.__height_changed)
         # noinspection PyUnresolvedReferences
-        self.scroll_bar.rangeChanged.connect(self.__scroll_to_bottom)
+        self.scroll_bar.rangeChanged.connect(self.__range_changed)
 
         self.setWidget(self.container)
 
-        self.execute_scroll = False
+        self.was_at_bottom = True
+
         self.load_old_messages(None)
 
     def __height_changed(self, value: int):
+        self.was_at_bottom = value == self.scroll_bar.maximum()
+
         if value == 0:
             oldest_message = self.container_layout.itemAt(0)
             if oldest_message.spacerItem() is not None:
@@ -252,28 +255,26 @@ class ChatMessagesArea(QScrollArea):
                 if isinstance(oldest_message, ChatMessage):
                     self.load_old_messages(oldest_message.message_id)
 
-    def __reset_execute_scroll(self):
-        self.execute_scroll = False
-
-    def __scroll_to_bottom(self):
-        if self.execute_scroll:
-            self.scroll_bar.setValue(self.scroll_bar.maximum())
-            QTimer.singleShot(0, self.__reset_execute_scroll)
+    def __range_changed(self, _: int, max_value: int):
+        if self.was_at_bottom:
+            self.scroll_bar.setValue(max_value)
 
     def load_old_messages(self, oldest_message_id: str | None):
         messages = self.brain.load_messages(self.chat_id, self.domain, oldest_message_id)
         self.add_messages(messages, 0)
+
         if oldest_message_id is None:
-            self.execute_scroll = True
+            self.scroll_bar.setValue(self.scroll_bar.maximum())
 
     def add_messages(self, messages: list, starting_position: int = -1):
         # -1 --> ADD TO THE PEAK
 
         if starting_position == -1:
             position = self.container_layout.count() - 1
-            self.execute_scroll = True
+            force_to_bottom = True
         else:
             position = starting_position
+            force_to_bottom = False
 
         for message in messages:
             message_widget = ChatMessage(
@@ -293,6 +294,9 @@ class ChatMessagesArea(QScrollArea):
             )
             self.container_layout.insertWidget(position, message_widget)
             position += 1
+
+        if force_to_bottom:
+            self.scroll_bar.setValue(self.scroll_bar.maximum())
 
     def remove_messages(self, messages: list[str]):
         for row in reversed(range(self.container_layout.count())):
@@ -361,6 +365,8 @@ class ChatDetails(QScrollArea):
         - add 'add members' button dialog
         - make edit description tag appear only for admins
     """
+    chat_history_requested = pyqtSignal()
+
     def __init__(self, brain: Brain, chat_id: str, domain: str):
         super().__init__()
 
@@ -372,26 +378,31 @@ class ChatDetails(QScrollArea):
         self.back_button.setIconSize(QSize(20, 20))
         self.back_button.setFixedSize(30, 30)
         self.back_button.setIcon(QIcon("./Icons/close_icon.png"))
-        self.back_button.clicked.connect(self.brain.chat_details_back_requested.emit)
+        self.back_button.clicked.connect(self.chat_history_requested.emit)
 
-        chat_icon = QPushButton()
-        chat_icon.setIconSize(QSize(64, 64))
-        chat_icon.setFixedSize(70, 70)
+        self.chat_icon = QPushButton()
+        self.chat_icon.setIconSize(QSize(64, 64))
+        self.chat_icon.setFixedSize(70, 70)
         chat_icon_path = self.brain.get_chat_icon_path(self.chat_id, self.domain)
-        chat_icon.setIcon(QIcon(chat_icon_path))
+        self.chat_icon.setIcon(QIcon(chat_icon_path))
+
+        self.chat_name = QLabel()
+        chat_name = self.brain.get_chat_display_name(self.chat_id, self.domain)
+        self.chat_name.setText(chat_name)
+        self.chat_name.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
 
         chat_description_label = QLabel()
         chat_description_label.setText('Description:')
 
-        chat_description_text = QLabel()
+        self.chat_description_text = QLabel()
         chat_description = self.brain.get_chat_description(self.chat_id, self.domain)
-        chat_description_text.setText(chat_description)
-        chat_description_text.setWordWrap(True)
+        self.chat_description_text.setText(chat_description)
+        self.chat_description_text.setWordWrap(True)
 
-        change_chat_description_button = QPushButton()
-        change_chat_description_button.setIcon(QIcon("./Icons/edit_icon.png"))
-        change_chat_description_button.setFixedSize(20, 20)
-        change_chat_description_button.setIconSize(QSize(16, 16))
+        self.change_chat_description_button = QPushButton()
+        self.change_chat_description_button.setIcon(QIcon("./Icons/edit_icon.png"))
+        self.change_chat_description_button.setFixedSize(20, 20)
+        self.change_chat_description_button.setIconSize(QSize(16, 16))
 
         chat_description = QWidget()
         chat_description_layout = QVBoxLayout()
@@ -400,8 +411,8 @@ class ChatDetails(QScrollArea):
         chat_description.setLayout(chat_description_layout)
 
         chat_description_layout.addWidget(chat_description_label, alignment=Qt.AlignmentFlag.AlignLeft)
-        chat_description_layout.addWidget(chat_description_text)
-        chat_description_layout.addWidget(change_chat_description_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        chat_description_layout.addWidget(self.chat_description_text)
+        chat_description_layout.addWidget(self.change_chat_description_button, alignment=Qt.AlignmentFlag.AlignLeft)
 
         self.container = QWidget()
         self.container_layout = QVBoxLayout()
@@ -410,7 +421,8 @@ class ChatDetails(QScrollArea):
         self.container.setLayout(self.container_layout)
 
         self.container_layout.addWidget(self.back_button, alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
-        self.container_layout.addWidget(chat_icon, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.container_layout.addWidget(self.chat_icon, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.container_layout.addWidget(self.chat_name, alignment=Qt.AlignmentFlag.AlignCenter)
         self.container_layout.addWidget(chat_description)
 
         chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
@@ -441,21 +453,41 @@ class ChatDetails(QScrollArea):
 
             current_user_username = self.brain.get_current_user_username()
             current_user_domain = self.brain.get_current_user_domain()
-            self.update_button_visibility(current_user_username, current_user_domain)
+            self.update_description(current_user_username, current_user_domain)
 
-            self.brain.current_user_changed.connect(self.update_button_visibility)
+            self.brain.current_user_changed.connect(self.update_description)
+
+        self.brain.chat_updated.connect(self.handle_chat_description_change)
 
         self.setWidget(self.container)
         self.setWidgetResizable(True)
 
-    def update_button_visibility(self, username: str, domain: str):
+    def update_labels(self):
+        chat_icon_path = self.brain.get_chat_icon_path(self.chat_id, self.domain)
+        self.chat_icon.setIcon(QIcon(chat_icon_path))
+        chat_name = self.brain.get_chat_display_name(self.chat_id, self.domain)
+        self.chat_name.setText(chat_name)
+        chat_description = self.brain.get_chat_description(self.chat_id, self.domain)
+        self.chat_description_text.setText(chat_description)
 
+    def handle_chat_description_change(self, chat_id: str, domain: str):
+        if self.chat_id == chat_id and self.domain == domain:
+            self.update_labels()
+
+    def update_description(self, username: str, domain: str):
         chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
-        if chat_type == 'p2p': return
+        if chat_type == 'p2p' and self.domain == domain:
+            # no member management buttons
+            self.update_labels()
+            self.change_chat_description_button.setVisible(False)
+            return
 
         if domain == self.domain:
-            self.button_container.setVisible(self.brain.user_is_admin(self.chat_id, domain, username))
+            user_is_admin = self.brain.user_is_admin(self.chat_id, domain, username)
+            self.button_container.setVisible(user_is_admin)
+            self.change_chat_description_button.setVisible(user_is_admin)
         else:
+            self.button_container.setVisible(False)
             self.button_container.setVisible(False)
 
 class Chat(QWidget):
@@ -476,14 +508,33 @@ class Chat(QWidget):
         self.chat_messages = ChatMessagesArea(brain, chat_id, domain)
 
         self.chat_details_button = QPushButton()
-        self.chat_details_button.setText(f"{chat_id}")
+        chat_name = self.brain.get_chat_display_name(self.chat_id, self.domain)
+        self.chat_details_button.setText(chat_name)
         chat_icon_path = self.brain.get_chat_icon_path(self.chat_id, self.domain)
         self.chat_details_button.setIcon(QIcon(chat_icon_path))
         self.chat_details_button.setFixedHeight(25)
-        self.chat_details_button.clicked.connect(self.brain.chat_chat_details_requested.emit)
+        self.chat_details_button.clicked.connect(self.chat_details_requested.emit)
 
         self.widget_layout.addWidget(self.chat_details_button)
         self.widget_layout.addWidget(self.chat_messages)
+
+        self.brain.current_user_changed.connect(self.__handle_current_user_change)
+        self.brain.chat_updated.connect(self.__handle_chat_update)
+
+    def __handle_chat_update(self, chat_id: str, domain: str):
+        if self.chat_id == chat_id and self.domain == domain:
+            chat_name = self.brain.get_chat_display_name(self.chat_id, self.domain)
+            self.chat_details_button.setText(chat_name)
+            chat_icon = self.brain.get_chat_icon_path(self.chat_id, self.domain)
+            self.chat_details_button.setIcon(QIcon(chat_icon))
+
+    def __handle_current_user_change(self, _: str, domain: str):
+        chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
+        if domain == self.domain and chat_type == 'p2p':
+            chat_name = self.brain.get_chat_display_name(self.chat_id, self.domain)
+            self.chat_details_button.setText(chat_name)
+            chat_icon = self.brain.get_chat_icon_path(self.chat_id, self.domain)
+            self.chat_details_button.setIcon(QIcon(chat_icon))
 
     def add_messages(self, messages: list):
         self.chat_messages.add_messages(messages)
@@ -502,10 +553,10 @@ class ChatBubble(QWidget):
         self.last_access_time = time.time()
 
         self.chat = Chat(brain, chat_id, domain)
-        self.brain.chat_chat_details_requested.connect(self.display_chat_details)
+        self.chat.chat_details_requested.connect(self.display_chat_details)
 
         self.chat_details_widget = ChatDetails(brain, chat_id, domain)
-        self.brain.chat_details_back_requested.connect(self.display_chat)
+        self.chat_details_widget.chat_history_requested.connect(self.display_chat)
 
         self.widget_layout = QStackedLayout()
         self.widget_layout.setContentsMargins(0, 0, 0, 0)
@@ -769,19 +820,25 @@ class MessageWindow(QWidget):
         self.brain.chat_selected.connect(self.set_visibility_str)
 
     def set_visibility_bool(self, is_visible: bool):
-        self.setVisible(is_visible)
+        current_chat_setting = self.brain.get_current_chat_setting()
+        if current_chat_setting is None:
+            self.setVisible(False)
+        else:
+            self.setVisible(current_chat_setting == "rw" and is_visible)
 
     def set_visibility_str(self, chat_id: str, domain: str):
-        self.setVisible(chat_id != "" and domain != "")
+        current_chat_setting = self.brain.get_current_chat_setting()
+        if current_chat_setting is None:
+            self.setVisible(False)
+        else:
+            self.setVisible(current_chat_setting == "rw" and chat_id != "" and domain != "")
 
     def __resize_text_box(self):
-        text_height = int(self.text_box.document().size().height())
-        box_height = self.text_box.height()
-
-        if text_height > self.text_box.max_height: return
-        else:
-            if text_height != box_height:
-                self.text_box.setFixedHeight(text_height)
+        old_height = self.text_box.height()
+        text_height = int(self.text_box.document().size().height()) + 2 # prevents character clipping
+        new_height = min(text_height, self.text_box.max_height)
+        if old_height != new_height:
+            self.text_box.setFixedHeight(new_height)
 
     def resizeEvent(self, event):
         self.__resize_text_box()

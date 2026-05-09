@@ -2,6 +2,15 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from socket_manager import SocketManager
 
+def get_users_username(users: list):
+    return list(map(lambda user: user['username'], users))
+
+def get_user_details_from_chat_users(username: str, users: list):
+    for user in users:
+        if user['username'] == username:
+            return user
+    return None
+
 class Brain(QObject):
     chat_added = pyqtSignal(dict)
     chat_removed = pyqtSignal(dict)
@@ -12,8 +21,7 @@ class Brain(QObject):
     chat_selected = pyqtSignal(str, str)
     change_textbox_visibility = pyqtSignal(bool)
 
-    chat_details_back_requested = pyqtSignal()
-    chat_chat_details_requested = pyqtSignal()
+    chat_updated = pyqtSignal(str, str)
 
     add_new_messages = pyqtSignal(dict)
     set_textbox_text = pyqtSignal(str)
@@ -52,6 +60,19 @@ class Brain(QObject):
         self.message_snip = None
 
         self.chat_selected.connect(self.set_current_chat)
+        self.socket_manager.chat_updated.connect(self.update_chat)
+
+    def update_chat(self, chat_details: dict):
+        self.remove_chat_by_id_and_domain(chat_details['chat_id'], chat_details['domain'])
+        self.add_chats([chat_details])
+
+        if self.current_chat is None or \
+                (self.current_chat['chat_id'] == chat_details['chat_id'] and self.current_chat['domain'] == chat_details['domain']):
+            self.current_chat = chat_details
+
+        current_user_domain = self.get_current_user_domain()
+        if current_user_domain == chat_details['domain']:
+            self.chat_updated.emit(chat_details['chat_id'], chat_details['domain'])
 
     def load_messages(self, chat_id: str, domain: str, oldest_message_id: str = None, message_nr: int = 50):
         return self.socket_manager.request_messages(chat_id, domain, oldest_message_id, message_nr)
@@ -101,9 +122,11 @@ class Brain(QObject):
         user = self.find_users({
             "username": username,
             "domain": domain
-        })[0]
-        self.current_user = user
-        self.current_user_changed.emit(user['username'], user['domain'])
+        })
+        if user:
+            user = user[0]
+            self.current_user = user
+            self.current_user_changed.emit(user['username'], user['domain'])
 
     def get_current_user_username(self):
         return self.current_user["username"]
@@ -139,74 +162,142 @@ class Brain(QObject):
         user = self.find_users({
             "username": username,
             "domain": domain
-        })[0]
-        self.remove_user(user)
+        })
+        if user:
+            user = user[0]
+            self.remove_user(user)
 
     def set_current_chat(self, chat_id: str, domain: str):
         if chat_id == "" and domain == "":
             self.current_chat = None
             return
 
-        self.current_chat = self.find_chats({
+        chat = self.find_chats({
             "chat_id": chat_id,
             "domain": domain
-        })[0]
+        })
+        if chat:
+            chat = chat[0]
+            self.current_chat = chat
 
-    def get_chat_ids(self):
-        return list(map(lambda chat: chat['chat_id'], self.chats_list))
-
-    def get_chat_icons(self):
-        return list(map(lambda chat: chat['icon_path'], self.chats_list))
-
-    def get_chat_domains(self):
-        return list(map(lambda chat: chat['domain'], self.chats_list))
+    def get_chats(self):
+        ret = [
+            {
+                "chat_id": chat['chat_id'],
+                "domain": chat['domain'],
+            } for chat in self.chats_list
+        ]
+        return ret
 
     def get_chat_user_usernames(self, chat_id: str, domain: str):
         chat = self.find_chats({
             "chat_id": chat_id,
             "domain": domain
-        })[0]
-        return list(map(lambda user: user['username'], chat['users']))
+        })
+
+        if chat:
+            chat = chat[0]
+            return list(map(lambda user: user['username'], chat['users']))
+        return None
 
     def get_current_chat_id(self):
+        if self.current_chat is None:
+            return None
         return self.current_chat['chat_id']
 
     def get_current_chat_domain(self):
+        if self.current_chat is None:
+            return None
         return self.current_chat['domain']
 
-    def get_chat_icon_path(self, chat_id: str, domain: str):
-        chat = self.find_chats({
-            "chat_id": chat_id,
-            "domain": domain
-        })[0]
-        return chat['icon_path']
+    def get_current_chat_setting(self):
+        if self.current_chat is None:
+            return None
+        return self.current_chat['chat_setting']
 
     def get_chat_type(self, chat_id: str, domain: str):
         chat = self.find_chats({
             "chat_id": chat_id,
             "domain": domain
-        })[0]
-        return chat['chat_type']
+        })
+        if chat:
+            chat = chat[0]
+            return chat['chat_type']
+        return None
+
+    def get_chat_display_name(self, chat_id: str, domain: str):
+        chat = self.find_chats({
+            "chat_id": chat_id,
+            "domain": domain
+        })
+
+        if not chat: return None
+        chat = chat[0]
+
+        if chat['chat_type'] == "chatroom":
+            return chat['display_name']
+        else:
+            current_username = self.get_current_user_username()
+            usernames = get_users_username(chat['users'])
+            other_username = usernames[0] if usernames[0] != current_username else usernames[1]
+            other_user_data = get_user_details_from_chat_users(other_username, chat['users'])
+            return other_user_data['username']
 
     def get_chat_description(self, chat_id: str, domain: str):
         chat = self.find_chats({
             "chat_id": chat_id,
             "domain": domain
-        })[0]
-        return chat['chat_description']
+        })
+
+        if not chat: return None
+        chat = chat[0]
+
+        if chat['chat_type'] == "chatroom":
+            return chat['description']
+        else:
+            current_username = self.get_current_user_username()
+            usernames = get_users_username(chat['users'])
+            other_username = usernames[0] if usernames[0] != current_username else usernames[1]
+            other_user_data = get_user_details_from_chat_users(other_username, chat['users'])
+            return other_user_data['description']
+
+    def get_chat_icon_path(self, chat_id: str, domain: str):
+        chat = self.find_chats({
+            "chat_id": chat_id,
+            "domain": domain
+        })
+
+        if not chat: return None
+        chat = chat[0]
+
+        if chat['chat_type'] == "chatroom":
+            return chat['icon_path']
+        else:
+            current_username = self.get_current_user_username()
+            usernames = get_users_username(chat['users'])
+            other_username = usernames[0] if usernames[0] != current_username else usernames[1]
+            other_user_data = get_user_details_from_chat_users(other_username, chat['users'])
+            return other_user_data['icon_path']
 
     def get_chat_users(self, chat_id: str, domain: str):
         chat = self.find_chats({
             "chat_id": chat_id,
             "domain": domain
-        })[0]
-        return chat['users']
+        })
+        if chat:
+            chat = chat[0]
+            return chat['users']
+        return None
 
     def user_is_admin(self, chat_id: str, domain: str, username: str):
         chat = self.find_chats({
             "chat_id": chat_id,
             "domain": domain
-        })[0]
+        })
+
+        if not chat: return False
+        chat = chat[0]
+
         for user in chat['users']:
             if user['username'] == username:
                 return user['is_admin']
@@ -236,9 +327,12 @@ class Brain(QObject):
                 found_chats.append(chat)
         return found_chats
 
-    def remove_chat_by_username_and_domain(self, chat_id: str, domain: str):
+    def remove_chat_by_id_and_domain(self, chat_id: str, domain: str):
         chat = self.find_chats({
             "chat_id": chat_id,
             "domain": domain
-        })[0]
-        self.remove_chat(chat)
+        })
+
+        if chat:
+            chat = chat[0]
+            self.remove_chat(chat)
