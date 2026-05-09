@@ -11,7 +11,6 @@ class Brain(QObject):
     current_user_changed = pyqtSignal(str, str)
     chat_selected = pyqtSignal(str, str)
     change_textbox_visibility = pyqtSignal(bool)
-    textbox_text_changed = pyqtSignal(str)
 
     chat_details_back_requested = pyqtSignal()
     chat_chat_details_requested = pyqtSignal()

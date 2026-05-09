@@ -111,6 +111,7 @@ class ChatMessage(QWidget):
         self.message_text = QLabel()
         self.message_text.setText(self.text)
         self.message_text.setWordWrap(True)
+        self.message_text.setMinimumWidth(1)
 
         message_area = QWidget()
         message_area_layout = QVBoxLayout()
@@ -748,7 +749,7 @@ class MessageWindow(QWidget):
 
         self.setVisible(False) # initially not visible due to no chat being selected
 
-        self.brain.textbox_text_changed.connect(self.__resize_text_box)
+        self.text_box.textChanged.connect(self.__resize_text_box)
         self.brain.send_message.connect(self.send_message)
         self.brain.change_textbox_visibility.connect(self.set_visibility_bool)
         self.brain.chat_selected.connect(self.set_visibility_str)
