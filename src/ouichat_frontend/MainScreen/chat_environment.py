@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
 )
 
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QEvent, QTimer
-from PyQt6.QtGui import QIcon, QPixmap, QFontMetrics, QEnterEvent
+from PyQt6.QtGui import QIcon, QPixmap, QFontMetrics, QEnterEvent, QTextOption
 
 import time
 
@@ -108,10 +108,14 @@ class ChatMessage(QWidget):
         self.message_details.setText(f"{sender} - {timestamp}{" (Edited)" if was_edited else ""}")
         self.message_details.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
-        self.message_text = QLabel()
-        self.message_text.setText(self.text)
-        self.message_text.setWordWrap(True)
-        self.message_text.setMinimumWidth(1)
+        self.message_text = QTextEdit()
+        self.message_text.setPlainText(self.text)
+        self.message_text.setReadOnly(True)
+        self.message_text.setFrameShape(QTextEdit.Shape.NoFrame)
+        self.message_text.setStyleSheet("background: transparent;")
+        self.message_text.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.message_text.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+        self.message_text.document().setDocumentMargin(0)
 
         message_area = QWidget()
         message_area_layout = QVBoxLayout()
@@ -132,8 +136,18 @@ class ChatMessage(QWidget):
         top_layout.addWidget(sender_icon, alignment=Qt.AlignmentFlag.AlignTop)
         top_layout.addWidget(message_area, stretch=1)
 
+    def __resize_text_box(self):
+        text_height = int(self.message_text.document().size().height())
+        box_height = self.message_text.height()
+        if text_height != box_height:
+            self.message_text.setFixedHeight(text_height)
+
+    def resizeEvent(self, event):
+        self.__resize_text_box()
+        super().resizeEvent(event)
+
     def edit_text(self, text):
-        self.message_text.setText(text)
+        self.message_text.setPlainText(text)
 
         if not self.was_edited:
             old_message_details = self.message_details.text()
@@ -768,6 +782,10 @@ class MessageWindow(QWidget):
         else:
             if text_height != box_height:
                 self.text_box.setFixedHeight(text_height)
+
+    def resizeEvent(self, event):
+        self.__resize_text_box()
+        super().resizeEvent(event)
 
     def send_message(self):
 
