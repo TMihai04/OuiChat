@@ -363,7 +363,6 @@ class ChatDetails(QScrollArea):
     TO DO:
         - add 'remove members' button dialog
         - add 'add members' button dialog
-        - make edit description tag appear only for admins
     """
     chat_history_requested = pyqtSignal()
 
@@ -451,12 +450,11 @@ class ChatDetails(QScrollArea):
             self.container_layout.addWidget(self.chat_members_list)
             self.container_layout.addWidget(self.button_container)
 
-            current_user_username = self.brain.get_current_user_username()
-            current_user_domain = self.brain.get_current_user_domain()
-            self.update_description(current_user_username, current_user_domain)
-
             self.brain.current_user_changed.connect(self.update_description)
 
+        current_user_username = self.brain.get_current_user_username()
+        current_user_domain = self.brain.get_current_user_domain()
+        self.update_description(current_user_username, current_user_domain)
         self.brain.chat_updated.connect(self.handle_chat_description_change)
 
         self.setWidget(self.container)
@@ -769,7 +767,7 @@ class MessageWindow(QWidget):
     """
     TO DO:
         - implement send_message with requests
-        - implement upload_file with requests
+        - implement upload_file without requests (UI to display which files you're uploading)
     """
     def __init__(self, brain: Brain):
         super().__init__()
@@ -904,7 +902,6 @@ class MessageWindow(QWidget):
 class ChatEnvironment(QWidget):
     """
     TO DO:
-        - verify and refine implementation for p2p chats
     """
     def __init__(self, brain: Brain):
         super().__init__()

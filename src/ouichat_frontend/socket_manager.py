@@ -1,6 +1,6 @@
 import time
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, QObject
 
 
 def message_args_to_dict(chat_id: str, domain: str, message_id: str, sender: str, sender_icon_path: str,
@@ -21,7 +21,7 @@ def message_args_to_dict(chat_id: str, domain: str, message_id: str, sender: str
         "text": text
     }
 
-class SocketManager:
+class SocketManager(QObject):
     """
     TO DO:
         - implement request/websocket communication
