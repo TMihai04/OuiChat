@@ -77,6 +77,8 @@ class LeftPanelInteractions(QWidget):
         pass
 
     def handle_users_dropdown(self, row:int):
+        self.brain.set_current_user_last_seen_time_current_chat()
+
         num_entries = self.users_dropdown.count()
         if row != num_entries - 1:
             if row == self.previous_user_row: return
@@ -117,7 +119,7 @@ def get_icon_with_badge(icon_path: str, has_unread: bool):
 
     painter = QPainter(base_pixmap)
     badge_path = "./Icons/new_messages_icon.png"
-    badge_pixmap = QPixmap(badge_path).scaled(10, 10)
+    badge_pixmap = QPixmap(badge_path).scaled(16, 16)
     x_pos = base_pixmap.width() - badge_pixmap.width()
     y_pos = base_pixmap.height() - badge_pixmap.height()
     painter.drawPixmap(x_pos, y_pos, badge_pixmap)
@@ -222,9 +224,12 @@ class ChatList(QWidget):
         self.list_widget.addItem(item)
 
     def handle_current_user_changed(self):
+        self.list_widget.blockSignals(True)
         self.list_widget.setCurrentRow(-1)
         self.list_widget.verticalScrollBar().setValue(0)
-        # self.update_p2p_chats()
+        self.list_widget.blockSignals(False)
+
+        self.brain.chat_selected.emit("", "")
 
         current_user_domain = self.brain.get_current_user_domain()
         for row in range(self.list_widget.count()):
@@ -283,10 +288,7 @@ class ChatList(QWidget):
                 item.setHidden(True)
 
     def emit_selected_chat_id_and_domain(self, row: int):
-        current_chat_id = self.brain.get_current_chat_id()
-        current_chat_domain = self.brain.get_current_chat_domain()
-        if current_chat_id and current_chat_domain:
-            self.brain.set_current_user_last_seen_time(current_chat_id, current_chat_domain)
+        self.brain.set_current_user_last_seen_time_current_chat()
 
         if row == -1:
             self.brain.chat_selected.emit("", "")
@@ -368,7 +370,7 @@ class ChatList(QWidget):
         domain = item_data['domain']
 
         self.brain.set_current_user_last_seen_time(chat_id, domain)
-        self.set_unread_icon(item, chat_id, domain, True)
+        self.set_unread_icon(item, chat_id, domain, False)
 
 class ChatsAndUsersPanel(QWidget):
     def __init__(self, brain: Brain, login_dialog):

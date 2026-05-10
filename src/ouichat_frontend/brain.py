@@ -30,6 +30,7 @@ class Brain(QObject):
     add_new_messages = pyqtSignal(dict)
     set_textbox_text = pyqtSignal(str)
     remove_messages = pyqtSignal(dict)
+    message_edited = pyqtSignal(str, str, str, str)
 
     message_context_changed = pyqtSignal()
 
@@ -88,6 +89,12 @@ class Brain(QObject):
         chat = chat[0]
         chat['last_message_timestamp'] = timestamp
         self.last_seen_time_updated.emit(chat_id, domain)
+
+    def set_current_user_last_seen_time_current_chat(self):
+        current_chat_id = self.get_current_chat_id()
+        current_chat_domain = self.get_current_chat_domain()
+        if current_chat_id and current_chat_domain:
+            self.set_current_user_last_seen_time(current_chat_id, current_chat_domain)
 
     def set_current_user_last_seen_time(self, chat_id: str, domain: str):
         current_user_username = self.get_current_user_username()

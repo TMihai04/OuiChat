@@ -71,7 +71,6 @@ class ChatMessage(QWidget):
         sender_pixmap = QPixmap(sender_icon_path).scaled(32, 32)
         sender_icon.setPixmap(sender_pixmap)
 
-        self.text = text
         self.was_edited = was_edited
 
         reply_area = QWidget()
@@ -109,13 +108,14 @@ class ChatMessage(QWidget):
         self.message_details.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
         self.message_text = QTextEdit()
-        self.message_text.setPlainText(self.text)
+        self.message_text.setPlainText(text)
         self.message_text.setReadOnly(True)
         self.message_text.setFrameShape(QTextEdit.Shape.NoFrame)
         self.message_text.setStyleSheet("background: transparent;")
         self.message_text.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.message_text.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
         self.message_text.document().setDocumentMargin(0)
+        self.message_text.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
         message_area = QWidget()
         message_area_layout = QVBoxLayout()
@@ -192,11 +192,11 @@ class ChatMessage(QWidget):
             return
 
         if selected_action == reply:
-            self.brain.set_reply(True, self.sender, self.sender_icon_path, self.text)
+            self.brain.set_reply(True, self.sender, self.sender_icon_path, self.message_text.toPlainText())
 
         elif selected_action == edit:
-            self.brain.set_edit(True, self.message_id, self.sender, self.sender_icon_path, self.text)
-            self.brain.set_textbox_text.emit(self.text)
+            self.brain.set_edit(True, self.message_id, self.sender, self.sender_icon_path, self.message_text.toPlainText())
+            self.brain.set_textbox_text.emit(self.message_text.toPlainText())
 
         elif selected_action == delete:
             message_data = {
@@ -302,6 +302,14 @@ class ChatMessagesArea(QScrollArea):
                 if widget.message_id in messages:
                     self.container_layout.removeWidget(widget)
                     widget.deleteLater()
+
+    def edit_message(self, message_id: str, text: str):
+        for row in reversed(range(self.container_layout.count())):
+            widget = self.container_layout.itemAt(row).widget()
+            if isinstance(widget, ChatMessage):
+                if widget.message_id == message_id:
+                    widget.edit_text(text)
+                    return
 
 class ChatMembersList(QWidget):
     def __init__(self, brain: Brain, chat_id: str, domain: str):
@@ -537,6 +545,9 @@ class Chat(QWidget):
     def remove_messages(self, messages: list[str]):
         self.chat_messages.remove_messages(messages)
 
+    def edit_message(self, message_id: str, text: str):
+        self.chat_messages.edit_message(message_id, text)
+
 class ChatBubble(QWidget):
     def __init__(self, brain: Brain, chat_id: str, domain: str):
         super().__init__()
@@ -576,6 +587,9 @@ class ChatBubble(QWidget):
     def remove_messages(self, messages: list):
         self.chat.remove_messages(messages)
 
+    def edit_message(self, message_id: str, text: str):
+        self.chat.edit_message(message_id, text)
+
 class ChatHistory(QWidget):
     def __init__(self, brain: Brain):
         super().__init__()
@@ -601,6 +615,7 @@ class ChatHistory(QWidget):
         self.brain.current_user_changed.connect(self.handle_current_user_change)
         self.brain.add_new_messages.connect(self.add_messages)
         self.brain.remove_messages.connect(self.remove_messages)
+        self.brain.message_edited.connect(self.edit_message)
 
     def show_chat(self, chat_id: str, domain: str):
         current_chat_idx = self.widget_layout.currentIndex()
@@ -664,6 +679,13 @@ class ChatHistory(QWidget):
                     widget.add_messages(messages[(widget.chat_id, widget.domain)])
                     last_message_timestamp = messages[(widget.chat_id, widget.domain)][-1]['timestamp']
                     self.brain.set_last_message_timestamp(widget.chat_id, widget.domain, last_message_timestamp)
+
+    def edit_message(self, chat_id: str, domain: str, message_id: str, text: str):
+        for idx in range(self.widget_layout.count()):
+            widget = self.widget_layout.widget(idx)
+            if isinstance(widget, ChatBubble):
+                if widget.chat_id == chat_id and widget.domain == domain:
+                    widget.edit_message(message_id, text)
 
     def remove_messages(self, messages: dict):
         for idx in range(self.widget_layout.count()):
@@ -751,13 +773,13 @@ class MessageContext(QWidget):
             self.context_label.setText("Replying to:")
             self.context_sender_icon.setPixmap(QPixmap(reply_details['reply_sender_icon_path']).scaled(24, 24))
             self.context_user_label.setText(f"{reply_details['reply_sender']}:")
-            self.context_snip_label.setText(f"{reply_details['reply_snip']}:")
+            self.context_snip_label.setText(f"{reply_details['reply_snip']}")
             self.setVisible(True)
         elif edit_details['is_edit']:
             self.context_label.setText("Editing:")
             self.context_sender_icon.setPixmap(QPixmap(edit_details['sender_icon_path']).scaled(24, 24))
             self.context_user_label.setText(f"{edit_details['sender']}:")
-            self.context_snip_label.setText(f"{edit_details['message_snip']}:")
+            self.context_snip_label.setText(f"{edit_details['message_snip']}")
             self.setVisible(True)
         else:
             self.setVisible(False)
@@ -861,8 +883,12 @@ class MessageWindow(QWidget):
 
         if edit_details['is_edit']:
             # process different requests
+            self.brain.message_edited.emit(current_chat_id, current_chat_domain, edit_details['edit_message_id'], text)
+
             self.brain.set_edit(False)
             self.brain.message_context_changed.emit()
+            self.text_box.clear()
+            return
 
         reply_details = self.brain.get_reply_details()
 
