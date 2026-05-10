@@ -1,5 +1,7 @@
 from PyQt6.QtCore import QObject, pyqtSignal
 
+import time
+
 from socket_manager import SocketManager
 
 def get_users_username(users: list):
@@ -22,6 +24,8 @@ class Brain(QObject):
     change_textbox_visibility = pyqtSignal(bool)
 
     chat_updated = pyqtSignal(str, str)
+
+    last_seen_time_updated = pyqtSignal(str, str)
 
     add_new_messages = pyqtSignal(dict)
     set_textbox_text = pyqtSignal(str)
@@ -61,6 +65,52 @@ class Brain(QObject):
 
         self.chat_selected.connect(self.set_current_chat)
         self.socket_manager.chat_updated.connect(self.update_chat)
+
+    def get_last_message_timestamp(self, chat_id: str, domain: str):
+        chat = self.find_chats({
+            "chat_id": chat_id,
+            "domain": domain
+        })
+
+        if chat is None: return None
+
+        chat = chat[0]
+        return chat['last_message_timestamp']
+
+    def set_last_message_timestamp(self, chat_id: str, domain:str, timestamp: float):
+        chat = self.find_chats({
+            "chat_id": chat_id,
+            "domain": domain
+        })
+
+        if chat is None: return
+
+        chat = chat[0]
+        chat['last_message_timestamp'] = timestamp
+        self.last_seen_time_updated.emit(chat_id, domain)
+
+    def set_current_user_last_seen_time(self, chat_id: str, domain: str):
+        current_user_username = self.get_current_user_username()
+        current_user_domain = self.get_current_user_domain()
+        if current_user_domain != domain: return
+
+        chat_users = self.get_chat_users(chat_id, domain)
+        for user in chat_users:
+            if user['username'] == current_user_username:
+                user['last_seen_time'] = time.time()
+                return
+
+    def get_current_user_last_seen_time(self, chat_id: str, domain: str):
+        current_user_username = self.get_current_user_username()
+        current_user_domain = self.get_current_user_domain()
+        if current_user_domain != domain: return None
+
+        chat_users = self.get_chat_users(chat_id, domain)
+        for user in chat_users:
+            if user['username'] == current_user_username:
+                return user['last_seen_time']
+
+        return None
 
     def update_chat(self, chat_details: dict):
         self.remove_chat_by_id_and_domain(chat_details['chat_id'], chat_details['domain'])

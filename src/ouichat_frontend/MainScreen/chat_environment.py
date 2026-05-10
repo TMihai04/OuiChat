@@ -244,7 +244,7 @@ class ChatMessagesArea(QScrollArea):
         self.load_old_messages(None)
 
     def __height_changed(self, value: int):
-        self.was_at_bottom = value == self.scroll_bar.maximum()
+        self.was_at_bottom = value >= self.scroll_bar.maximum() - 20
 
         if value == 0:
             oldest_message = self.container_layout.itemAt(0)
@@ -271,12 +271,12 @@ class ChatMessagesArea(QScrollArea):
 
         if starting_position == -1:
             position = self.container_layout.count() - 1
-            force_to_bottom = True
         else:
             position = starting_position
-            force_to_bottom = False
 
         for message in messages:
+            local_time = time.localtime(message['timestamp'])
+            formatted_time = time.strftime("%H:%M:%S %d/%m/%Y", local_time)
             message_widget = ChatMessage(
                 brain = self.brain,
                 chat_id = message['chat_id'],
@@ -289,14 +289,11 @@ class ChatMessagesArea(QScrollArea):
                 reply_sender = message['reply_sender'],
                 reply_sender_icon_path = message['reply_sender_icon_path'],
                 reply_snip = message['reply_snip'],
-                timestamp = message['timestamp'],
+                timestamp = formatted_time,
                 text = message['text']
             )
             self.container_layout.insertWidget(position, message_widget)
             position += 1
-
-        if force_to_bottom:
-            self.scroll_bar.setValue(self.scroll_bar.maximum())
 
     def remove_messages(self, messages: list[str]):
         for row in reversed(range(self.container_layout.count())):
@@ -665,6 +662,8 @@ class ChatHistory(QWidget):
             if isinstance(widget, ChatBubble):
                 if (widget.chat_id, widget.domain) in messages.keys():
                     widget.add_messages(messages[(widget.chat_id, widget.domain)])
+                    last_message_timestamp = messages[(widget.chat_id, widget.domain)][-1]['timestamp']
+                    self.brain.set_last_message_timestamp(widget.chat_id, widget.domain, last_message_timestamp)
 
     def remove_messages(self, messages: dict):
         for idx in range(self.widget_layout.count()):
@@ -870,9 +869,6 @@ class MessageWindow(QWidget):
         # MAKE REQUEST
         # ONLY ADD AND DISPLAY MESSAGE ON SERVER UPDATE
 
-        local_time = time.localtime(time.time())
-        formated_time = time.strftime("%H:%M:%S %d/%m/%Y", local_time)
-
         message = message_args_to_dict(
             chat_id = current_chat_id,
             domain = current_chat_domain,
@@ -884,7 +880,7 @@ class MessageWindow(QWidget):
             reply_sender = reply_details['reply_sender'],
             reply_sender_icon_path = reply_details['reply_sender_icon_path'],
             reply_snip = reply_details['reply_snip'],
-            timestamp = formated_time,
+            timestamp = time.time(),
             text = text
         )
 

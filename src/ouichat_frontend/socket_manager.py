@@ -5,7 +5,7 @@ from PyQt6.QtCore import pyqtSignal, QObject
 
 def message_args_to_dict(chat_id: str, domain: str, message_id: str, sender: str, sender_icon_path: str,
                          was_edited: bool, is_reply: bool, reply_sender: str, reply_sender_icon_path: str,
-                         reply_snip: str, timestamp: str, text: str):
+                         reply_snip: str, timestamp: float, text: str):
     return {
         "chat_id": chat_id,
         "domain": domain,
@@ -44,21 +44,26 @@ class SocketManager(QObject):
                 "display_name": f"chatroom {str(idx)}",
                 "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
                 "icon_path": "./Icons/chat_room_icon.png",
+                "last_message_timestamp": time.time(),
                 "users": [{"username": "fifo",
                            "icon_path": "./Icons/default_user_icon.png",
-                           "is_admin": True}] if idx < 5 else
+                           "is_admin": True,
+                           "last_seen_time": time.time()}] if idx < 5 else
                 [{"username": "fifo",
                   "icon_path": "./Icons/default_user_icon.png",
                   "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-                  "is_admin": True},
+                  "is_admin": True,
+                  "last_seen_time": time.time()},
                  {"username": "fifo2",
                   "icon_path": "./Icons/default_user_icon.png",
                   "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-                  "is_admin": False}] if idx < 10 else
+                  "is_admin": False,
+                  "last_seen_time": time.time()}] if idx < 10 else
                 [{"username": "fifo2",
                   "icon_path": "./Icons/default_user_icon.png",
                   "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-                  "is_admin": True}]
+                  "is_admin": True,
+                  "last_seen_time": time.time()}]
             }
             chats.append(chat_data)
 
@@ -71,23 +76,28 @@ class SocketManager(QObject):
                 "display_name": None,
                 "description": None,
                 "icon_path": None,
+                "last_message_timestamp": time.time(),
                 "users":
                 [{"username": "fifo",
                   "icon_path": "./Icons/default_user_icon.png",
                   "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-                  "is_admin": False},
+                  "is_admin": False,
+                  "last_seen_time": time.time()},
                  {"username": "fifo2",
                   "icon_path": "./Icons/default_user_icon.png",
                   "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-                  "is_admin": False}] if idx % 2 == 0 else
+                  "is_admin": False,
+                  "last_seen_time": time.time()}] if idx % 2 == 0 else
                 [{"username": "fifo",
                   "icon_path": "./Icons/default_user_icon.png",
                   "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-                  "is_admin": False},
+                  "is_admin": False,
+                  "last_seen_time": time.time()},
                  {"username": "fifo3",
                   "icon_path": "./Icons/default_user_icon.png",
                   "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-                  "is_admin": False}]
+                  "is_admin": False,
+                  "last_seen_time": time.time()}]
             }
             chats.append(chat_data)
 
@@ -100,9 +110,6 @@ class SocketManager(QObject):
             is_reply = idx % 2 == 1
             was_edited = idx % 4 == 0 or idx % 4 == 1
 
-            local_time = time.localtime(time.time())
-            formated_time = time.strftime("%H:%M:%S %d/%m/%Y", local_time)
-
             message = message_args_to_dict(
                 chat_id = chat_id,
                 domain = domain,
@@ -114,7 +121,7 @@ class SocketManager(QObject):
                 reply_sender = f"TEST_REPLY_{idx}",
                 reply_sender_icon_path = "./Icons/default_user_icon.png",
                 reply_snip = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-                timestamp = formated_time,
+                timestamp = time.time(),
                 text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
             )
             messages.append(message)

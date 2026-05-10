@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
 )
 
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
-from PyQt6.QtGui import QIcon, QStandardItemModel
+from PyQt6.QtGui import QIcon, QStandardItemModel, QPixmap, QPainter
 
 from ouichat_frontend.brain import Brain
 
@@ -110,6 +110,20 @@ class LeftPanelInteractions(QWidget):
         else:
             self.dropdown_model.item(num_entries - 1).setEnabled(True)
 
+def get_icon_with_badge(icon_path: str, has_unread: bool):
+    base_pixmap = QPixmap(icon_path).scaled(32, 32)
+    if not has_unread:
+        return QIcon(base_pixmap)
+
+    painter = QPainter(base_pixmap)
+    badge_path = "./Icons/new_messages_icon.png"
+    badge_pixmap = QPixmap(badge_path).scaled(10, 10)
+    x_pos = base_pixmap.width() - badge_pixmap.width()
+    y_pos = base_pixmap.height() - badge_pixmap.height()
+    painter.drawPixmap(x_pos, y_pos, badge_pixmap)
+    painter.end()
+    return QIcon(base_pixmap)
+
 class ChatList(QWidget):
     """
     TO DO:
@@ -121,6 +135,7 @@ class ChatList(QWidget):
         self.brain = brain
         self.brain.current_user_changed.connect(self.handle_current_user_changed)
         self.brain.chat_updated.connect(self.update_chat)
+        self.brain.last_seen_time_updated.connect(self.handle_last_seen_time_update)
 
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Search chat...")
@@ -173,9 +188,23 @@ class ChatList(QWidget):
         for chat in chats_data:
             self.add_chat(chat['chat_id'], chat['domain'])
 
-    def __set_entry_characteristics(self, item: QListWidgetItem, chat_id: str, chat_domain: str):
+    def set_unread_icon(self,  item: QListWidgetItem, chat_id: str, chat_domain: str, has_unread: bool = False):
         icon_path = self.brain.get_chat_icon_path(chat_id, chat_domain)
-        item.setIcon(QIcon(icon_path))
+        item.setIcon(get_icon_with_badge(icon_path, has_unread))
+
+    def __set_entry_characteristics(self, item: QListWidgetItem, chat_id: str, chat_domain: str):
+        current_user_last_seen_time = self.brain.get_current_user_last_seen_time(chat_id, chat_domain)
+        chat_last_message_timestamp = self.brain.get_last_message_timestamp(chat_id, chat_domain)
+
+        has_unread = False
+        if current_user_last_seen_time and chat_last_message_timestamp:
+            current_chat_id = self.brain.get_current_chat_id()
+            current_chat_domain = self.brain.get_current_chat_domain()
+            chat_currently_selected = current_chat_id == chat_id and current_chat_domain == chat_domain
+            has_unread = chat_last_message_timestamp > current_user_last_seen_time and not chat_currently_selected
+
+        icon_path = self.brain.get_chat_icon_path(chat_id, chat_domain)
+        item.setIcon(get_icon_with_badge(icon_path, has_unread))
         name = self.brain.get_chat_display_name(chat_id, chat_domain)
         item.setText(f"{name}")
 
@@ -187,7 +216,7 @@ class ChatList(QWidget):
                      {
                          "chat_id": chat_id,
                          "domain": chat_domain,
-                         "type": chat_type
+                         "type": chat_type,
                      })
         item.setHidden(True) # initially all chats are hidden
         self.list_widget.addItem(item)
@@ -195,7 +224,15 @@ class ChatList(QWidget):
     def handle_current_user_changed(self):
         self.list_widget.setCurrentRow(-1)
         self.list_widget.verticalScrollBar().setValue(0)
-        self.update_p2p_chats()
+        # self.update_p2p_chats()
+
+        current_user_domain = self.brain.get_current_user_domain()
+        for row in range(self.list_widget.count()):
+            item = self.list_widget.item(row)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            if item_data['domain'] == current_user_domain:
+                self.__set_entry_characteristics(item, item_data['chat_id'], item_data['domain'])
+
         self.search("")
 
     def update_chat(self, chat_id: str, domain: str):
@@ -205,13 +242,28 @@ class ChatList(QWidget):
             if item_data['chat_id'] == chat_id and item_data['domain'] == domain:
                 self.__set_entry_characteristics(item, item_data["chat_id"], item_data["domain"])
 
-    def update_p2p_chats(self):
+    def handle_last_seen_time_update(self, chat_id: str, domain: str):
         current_user_domain = self.brain.get_current_user_domain()
+
+        if current_user_domain != domain: return # update for a chat that is not in the same domain as the user
+
+        current_user_last_seen_time = self.brain.get_current_user_last_seen_time(chat_id, domain)
+        if current_user_last_seen_time is None: return # update for a chat in the same domain as the user but the user isn't a member of the chat
+
         for row in range(self.list_widget.count()):
             item = self.list_widget.item(row)
             item_data = item.data(Qt.ItemDataRole.UserRole)
-            if item_data['domain'] == current_user_domain == item_data["type"] == "p2p":
-                self.__set_entry_characteristics(item, item_data["chat_id"], item_data["domain"])
+            if item_data['chat_id'] == chat_id and item_data['domain'] == domain:
+                chat_last_message_timestamp = self.brain.get_last_message_timestamp(chat_id, domain)
+                if chat_last_message_timestamp is None: return
+
+                current_chat_id = self.brain.get_current_chat_id()
+                current_chat_domain = self.brain.get_current_chat_domain()
+
+                chat_currently_selected = current_chat_id == chat_id and current_chat_domain == domain
+
+                has_unread = chat_last_message_timestamp > current_user_last_seen_time and not chat_currently_selected
+                self.set_unread_icon(item, chat_id, domain, has_unread)
 
     def search(self, text: str):
         current_user_username = self.brain.get_current_user_username()
@@ -231,6 +283,11 @@ class ChatList(QWidget):
                 item.setHidden(True)
 
     def emit_selected_chat_id_and_domain(self, row: int):
+        current_chat_id = self.brain.get_current_chat_id()
+        current_chat_domain = self.brain.get_current_chat_domain()
+        if current_chat_id and current_chat_domain:
+            self.brain.set_current_user_last_seen_time(current_chat_id, current_chat_domain)
+
         if row == -1:
             self.brain.chat_selected.emit("", "")
             return
@@ -239,6 +296,10 @@ class ChatList(QWidget):
         item_data = item.data(Qt.ItemDataRole.UserRole)
         chat_id = item_data['chat_id']
         chat_domain = item_data['domain']
+
+        self.brain.set_current_user_last_seen_time(chat_id, chat_domain)
+        self.set_unread_icon(item, chat_id, chat_domain, False)
+
         self.brain.chat_selected.emit(chat_id, chat_domain)
 
     def show_context_menu(self, position):
@@ -276,8 +337,8 @@ class ChatList(QWidget):
         if not item.listWidget(): return
 
         if selected_action == mark_read_action:
-            # TO BE IMPLEMENTED
-            pass
+            self.__mark_read(item)
+
         elif selected_action == block_user_action:
             # TO BE IMPLEMENTED
             pass
@@ -286,26 +347,28 @@ class ChatList(QWidget):
         elif selected_action == delete_chat_action:
             self.__delete_chat(item)
 
-    def __remove_chat(self, entry: QListWidgetItem):
-        row = self.list_widget.row(entry)
+    def __remove_chat(self, item: QListWidgetItem):
+        row = self.list_widget.row(item)
         self.list_widget.takeItem(row)
 
-    def __exit_chat(self, entry: QListWidgetItem):
-        self.__remove_chat(entry)
+    def __exit_chat(self, item: QListWidgetItem):
+        self.__remove_chat(item)
         # IMPLEMENT REQUESTS TO SERVER
 
-    def __delete_chat(self, entry: QListWidgetItem):
-        self.__remove_chat(entry)
+    def __delete_chat(self, item: QListWidgetItem):
+        self.__remove_chat(item)
         # IMPLEMENT REQUESTS TO SERVER
-
-    def __manage_members(self):
-        return
 
     def __block_user(self):
         return
 
-    def __mark_read(self):
-        return
+    def __mark_read(self, item: QListWidgetItem):
+        item_data = item.data(Qt.ItemDataRole.UserRole)
+        chat_id = item_data['chat_id']
+        domain = item_data['domain']
+
+        self.brain.set_current_user_last_seen_time(chat_id, domain)
+        self.set_unread_icon(item, chat_id, domain, True)
 
 class ChatsAndUsersPanel(QWidget):
     def __init__(self, brain: Brain, login_dialog):
