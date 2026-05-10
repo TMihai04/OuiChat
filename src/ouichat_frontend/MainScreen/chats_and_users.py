@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
 )
 
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
-from PyQt6.QtGui import QIcon, QStandardItemModel, QPixmap, QPainter
+from PyQt6.QtGui import QIcon, QStandardItemModel, QPixmap, QPainter, QMouseEvent
 
 from ouichat_frontend.brain import Brain
 
@@ -126,6 +126,16 @@ def get_icon_with_badge(icon_path: str, has_unread: bool):
     painter.end()
     return QIcon(base_pixmap)
 
+class CustomListWidget(QListWidget):
+    def __init__(self):
+        super().__init__()
+
+    def mousePressEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MouseButton.RightButton:
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
 class ChatList(QWidget):
     """
     TO DO:
@@ -146,7 +156,7 @@ class ChatList(QWidget):
         self.search_bar.addAction(search_icon, QLineEdit.ActionPosition.LeadingPosition)
         self.search_bar.textChanged.connect(self.search)
 
-        self.list_widget = QListWidget()
+        self.list_widget = CustomListWidget()
         self.list_widget.setIconSize(QSize(32, 32))
         self.list_widget.setFixedWidth(LEFT_PANEL_WIDTH)
         self.list_widget.setMinimumHeight(185)
@@ -333,7 +343,16 @@ class ChatList(QWidget):
                 delete_chat_action = menu.addAction("Delete Chat")
 
         global_pos = self.list_widget.mapToGlobal(position)
+
+        previous_row = self.list_widget.currentRow()
+        self.list_widget.blockSignals(True)
+
         selected_action = menu.exec(global_pos)
+
+        # the list widgets auto selects the first widget if no widget was selected and a context menu appeared
+        if self.list_widget.currentRow() != previous_row:
+            self.list_widget.setCurrentRow(previous_row)
+        self.list_widget.blockSignals(False)
 
         # Checking to see if the item wasn't removed while the context menu was opened
         if not item.listWidget(): return
@@ -346,19 +365,38 @@ class ChatList(QWidget):
             pass
         elif selected_action == exit_chat_action:
             self.__exit_chat(item)
+
         elif selected_action == delete_chat_action:
             self.__delete_chat(item)
 
-    def __remove_chat(self, item: QListWidgetItem):
+    def __remove_chat_from_list(self, item: QListWidgetItem):
         row = self.list_widget.row(item)
         self.list_widget.takeItem(row)
 
     def __exit_chat(self, item: QListWidgetItem):
-        self.__remove_chat(item)
+        item_data = item.data(Qt.ItemDataRole.UserRole)
+
+        current_chat_id = self.brain.get_current_chat_id()
+        current_chat_domain = self.brain.get_current_chat_domain()
+        if current_chat_id == item_data['chat_id'] and current_chat_domain == item_data['domain']:
+            self.list_widget.setCurrentRow(-1)
+
+        current_user_username = self.brain.get_current_user_username()
+        self.brain.remove_user_from_chat(item_data['chat_id'], item_data['domain'], current_user_username)
+        self.search(self.search_bar.text())
         # IMPLEMENT REQUESTS TO SERVER
 
     def __delete_chat(self, item: QListWidgetItem):
-        self.__remove_chat(item)
+        item_data = item.data(Qt.ItemDataRole.UserRole)
+
+        current_chat_id = self.brain.get_current_chat_id()
+        current_chat_domain = self.brain.get_current_chat_domain()
+        if current_chat_id == item_data['chat_id'] and current_chat_domain == item_data['domain']:
+            self.list_widget.setCurrentRow(-1)
+
+        self.__remove_chat_from_list(item)
+        self.brain.remove_chat_by_id_and_domain(item_data['chat_id'], item_data['domain'])
+        self.search(self.search_bar.text())
         # IMPLEMENT REQUESTS TO SERVER
 
     def __block_user(self):

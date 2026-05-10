@@ -67,6 +67,15 @@ class Brain(QObject):
         self.chat_selected.connect(self.set_current_chat)
         self.socket_manager.chat_updated.connect(self.update_chat)
 
+    def remove_user_from_chat(self, chat_id: str, domain: str, username: str):
+        for chat in self.chats_list:
+            if chat['chat_id'] == chat_id and chat['domain'] == domain:
+                users_list = chat['users']
+                for user in users_list:
+                    if user['username'] == username:
+                        users_list.remove(user)
+                        return
+
     def get_last_message_timestamp(self, chat_id: str, domain: str):
         chat = self.find_chats({
             "chat_id": chat_id,
