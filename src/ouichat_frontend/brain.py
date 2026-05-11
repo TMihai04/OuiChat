@@ -60,6 +60,31 @@ class Brain(QObject):
         self.socket_manager.chat_updated.connect(self.update_chat)
         self.add_new_messages.connect(self.update_timestamps)
 
+    def get_chat_creator(self, chat_id: str, domain: str):
+        chat = self.find_chats({
+            "chat_id": chat_id,
+            "domain": domain
+        })
+
+        if not chat: return None
+
+        chat = chat[0]
+        return chat['creator']
+
+    def change_admin_status(self, chat_id: str, domain: str, username: str, is_admin: bool):
+        chat = self.find_chats({
+            "chat_id": chat_id,
+            "domain": domain
+        })
+
+        if not chat: return
+
+        chat = chat[0]
+        users = chat['users']
+        for user in users:
+            if user['username'] == username:
+                user['is_admin'] = is_admin
+
     def update_timestamps(self, messages: dict):
         for (chat_id, domain), messages_list in messages.items():
             last_message_timestamp = messages_list[-1]['timestamp']

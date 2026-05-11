@@ -333,6 +333,8 @@ class ChatMembersList(QWidget):
         self.list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # no vertical scrollbar
         self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # no horizontal scrollbar
         self.list_widget.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.list_widget.customContextMenuRequested.connect(self.show_context_menu)
 
         self.widget_layout = QVBoxLayout()
         self.widget_layout.setContentsMargins(0, 0, 0, 0)
@@ -345,6 +347,74 @@ class ChatMembersList(QWidget):
         chat_users = self.brain.get_chat_users(self.chat_id, self.domain)
         self.initialize_members(chat_users)
 
+    def show_context_menu(self, position):
+        current_user_domain = self.brain.get_current_user_domain()
+        if current_user_domain != self.domain: return
+
+        current_user_username = self.brain.get_current_user_username()
+        user_is_admin = self.brain.user_is_admin(self.chat_id, self.domain, current_user_username)
+        if not user_is_admin: return
+
+        item = self.list_widget.itemAt(position)
+        if not item: return
+
+        item_data = item.data(Qt.ItemDataRole.UserRole)
+        selected_user_username = item_data['username']
+        selected_user_is_admin = item_data['is_admin']
+
+        chat_creator = self.brain.get_chat_creator(self.chat_id, self.domain)
+        if selected_user_is_admin and current_user_username != chat_creator: return
+        if selected_user_username == current_user_username: return
+        if chat_creator == selected_user_username: return
+
+        make_admin = object()
+        remove_admin = object()
+
+        menu = QMenu()
+
+        if selected_user_is_admin:
+            remove_admin = menu.addAction("Remove Admin")
+        else:
+            make_admin = menu.addAction("Make Admin")
+
+        global_pos = self.list_widget.mapToGlobal(position)
+        selected_action = menu.exec(global_pos)
+
+        # Checking to see if the item wasn't removed while the context menu was opened
+        if not item.listWidget(): return
+
+        if selected_action == remove_admin:
+            self.__remove_admin(item)
+
+        elif selected_action == make_admin:
+            self.__make_admin(item)
+
+    def __make_admin(self, item: QListWidgetItem):
+        item_data = item.data(Qt.ItemDataRole.UserRole)
+        username = item_data['username']
+        self.change_member_admin_status_display(username, True)
+        self.brain.change_admin_status(self.chat_id, self.domain, username, True)
+
+    def __remove_admin(self, item: QListWidgetItem):
+        item_data = item.data(Qt.ItemDataRole.UserRole)
+        username = item_data['username']
+        self.change_member_admin_status_display(username, False)
+        self.brain.change_admin_status(self.chat_id, self.domain, username, False)
+
+    def change_member_admin_status_display(self, username: str, is_admin: bool):
+        for idx in range(self.list_widget.count()):
+            item = self.list_widget.item(idx)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            if username == item_data['username']:
+                if is_admin and not item_data['is_admin']:
+                    item.setText(f"{username} (Admin)")
+                    item_data['is_admin'] = is_admin
+                    item.setData(Qt.ItemDataRole.UserRole, item_data)
+                elif not is_admin and item_data['is_admin']:
+                    item.setText(username)
+                    item_data['is_admin'] = is_admin
+                    item.setData(Qt.ItemDataRole.UserRole, item_data)
+
     def search(self, text):
         for row in range(self.list_widget.count()):
             item = self.list_widget.item(row)
@@ -356,7 +426,7 @@ class ChatMembersList(QWidget):
     def initialize_members(self, members: list):
         for member in members:
             member_details = self.brain.get_user_details(member['username'], self.domain)
-            member_icon = member_details['icon_path'] if member_details else "./Icons/user_icon.png"
+            member_icon = member_details['icon_path'] if member_details else "./Icons/default_user_icon.png"
             self.add_entry(member['username'], member_icon, member['is_admin'])
 
     def add_entry(self, username: str, user_icon_path: str, is_admin: bool):
@@ -616,6 +686,13 @@ class ChatBubble(QWidget):
         self.chat.edit_message(message_id, text)
 
 class ChatHistory(QWidget):
+    """
+    TO DO:
+        - IMPLEMENT THE USERS LIST WIDGET INSTEAD OF THE NO CHATS LABEL
+            EACH USER IS CLICKABLE AND CREATES A CHAT (IF NOT EXISTENT ALREADY)
+            SENDS YOU TO THE CHAT AUTOMATICALLY
+            SEARCH BAR FOR USERS
+    """
     def __init__(self, brain: Brain):
         super().__init__()
 
