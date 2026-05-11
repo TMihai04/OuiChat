@@ -381,6 +381,8 @@ class ChatDetails(QScrollArea):
         self.chat_id = chat_id
         self.domain = domain
 
+        chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
+
         self.back_button = QPushButton()
         self.back_button.setIconSize(QSize(20, 20))
         self.back_button.setFixedSize(30, 30)
@@ -393,10 +395,28 @@ class ChatDetails(QScrollArea):
         chat_icon_path = self.brain.get_chat_icon_path(self.chat_id, self.domain)
         self.chat_icon.setIcon(QIcon(chat_icon_path))
 
+        chat_name_container = QWidget()
+        chat_name_container_layout = QHBoxLayout()
+        chat_name_container_layout.setContentsMargins(0, 0, 0, 0)
+        chat_name_container_layout.setSpacing(5)
+        chat_name_container.setLayout(chat_name_container_layout)
+
         self.chat_name = QLabel()
         chat_name = self.brain.get_chat_display_name(self.chat_id, self.domain)
         self.chat_name.setText(chat_name)
         self.chat_name.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+
+        if chat_type == "chatroom":
+            self.edit_name_button = QPushButton()
+            self.edit_name_button.setIcon(QIcon("./Icons/edit_icon.png"))
+            self.edit_name_button.setFixedSize(20, 20)
+            self.edit_name_button.setIconSize(QSize(16, 16))
+            # edit_name_button.clicked.connect() # IMPLEMENT DIALOG FOR CHAT NAME CHANGE
+
+            chat_name_container_layout.addWidget(self.chat_name, alignment=Qt.AlignmentFlag.AlignRight)
+            chat_name_container_layout.addWidget(self.edit_name_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        else:
+            chat_name_container_layout.addWidget(self.chat_name, alignment=Qt.AlignmentFlag.AlignCenter)
 
         chat_description_label = QLabel()
         chat_description_label.setText('Description:')
@@ -406,11 +426,6 @@ class ChatDetails(QScrollArea):
         self.chat_description_text.setText(chat_description)
         self.chat_description_text.setWordWrap(True)
 
-        self.change_chat_description_button = QPushButton()
-        self.change_chat_description_button.setIcon(QIcon("./Icons/edit_icon.png"))
-        self.change_chat_description_button.setFixedSize(20, 20)
-        self.change_chat_description_button.setIconSize(QSize(16, 16))
-
         chat_description = QWidget()
         chat_description_layout = QVBoxLayout()
         chat_description_layout.setContentsMargins(5, 0, 5, 5)
@@ -419,7 +434,14 @@ class ChatDetails(QScrollArea):
 
         chat_description_layout.addWidget(chat_description_label, alignment=Qt.AlignmentFlag.AlignLeft)
         chat_description_layout.addWidget(self.chat_description_text)
-        chat_description_layout.addWidget(self.change_chat_description_button, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        if chat_type == "chatroom":
+            self.change_chat_description_button = QPushButton()
+            self.change_chat_description_button.setIcon(QIcon("./Icons/edit_icon.png"))
+            self.change_chat_description_button.setFixedSize(20, 20)
+            self.change_chat_description_button.setIconSize(QSize(16, 16))
+            # self.change_chat_description_button.clicked.connect() # IMPLEMENT DIALOG FOR CHAT DESCRIPTION CHANGE
+            chat_description_layout.addWidget(self.change_chat_description_button, alignment=Qt.AlignmentFlag.AlignLeft)
 
         self.container = QWidget()
         self.container_layout = QVBoxLayout()
@@ -429,10 +451,9 @@ class ChatDetails(QScrollArea):
 
         self.container_layout.addWidget(self.back_button, alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
         self.container_layout.addWidget(self.chat_icon, alignment=Qt.AlignmentFlag.AlignCenter)
-        self.container_layout.addWidget(self.chat_name, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.container_layout.addWidget(chat_name_container, alignment=Qt.AlignmentFlag.AlignCenter)
         self.container_layout.addWidget(chat_description)
 
-        chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
         if chat_type == 'chatroom':
             self.chat_members_list = ChatMembersList(brain, chat_id, domain)
 
@@ -485,15 +506,17 @@ class ChatDetails(QScrollArea):
         if chat_type == 'p2p' and self.domain == domain:
             # no member management buttons
             self.update_labels()
-            self.change_chat_description_button.setVisible(False)
             return
 
         if domain == self.domain:
             user_is_admin = self.brain.user_is_admin(self.chat_id, domain, username)
             self.button_container.setVisible(user_is_admin)
             self.change_chat_description_button.setVisible(user_is_admin)
+            self.edit_name_button.setVisible(user_is_admin)
         else:
             self.button_container.setVisible(False)
+            self.change_chat_description_button.setVisible(False)
+            self.edit_name_button.setVisible(False)
 
 class Chat(QWidget):
     chat_details_requested = pyqtSignal()
