@@ -4,15 +4,6 @@ import time
 
 from socket_manager import SocketManager
 
-def get_users_username(users: list):
-    return list(map(lambda user: user['username'], users))
-
-def get_user_details_from_chat_users(username: str, users: list):
-    for user in users:
-        if user['username'] == username:
-            return user
-    return None
-
 class Brain(QObject):
     chat_added = pyqtSignal(dict)
     chat_removed = pyqtSignal(dict)
@@ -49,6 +40,7 @@ class Brain(QObject):
 
         self.users_list = []
         self.chats_list = []
+        self.domain_users_list = dict()
 
         self.current_user = None
         self.current_chat = None
@@ -66,6 +58,58 @@ class Brain(QObject):
 
         self.chat_selected.connect(self.set_current_chat)
         self.socket_manager.chat_updated.connect(self.update_chat)
+        self.add_new_messages.connect(self.update_timestamps)
+
+    def update_timestamps(self, messages: dict):
+        for (chat_id, domain), messages_list in messages.items():
+            last_message_timestamp = messages_list[-1]['timestamp']
+            self.set_last_message_timestamp(chat_id, domain, last_message_timestamp)
+
+    def get_user_block_status(self, username: str, domain: str, check_username: str):
+        user_details = self.get_user_details(username, domain)
+        if not user_details: return False
+        return check_username in user_details['black_list']
+
+    def get_cu_user_block_status(self, username: str):
+        current_user_username = self.get_current_user_username()
+        current_user_domain = self.get_current_user_domain()
+        return self.get_user_block_status(current_user_username, current_user_domain, username)
+
+    def block_user(self, username: str):
+        current_user_username = self.get_current_user_username()
+        current_user_domain = self.get_current_user_domain()
+
+        user_details = self.get_user_details(current_user_username, current_user_domain)
+        if username not in user_details['black_list']:
+            user_details['black_list'].append(username)
+
+    def unblock_user(self, username: str):
+        current_user_username = self.get_current_user_username()
+        current_user_domain = self.get_current_user_domain()
+
+        user_details = self.get_user_details(current_user_username, current_user_domain)
+        if username in user_details['black_list']:
+            user_details['black_list'].remove(username)
+
+    def get_user_details(self, username: str, domain: str):
+        domain_users = self.domain_users_list.get(domain, None)
+        if domain_users is None: return None
+
+        for user in domain_users:
+            if user['username'] == username:
+                return user
+
+        return None
+
+    def add_users_to_domain(self, domain: str, users: list):
+        users_list = self.domain_users_list.get(domain, None)
+        if users_list is None:
+            self.domain_users_list[domain] = users
+        else:
+            usernames = [usr['username'] for usr in users_list]
+            for user in users:
+                if user['username'] not in usernames:
+                    self.domain_users_list[domain].append(user)
 
     def get_chat_setting(self, chat_id: str, domain: str):
         chat = self.find_chats({
@@ -73,7 +117,7 @@ class Brain(QObject):
             "domain": domain
         })
 
-        if chat is None: return
+        if chat is None: return None
 
         chat = chat[0]
         return chat['chat_setting']
@@ -229,10 +273,14 @@ class Brain(QObject):
     def add_user(self, user_data: dict):
         self.users_list.append(user_data)
         self.current_user = user_data
-        self.current_user_changed.emit(user_data['username'], user_data['domain'])
 
         chats = self.socket_manager.request_chats(user_data['username'], user_data['domain'])
         self.add_chats(chats)
+
+        users = self.socket_manager.request_users(user_data['domain'])
+        self.add_users_to_domain(user_data['domain'], users)
+
+        self.current_user_changed.emit(user_data['username'], user_data['domain'])
 
     def remove_user(self, user_data: dict):
         self.users_list.remove(user_data)
@@ -327,9 +375,9 @@ class Brain(QObject):
             return chat['display_name']
         else:
             current_username = self.get_current_user_username()
-            usernames = get_users_username(chat['users'])
+            usernames = [usr['username'] for usr in chat['users']]
             other_username = usernames[0] if usernames[0] != current_username else usernames[1]
-            other_user_data = get_user_details_from_chat_users(other_username, chat['users'])
+            other_user_data = self.get_user_details(other_username, domain)
             return other_user_data['username']
 
     def get_chat_description(self, chat_id: str, domain: str):
@@ -345,9 +393,9 @@ class Brain(QObject):
             return chat['description']
         else:
             current_username = self.get_current_user_username()
-            usernames = get_users_username(chat['users'])
+            usernames = [usr['username'] for usr in chat['users']]
             other_username = usernames[0] if usernames[0] != current_username else usernames[1]
-            other_user_data = get_user_details_from_chat_users(other_username, chat['users'])
+            other_user_data = self.get_user_details(other_username, domain)
             return other_user_data['description']
 
     def get_chat_icon_path(self, chat_id: str, domain: str):
@@ -363,9 +411,9 @@ class Brain(QObject):
             return chat['icon_path']
         else:
             current_username = self.get_current_user_username()
-            usernames = get_users_username(chat['users'])
+            usernames = [usr['username'] for usr in chat['users']]
             other_username = usernames[0] if usernames[0] != current_username else usernames[1]
-            other_user_data = get_user_details_from_chat_users(other_username, chat['users'])
+            other_user_data = self.get_user_details(other_username, domain)
             return other_user_data['icon_path']
 
     def get_chat_users(self, chat_id: str, domain: str):

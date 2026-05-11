@@ -169,8 +169,9 @@ class ChatMessage(QWidget):
         menu = QMenu()
 
         reply = menu.addAction("Reply")
-        delete = object
-        edit = object
+        delete = object()
+        edit = object()
+
 
         if user_is_admin:
             menu.addSeparator()
@@ -354,7 +355,9 @@ class ChatMembersList(QWidget):
 
     def initialize_members(self, members: list):
         for member in members:
-            self.add_entry(member['username'], member['icon_path'], member['is_admin'])
+            member_details = self.brain.get_user_details(member['username'], self.domain)
+            member_icon = member_details['icon_path'] if member_details else "./Icons/user_icon.png"
+            self.add_entry(member['username'], member_icon, member['is_admin'])
 
     def add_entry(self, username: str, user_icon_path: str, is_admin: bool):
         item = QListWidgetItem()
@@ -490,7 +493,6 @@ class ChatDetails(QScrollArea):
             self.button_container.setVisible(user_is_admin)
             self.change_chat_description_button.setVisible(user_is_admin)
         else:
-            self.button_container.setVisible(False)
             self.button_container.setVisible(False)
 
 class Chat(QWidget):
@@ -677,8 +679,6 @@ class ChatHistory(QWidget):
             if isinstance(widget, ChatBubble):
                 if (widget.chat_id, widget.domain) in messages.keys():
                     widget.add_messages(messages[(widget.chat_id, widget.domain)])
-                    last_message_timestamp = messages[(widget.chat_id, widget.domain)][-1]['timestamp']
-                    self.brain.set_last_message_timestamp(widget.chat_id, widget.domain, last_message_timestamp)
 
     def edit_message(self, chat_id: str, domain: str, message_id: str, text: str):
         for idx in range(self.widget_layout.count()):

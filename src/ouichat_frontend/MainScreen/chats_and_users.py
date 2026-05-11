@@ -218,12 +218,10 @@ class ChatList(QWidget):
     def add_chat(self, chat_id: str, chat_domain: str):
         item = QListWidgetItem()
         self.__set_entry_characteristics(item, chat_id, chat_domain)
-        chat_type = self.brain.get_chat_type(chat_id, chat_domain)
         item.setData(Qt.ItemDataRole.UserRole,
                      {
                          "chat_id": chat_id,
                          "domain": chat_domain,
-                         "type": chat_type,
                      })
         item.setHidden(True) # initially all chats are hidden
         self.list_widget.addItem(item)
@@ -316,9 +314,12 @@ class ChatList(QWidget):
         item_data = item.data(Qt.ItemDataRole.UserRole)
         chat_id = item_data['chat_id']
         chat_domain = item_data['domain']
-        chat_setting = self.brain.get_chat_setting(chat_id, chat_domain)
         chat_type = self.brain.get_chat_type(chat_id, chat_domain)
         user_is_admin = self.brain.user_is_admin(chat_id, chat_domain, self.brain.get_current_user_username())
+
+        current_user_username = self.brain.get_current_user_username()
+        chat_usernames = self.brain.get_chat_user_usernames(chat_id, chat_domain)
+        other_user_username = chat_usernames[0] if chat_usernames[0] != current_user_username else chat_usernames[1]
 
         exit_chat_action = object()
         delete_chat_action = object()
@@ -330,7 +331,8 @@ class ChatList(QWidget):
         mark_read_action = menu.addAction("Mark as Read")
 
         if chat_type == "p2p":
-            if chat_setting == "rw":
+            other_user_is_blocked = self.brain.get_cu_user_block_status(other_user_username)
+            if not other_user_is_blocked:
                 menu.addSeparator()
                 block_user_action = menu.addAction("Block User")
             else:
@@ -362,10 +364,10 @@ class ChatList(QWidget):
             self.__mark_read(item)
 
         elif selected_action == block_user_action:
-            self.__block_user(item)
+            self.__change_block_status(item, True)
 
         elif selected_action == unblock_user_action:
-            self.__unblock_user(item)
+            self.__change_block_status(item, False)
 
         elif selected_action == exit_chat_action:
             self.__exit_chat(item)
@@ -373,23 +375,33 @@ class ChatList(QWidget):
         elif selected_action == delete_chat_action:
             self.__delete_chat(item)
 
-    def __unblock_user(self, item: QListWidgetItem):
+    def __change_block_status(self, item: QListWidgetItem, status: bool):
         item_data = item.data(Qt.ItemDataRole.UserRole)
-        self.brain.set_chat_setting(item_data['chat_id'], item_data['domain'], 'rw')
+        chat_id = item_data['chat_id']
+        domain = item_data['domain']
+
+        current_user_username = self.brain.get_current_user_username()
+        current_user_domain = self.brain.get_current_user_domain()
+
+        chat_usernames = self.brain.get_chat_user_usernames(chat_id, domain)
+        other_user_username = chat_usernames[0] if chat_usernames[0] != current_user_username else chat_usernames[1]
+
+        if status:
+            self.brain.block_user(other_user_username)
+        else:
+            self.brain.unblock_user(other_user_username)
+
+        cu_in_other_user_black_list = self.brain.get_user_block_status(other_user_username, current_user_domain, current_user_username)
+        other_user_in_cu_black_list = self.brain.get_cu_user_block_status(other_user_username)
+
+        setting = "ro" if cu_in_other_user_black_list or other_user_in_cu_black_list else "rw"
+
+        self.brain.set_chat_setting(chat_id, domain, setting)
 
         current_chat_id = self.brain.get_current_chat_id()
         current_chat_domain = self.brain.get_current_chat_domain()
-        if current_chat_id == item_data['chat_id'] and current_chat_domain == item_data['domain']:
-            self.brain.change_textbox_visibility.emit(True)
-
-    def __block_user(self, item: QListWidgetItem):
-        item_data = item.data(Qt.ItemDataRole.UserRole)
-        self.brain.set_chat_setting(item_data['chat_id'], item_data['domain'], 'ro')
-
-        current_chat_id = self.brain.get_current_chat_id()
-        current_chat_domain = self.brain.get_current_chat_domain()
-        if current_chat_id == item_data['chat_id'] and current_chat_domain == item_data['domain']:
-            self.brain.change_textbox_visibility.emit(False)
+        if current_chat_id == chat_id and current_chat_domain == domain:
+            self.brain.chat_selected.emit(current_chat_id, current_chat_domain)
 
     def __remove_chat_from_list(self, item: QListWidgetItem):
         row = self.list_widget.row(item)
