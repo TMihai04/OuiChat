@@ -67,6 +67,29 @@ class Brain(QObject):
         self.chat_selected.connect(self.set_current_chat)
         self.socket_manager.chat_updated.connect(self.update_chat)
 
+    def get_chat_setting(self, chat_id: str, domain: str):
+        chat = self.find_chats({
+            "chat_id": chat_id,
+            "domain": domain
+        })
+
+        if chat is None: return
+
+        chat = chat[0]
+        return chat['chat_setting']
+
+    def set_chat_setting(self, chat_id: str, domain: str, setting: str):
+        chat = self.find_chats({
+            "chat_id": chat_id,
+            "domain": domain
+        })
+
+        if chat is None: return
+        if setting != 'rw' and setting != 'ro': return
+
+        chat = chat[0]
+        chat['chat_setting'] = setting
+
     def remove_user_from_chat(self, chat_id: str, domain: str, username: str):
         for chat in self.chats_list:
             if chat['chat_id'] == chat_id and chat['domain'] == domain:

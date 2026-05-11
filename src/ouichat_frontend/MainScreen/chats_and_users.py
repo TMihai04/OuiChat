@@ -12,10 +12,6 @@ MAX_USERS = 3
 
 LEFT_PANEL_WIDTH = 270
 
-# TO BE IMPLEMENTED IN SOME OTHER WAY
-CHAT_TYPE = "chatroom" # {"p2p", "chatroom"}
-CHAT_SETTING = "rw" # {"ro", "rw"}
-
 class LeftPanelInteractions(QWidget):
     """
     TO DO:
@@ -139,7 +135,6 @@ class CustomListWidget(QListWidget):
 class ChatList(QWidget):
     """
     TO DO:
-        - FULLY IMPLEMENT CONTEXT MENU WITHOUT REQUESTS
     """
     def __init__(self, brain: Brain):
         super().__init__()
@@ -321,20 +316,26 @@ class ChatList(QWidget):
         item_data = item.data(Qt.ItemDataRole.UserRole)
         chat_id = item_data['chat_id']
         chat_domain = item_data['domain']
+        chat_setting = self.brain.get_chat_setting(chat_id, chat_domain)
         chat_type = self.brain.get_chat_type(chat_id, chat_domain)
         user_is_admin = self.brain.user_is_admin(chat_id, chat_domain, self.brain.get_current_user_username())
 
         exit_chat_action = object()
         delete_chat_action = object()
         block_user_action = object()
+        unblock_user_action = object()
 
         menu = QMenu()
 
         mark_read_action = menu.addAction("Mark as Read")
 
         if chat_type == "p2p":
-            menu.addSeparator()
-            block_user_action = menu.addAction("Block User")
+            if chat_setting == "rw":
+                menu.addSeparator()
+                block_user_action = menu.addAction("Block User")
+            else:
+                menu.addSeparator()
+                unblock_user_action = menu.addAction("Unblock User")
         else:
             menu.addSeparator()
             exit_chat_action = menu.addAction("Exit Chat")
@@ -361,13 +362,34 @@ class ChatList(QWidget):
             self.__mark_read(item)
 
         elif selected_action == block_user_action:
-            # TO BE IMPLEMENTED
-            pass
+            self.__block_user(item)
+
+        elif selected_action == unblock_user_action:
+            self.__unblock_user(item)
+
         elif selected_action == exit_chat_action:
             self.__exit_chat(item)
 
         elif selected_action == delete_chat_action:
             self.__delete_chat(item)
+
+    def __unblock_user(self, item: QListWidgetItem):
+        item_data = item.data(Qt.ItemDataRole.UserRole)
+        self.brain.set_chat_setting(item_data['chat_id'], item_data['domain'], 'rw')
+
+        current_chat_id = self.brain.get_current_chat_id()
+        current_chat_domain = self.brain.get_current_chat_domain()
+        if current_chat_id == item_data['chat_id'] and current_chat_domain == item_data['domain']:
+            self.brain.change_textbox_visibility.emit(True)
+
+    def __block_user(self, item: QListWidgetItem):
+        item_data = item.data(Qt.ItemDataRole.UserRole)
+        self.brain.set_chat_setting(item_data['chat_id'], item_data['domain'], 'ro')
+
+        current_chat_id = self.brain.get_current_chat_id()
+        current_chat_domain = self.brain.get_current_chat_domain()
+        if current_chat_id == item_data['chat_id'] and current_chat_domain == item_data['domain']:
+            self.brain.change_textbox_visibility.emit(False)
 
     def __remove_chat_from_list(self, item: QListWidgetItem):
         row = self.list_widget.row(item)
@@ -398,9 +420,6 @@ class ChatList(QWidget):
         self.brain.remove_chat_by_id_and_domain(item_data['chat_id'], item_data['domain'])
         self.search(self.search_bar.text())
         # IMPLEMENT REQUESTS TO SERVER
-
-    def __block_user(self):
-        return
 
     def __mark_read(self, item: QListWidgetItem):
         item_data = item.data(Qt.ItemDataRole.UserRole)
