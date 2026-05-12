@@ -143,6 +143,8 @@ class ChatList(QWidget):
         self.brain.current_user_changed.connect(self.handle_current_user_changed)
         self.brain.chat_updated.connect(self.update_chat)
         self.brain.last_seen_time_updated.connect(self.handle_last_seen_time_update)
+        self.brain.chats_added.connect(self.add_chats)
+        self.brain.select_chat.connect(self.select_chat)
 
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Search chat...")
@@ -173,10 +175,11 @@ class ChatList(QWidget):
         self.search("")
 
         self.new_chat_button = QPushButton()
-        self.new_chat_button.setFixedSize(LEFT_PANEL_WIDTH, 25)
+        self.new_chat_button.setFixedHeight(25)
         self.new_chat_button.setIconSize(QSize(16, 16))
         self.new_chat_button.setIcon(QIcon("./Icons/plus_icon.png"))
         self.new_chat_button.setText("New Chat")
+        # self.new_chat_button.clicked.connect() # CONNECT TO ADD USERS DIALOG
 
         self.widget_layout.addWidget(self.new_chat_button)
 
@@ -214,6 +217,22 @@ class ChatList(QWidget):
         item.setIcon(get_icon_with_badge(icon_path, has_unread))
         name = self.brain.get_chat_display_name(chat_id, chat_domain)
         item.setText(f"{name}")
+
+    def select_chat(self, chat_id: str, domain: str):
+        for idx in range(self.list_widget.count()):
+            item = self.list_widget.item(idx)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            if item_data['chat_id'] == chat_id and item_data['domain'] == domain:
+                self.list_widget.setCurrentRow(idx)
+                return
+
+        self.list_widget.setCurrentRow(-1)
+
+    def add_chats(self, chats: list):
+        for chat in chats:
+            self.add_chat(chat['chat_id'], chat['domain'])
+        search_text = self.search_bar.text()
+        self.search(search_text)
 
     def add_chat(self, chat_id: str, chat_domain: str):
         item = QListWidgetItem()
@@ -311,15 +330,18 @@ class ChatList(QWidget):
         item = self.list_widget.itemAt(position)
         if not item: return
 
+        current_user_username = self.brain.get_current_user_username()
+
         item_data = item.data(Qt.ItemDataRole.UserRole)
         chat_id = item_data['chat_id']
         chat_domain = item_data['domain']
         chat_type = self.brain.get_chat_type(chat_id, chat_domain)
-        user_is_admin = self.brain.user_is_admin(chat_id, chat_domain, self.brain.get_current_user_username())
+        user_is_admin = self.brain.user_is_admin(chat_id, chat_domain, current_user_username)
 
-        current_user_username = self.brain.get_current_user_username()
-        chat_usernames = self.brain.get_chat_user_usernames(chat_id, chat_domain)
-        other_user_username = chat_usernames[0] if chat_usernames[0] != current_user_username else chat_usernames[1]
+        other_user_username = None
+        if chat_type == "p2p":
+            chat_usernames = self.brain.get_chat_user_usernames(chat_id, chat_domain)
+            other_user_username = chat_usernames[0] if chat_usernames[0] != current_user_username else chat_usernames[1]
 
         exit_chat_action = object()
         delete_chat_action = object()

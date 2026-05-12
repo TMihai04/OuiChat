@@ -425,8 +425,7 @@ class ChatMembersList(QWidget):
 
     def initialize_members(self, members: list):
         for member in members:
-            member_details = self.brain.get_user_details(member['username'], self.domain)
-            member_icon = member_details['icon_path'] if member_details else "./Icons/default_user_icon.png"
+            member_icon = self.brain.get_user_icon_path(member['username'], self.domain)
             self.add_entry(member['username'], member_icon, member['is_admin'])
 
     def add_entry(self, username: str, user_icon_path: str, is_admin: bool):
@@ -605,6 +604,12 @@ class Chat(QWidget):
 
         self.chat_messages = ChatMessagesArea(brain, chat_id, domain)
 
+        button_container = QWidget()
+        button_container_layout = QHBoxLayout()
+        button_container_layout.setContentsMargins(0, 0, 0, 0)
+        button_container_layout.setSpacing(5)
+        button_container.setLayout(button_container_layout)
+
         self.chat_details_button = QPushButton()
         chat_name = self.brain.get_chat_display_name(self.chat_id, self.domain)
         self.chat_details_button.setText(chat_name)
@@ -613,11 +618,22 @@ class Chat(QWidget):
         self.chat_details_button.setFixedHeight(25)
         self.chat_details_button.clicked.connect(self.chat_details_requested.emit)
 
-        self.widget_layout.addWidget(self.chat_details_button)
+        self.back_button = QPushButton()
+        self.back_button.setFixedSize(25, 25)
+        self.back_button.setIcon(QIcon("./Icons/left_arrow_icon.png"))
+        self.back_button.clicked.connect(self.go_to_users_tab)
+
+        button_container_layout.addWidget(self.back_button)
+        button_container_layout.addWidget(self.chat_details_button)
+
+        self.widget_layout.addWidget(button_container)
         self.widget_layout.addWidget(self.chat_messages)
 
         self.brain.current_user_changed.connect(self.__handle_current_user_change)
         self.brain.chat_updated.connect(self.__handle_chat_update)
+
+    def go_to_users_tab(self):
+        self.brain.select_chat.emit("", "")
 
     def __handle_chat_update(self, chat_id: str, domain: str):
         if self.chat_id == chat_id and self.domain == domain:
@@ -685,6 +701,96 @@ class ChatBubble(QWidget):
     def edit_message(self, message_id: str, text: str):
         self.chat.edit_message(message_id, text)
 
+class UsersList(QListWidget):
+    def __init__(self, brain: Brain):
+        super().__init__()
+
+        self.brain = brain
+        self.brain.current_user_changed.connect(self.handle_user_change)
+
+        self.setIconSize(QSize(32, 32))
+
+        self.itemClicked.connect(self.handle_item_clicked_changed)
+
+        self.initialize()
+
+    def initialize(self):
+        current_user_domain = self.brain.get_current_user_domain()
+        domain_users = self.brain.get_domain_users(current_user_domain)
+        self.add_users(current_user_domain, domain_users)
+
+    def handle_item_clicked_changed(self, item: QListWidgetItem):
+        current_user_username = self.brain.get_current_user_username()
+        current_user_domain = self.brain.get_current_user_domain()
+
+        item_data = item.data(Qt.ItemDataRole.UserRole)
+        username = item_data['username']
+        domain = item_data['domain']
+        if domain != current_user_domain: return
+
+        chat_id = self.brain.p2p_chat_exists(current_user_username, username, domain)
+        if chat_id is None:
+            ret = self.brain.create_p2p_chat(username, domain)
+            if not ret[0]:
+                error_message = ret[1]
+                # ERROR WINDOW POPUP
+                return
+            chat_id = ret[1]
+
+        self.brain.select_chat.emit(chat_id, domain)
+
+    def handle_user_change(self, username: str, domain: str):
+        domain_users = self.brain.get_domain_users(domain)
+        if domain_users:
+            self.add_users(domain, domain_users)
+
+        for idx in range(self.count()):
+            item = self.item(idx)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            if item_data['username'] == username and item_data['domain'] == domain:
+                item.setHidden(True)
+            elif item_data['domain'] == domain:
+                item.setHidden(False)
+            else:
+                item.setHidden(True)
+
+    def remove_user(self, username: str, domain: str):
+        for idx in range(self.count()):
+            item = self.item(idx)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            if item_data['username'] == username and item_data['domain'] == domain:
+                self.takeItem(idx)
+                return
+
+    def __user_already_in_list(self, username: str, domain: str):
+        for idx in range(self.count()):
+            item = self.item(idx)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            if item_data['username'] == username and item_data['domain'] == domain:
+                return True
+        return False
+
+    def add_users(self, domain: str, users: list):
+        current_user_username = self.brain.get_current_user_username()
+        current_user_domain = self.brain.get_current_user_domain()
+        for user in users:
+            if self.__user_already_in_list(user['username'], domain): continue
+
+            item = QListWidgetItem()
+            item.setText(user['username'])
+            icon_path = self.brain.get_user_icon_path(user['username'], domain)
+            item.setIcon(QIcon(icon_path))
+            item_data = {
+                "username": user['username'],
+                "domain": domain
+            }
+            item.setData(Qt.ItemDataRole.UserRole, item_data)
+            self.addItem(item)
+            if user['username'] == current_user_username and domain == current_user_domain:
+                item.setHidden(True)
+            else:
+                item.setHidden(False)
+
 class ChatHistory(QWidget):
     """
     TO DO:
@@ -706,10 +812,8 @@ class ChatHistory(QWidget):
 
         self.setLayout(self.widget_layout)
 
-        no_chats_label = QLabel()
-        no_chats_label.setText("Select a chat to vent to.")
-        no_chats_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.widget_layout.insertWidget(0, no_chats_label)
+        users_list = UsersList(brain)
+        self.widget_layout.insertWidget(0, users_list)
 
         self.widget_layout.setCurrentIndex(0)
 

@@ -5,13 +5,14 @@ import time
 from socket_manager import SocketManager
 
 class Brain(QObject):
-    chat_added = pyqtSignal(dict)
+    chats_added = pyqtSignal(list)
     chat_removed = pyqtSignal(dict)
 
     user_added = pyqtSignal(dict)
     user_removed = pyqtSignal(dict)
     current_user_changed = pyqtSignal(str, str)
     chat_selected = pyqtSignal(str, str)
+    select_chat = pyqtSignal(str, str)
     change_textbox_visibility = pyqtSignal(bool)
 
     chat_updated = pyqtSignal(str, str)
@@ -39,8 +40,8 @@ class Brain(QObject):
         self.socket_manager = SocketManager()
 
         self.users_list = []
-        self.chats_list = []
-        self.domain_users_list = dict()
+        self.chats_list = dict() # key: domain | value: list of chats
+        self.domain_users_list = dict() # key: domain | value: list of users
 
         self.current_user = None
         self.current_chat = None
@@ -60,26 +61,30 @@ class Brain(QObject):
         self.socket_manager.chat_updated.connect(self.update_chat)
         self.add_new_messages.connect(self.update_timestamps)
 
+    def get_domain_users(self, domain: str):
+        users = self.domain_users_list.get(domain, None)
+        return users
+
+    def create_p2p_chat(self, username: str, domain: str):
+        current_user_username = self.get_current_user_username()
+        current_user_domain = self.get_current_user_domain()
+        if current_user_domain != domain: return False, "User domains do NOT match!"
+
+        chat = self.socket_manager.request_create_p2p_chat(current_user_username, username, domain)
+        if not chat: return False, "Could NOT create chat!"
+        self.add_chats([chat])
+
+        return True, chat['chat_id']
+
     def get_chat_creator(self, chat_id: str, domain: str):
-        chat = self.find_chats({
-            "chat_id": chat_id,
-            "domain": domain
-        })
-
+        chat = self.find_chat(chat_id, domain)
         if not chat: return None
-
-        chat = chat[0]
         return chat['creator']
 
     def change_admin_status(self, chat_id: str, domain: str, username: str, is_admin: bool):
-        chat = self.find_chats({
-            "chat_id": chat_id,
-            "domain": domain
-        })
-
+        chat = self.find_chat(chat_id, domain)
         if not chat: return
 
-        chat = chat[0]
         users = chat['users']
         for user in users:
             if user['username'] == username:
@@ -116,6 +121,11 @@ class Brain(QObject):
         if username in user_details['black_list']:
             user_details['black_list'].remove(username)
 
+    def get_user_icon_path(self, username: str, domain: str):
+        user_data = self.get_user_details(username, domain)
+        if not user_data: return './Icons/default_user_icon.png'
+        return user_data['icon_path']
+
     def get_user_details(self, username: str, domain: str):
         domain_users = self.domain_users_list.get(domain, None)
         if domain_users is None: return None
@@ -137,31 +147,22 @@ class Brain(QObject):
                     self.domain_users_list[domain].append(user)
 
     def get_chat_setting(self, chat_id: str, domain: str):
-        chat = self.find_chats({
-            "chat_id": chat_id,
-            "domain": domain
-        })
-
+        chat = self.find_chat(chat_id, domain)
         if chat is None: return None
-
-        chat = chat[0]
         return chat['chat_setting']
 
     def set_chat_setting(self, chat_id: str, domain: str, setting: str):
-        chat = self.find_chats({
-            "chat_id": chat_id,
-            "domain": domain
-        })
-
+        chat = self.find_chat(chat_id, domain)
         if chat is None: return
         if setting != 'rw' and setting != 'ro': return
-
-        chat = chat[0]
         chat['chat_setting'] = setting
 
     def remove_user_from_chat(self, chat_id: str, domain: str, username: str):
-        for chat in self.chats_list:
-            if chat['chat_id'] == chat_id and chat['domain'] == domain:
+        chats = self.chats_list.get(domain, None)
+        if not chats: return
+
+        for chat in chats:
+            if chat['chat_id'] == chat_id:
                 users_list = chat['users']
                 for user in users_list:
                     if user['username'] == username:
@@ -169,25 +170,13 @@ class Brain(QObject):
                         return
 
     def get_last_message_timestamp(self, chat_id: str, domain: str):
-        chat = self.find_chats({
-            "chat_id": chat_id,
-            "domain": domain
-        })
-
+        chat = self.find_chat(chat_id, domain)
         if chat is None: return None
-
-        chat = chat[0]
         return chat['last_message_timestamp']
 
     def set_last_message_timestamp(self, chat_id: str, domain:str, timestamp: float):
-        chat = self.find_chats({
-            "chat_id": chat_id,
-            "domain": domain
-        })
-
+        chat = self.find_chat(chat_id, domain)
         if chat is None: return
-
-        chat = chat[0]
         chat['last_message_timestamp'] = timestamp
         self.last_seen_time_updated.emit(chat_id, domain)
 
@@ -221,8 +210,11 @@ class Brain(QObject):
         return None
 
     def update_chat(self, chat_details: dict):
-        self.remove_chat_by_id_and_domain(chat_details['chat_id'], chat_details['domain'])
-        self.add_chats([chat_details])
+        chat = self.find_chat(chat_details['chat_id'], chat_details['domain'])
+        if chat:
+            chat.update(chat_details)
+        else:
+            self.add_chats([chat_details])
 
         if self.current_chat is None or \
                 (self.current_chat['chat_id'] == chat_details['chat_id'] and self.current_chat['domain'] == chat_details['domain']):
@@ -334,33 +326,27 @@ class Brain(QObject):
             self.current_chat = None
             return
 
-        chat = self.find_chats({
-            "chat_id": chat_id,
-            "domain": domain
-        })
-        if chat:
-            chat = chat[0]
-            self.current_chat = chat
+        chat = self.find_chat(chat_id, domain)
+        if not chat:
+            self.current_chat = None
+            return
+
+        self.current_chat = chat
 
     def get_chats(self):
-        ret = [
-            {
-                "chat_id": chat['chat_id'],
-                "domain": chat['domain'],
-            } for chat in self.chats_list
-        ]
+        ret = []
+        for domain, chats in self.chats_list.items():
+            for chat in chats:
+                ret.append({
+                    "chat_id": chat['chat_id'],
+                    "domain": domain
+                })
         return ret
 
     def get_chat_user_usernames(self, chat_id: str, domain: str):
-        chat = self.find_chats({
-            "chat_id": chat_id,
-            "domain": domain
-        })
-
-        if chat:
-            chat = chat[0]
-            return list(map(lambda user: user['username'], chat['users']))
-        return None
+        chat = self.find_chat(chat_id, domain)
+        if not chat: return None
+        return list(map(lambda user: user['username'], chat['users']))
 
     def get_current_chat_id(self):
         if self.current_chat is None:
@@ -378,23 +364,13 @@ class Brain(QObject):
         return self.current_chat['chat_setting']
 
     def get_chat_type(self, chat_id: str, domain: str):
-        chat = self.find_chats({
-            "chat_id": chat_id,
-            "domain": domain
-        })
-        if chat:
-            chat = chat[0]
-            return chat['chat_type']
-        return None
+        chat = self.find_chat(chat_id, domain)
+        if not chat: return None
+        return chat['chat_type']
 
     def get_chat_display_name(self, chat_id: str, domain: str):
-        chat = self.find_chats({
-            "chat_id": chat_id,
-            "domain": domain
-        })
-
+        chat = self.find_chat(chat_id, domain)
         if not chat: return None
-        chat = chat[0]
 
         if chat['chat_type'] == "chatroom":
             return chat['display_name']
@@ -406,13 +382,8 @@ class Brain(QObject):
             return other_user_data['username']
 
     def get_chat_description(self, chat_id: str, domain: str):
-        chat = self.find_chats({
-            "chat_id": chat_id,
-            "domain": domain
-        })
-
+        chat = self.find_chat(chat_id, domain)
         if not chat: return None
-        chat = chat[0]
 
         if chat['chat_type'] == "chatroom":
             return chat['description']
@@ -424,13 +395,8 @@ class Brain(QObject):
             return other_user_data['description']
 
     def get_chat_icon_path(self, chat_id: str, domain: str):
-        chat = self.find_chats({
-            "chat_id": chat_id,
-            "domain": domain
-        })
-
+        chat = self.find_chat(chat_id, domain)
         if not chat: return None
-        chat = chat[0]
 
         if chat['chat_type'] == "chatroom":
             return chat['icon_path']
@@ -442,23 +408,13 @@ class Brain(QObject):
             return other_user_data['icon_path']
 
     def get_chat_users(self, chat_id: str, domain: str):
-        chat = self.find_chats({
-            "chat_id": chat_id,
-            "domain": domain
-        })
-        if chat:
-            chat = chat[0]
-            return chat['users']
-        return None
+        chat = self.find_chat(chat_id, domain)
+        if not chat: return None
+        return chat['users']
 
     def user_is_admin(self, chat_id: str, domain: str, username: str):
-        chat = self.find_chats({
-            "chat_id": chat_id,
-            "domain": domain
-        })
-
+        chat = self.find_chat(chat_id, domain)
         if not chat: return False
-        chat = chat[0]
 
         for user in chat['users']:
             if user['username'] == username:
@@ -466,35 +422,60 @@ class Brain(QObject):
         return False
 
     def add_chats(self, chat_data: list[dict]):
+        added_chats = []
         for chat in chat_data:
-            if not self.chat_exists(chat):
-                self.chats_list.append(chat)
+            chat_domain = chat['domain']
+            if not self.chat_exists(chat['chat_id'], chat_domain):
+                chats = self.chats_list.get(chat_domain, None)
+                if not chats:
+                    self.chats_list[chat_domain] = [chat]
+                else:
+                    chats.append(chat)
+                added_chats.append(chat)
 
-    def remove_chat(self, chat_data: dict):
-        self.chats_list.remove(chat_data)
+        self.chats_added.emit(added_chats)
 
-    def chat_exists(self, chat_data: dict):
-        for chat in self.chats_list:
-            if chat["chat_id"] == chat_data["chat_id"] and chat["domain"] == chat_data["domain"]:
+    def remove_chat(self, chat_id: str, domain: str):
+        chats = self.chats_list.get(domain, None)
+        if not chats: return
+
+        for chat in chats:
+            if chat['chat_id'] == chat_id:
+                chats.remove(chat)
+                return
+
+    def p2p_chat_exists(self, username1: str, username2: str, domain: str):
+        chats = self.chats_list.get(domain, None)
+        if not chats: return None
+
+        for chat in chats:
+            if chat['chat_type'] != "p2p": continue
+            users = [user['username'] for user in chat['users']]
+            if username1 in users and username2 in users:
+                return chat['chat_id']
+
+        return None
+
+    def chat_exists(self, chat_id: str, domain: str):
+        chats = self.chats_list.get(domain, None)
+        if not chats: return False
+
+        for chat in chats:
+            if chat["chat_id"] == chat_id:
                 return True
         return False
 
-    def find_chats(self, key_val_pairs: dict):
-        found_chats = []
-        for chat in self.chats_list:
-            for key in key_val_pairs.keys():
-                if chat[key] != key_val_pairs[key]:
-                    break
-            else:
-                found_chats.append(chat)
-        return found_chats
+    def find_chat(self, chat_id: str, domain: str):
+        chats = self.chats_list.get(domain, None)
+        if not chats: return None
+
+        for chat in chats:
+            if chat['chat_id'] == chat_id:
+                return chat
+
+        return None
 
     def remove_chat_by_id_and_domain(self, chat_id: str, domain: str):
-        chat = self.find_chats({
-            "chat_id": chat_id,
-            "domain": domain
-        })
-
-        if chat:
-            chat = chat[0]
-            self.remove_chat(chat)
+        chat = self.find_chat(chat_id, domain)
+        if not chat: return
+        self.remove_chat(chat['chat_id'], chat['domain'])

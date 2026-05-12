@@ -1,5 +1,5 @@
 import time
-
+import random
 from PyQt6.QtCore import pyqtSignal, QObject
 
 
@@ -64,33 +64,6 @@ class SocketManager(QObject):
             }
             chats.append(chat_data)
 
-        for idx in range(2):
-            chat_data = {
-                "chat_type": "p2p",  # {"chatroom", "p2p"}
-                "chat_setting": "rw" if idx % 2 == 1 else "ro",  # {"rw", "ro"}
-                "domain": domain,
-                "chat_id": str(idx + 20),
-                "display_name": None,
-                "description": None,
-                "icon_path": None,
-                "creator": None,
-                "last_message_timestamp": time.time(),
-                "users":
-                [{"username": "fifo",
-                "is_admin": False,
-                  "last_seen_time": time.time()},
-                 {"username": "fifo2",
-                  "is_admin": False,
-                  "last_seen_time": time.time()}] if idx % 2 == 0 else
-                [{"username": "fifo",
-                  "is_admin": False,
-                  "last_seen_time": time.time()},
-                 {"username": "fifo3",
-                  "is_admin": False,
-                  "last_seen_time": time.time()}]
-            }
-            chats.append(chat_data)
-
         return chats
 
     def request_messages(self, chat_id: str, domain: str, oldest_message_id: str, message_nr: int):
@@ -141,3 +114,27 @@ class SocketManager(QObject):
         ]
 
         return ret
+
+    def request_create_p2p_chat(self, username1: str, username2: str, domain: str):
+
+        chat_data = {
+            "chat_type": "p2p",
+            "chat_setting": "rw",
+            "domain": domain,
+            "chat_id": str(int(random.random() * 10000)),
+            "display_name": None,
+            "description": None,
+            "icon_path": None,
+            "creator": None,
+            "last_message_timestamp": 0,
+            "users":
+                [{"username": username1,
+                  "is_admin": False,
+                  "last_seen_time": 0},
+                 {"username": username2,
+                  "is_admin": False,
+                  "last_seen_time":0}]
+        }
+
+        # returns None if error
+        return chat_data
