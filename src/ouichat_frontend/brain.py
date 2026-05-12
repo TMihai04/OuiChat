@@ -61,6 +61,22 @@ class Brain(QObject):
         self.socket_manager.chat_updated.connect(self.update_chat)
         self.add_new_messages.connect(self.update_timestamps)
 
+    def set_chat_display_name(self, chat_id: str, domain: str, display_name: str):
+        chat = self.find_chat(chat_id, domain)
+        chat['display_name'] = display_name
+
+        current_user_domain = self.get_current_user_domain()
+        if domain == current_user_domain:
+            self.chat_updated.emit(chat_id, domain)
+
+    def set_chat_description(self, chat_id: str, domain: str, description: str):
+        chat = self.find_chat(chat_id, domain)
+        chat['description'] = description
+
+        current_user_domain = self.get_current_user_domain()
+        if domain == current_user_domain:
+            self.chat_updated.emit(chat_id, domain)
+
     def user_is_blocked(self, username: str):
         return username in self.current_user['blacklist']
 

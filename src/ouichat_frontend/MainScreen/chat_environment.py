@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QPushButton, QVBoxLayout, QLabel, QStackedLayout, QWidget, QHBoxLayout,
-    QTextEdit, QSizePolicy, QScrollArea, QLineEdit, QListWidget, QAbstractItemView, QListWidgetItem, QMenu
+    QTextEdit, QSizePolicy, QScrollArea, QLineEdit, QListWidget, QAbstractItemView, QListWidgetItem, QMenu, QDialog
 )
 
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QEvent
@@ -137,14 +137,14 @@ class ChatMessage(QWidget):
         top_layout.addWidget(message_area, stretch=1)
 
     def __resize_text_box(self):
-        text_height = int(self.message_text.document().size().height())
+        text_height = int(self.message_text.document().size().height()) + 2
         box_height = self.message_text.height()
         if text_height != box_height:
             self.message_text.setFixedHeight(text_height)
 
     def resizeEvent(self, event):
-        self.__resize_text_box()
         super().resizeEvent(event)
+        self.__resize_text_box()
 
     def edit_text(self, text):
         self.message_text.setPlainText(text)
@@ -435,18 +435,94 @@ class ChatMembersList(QWidget):
         item.setData(Qt.ItemDataRole.UserRole, {"username": username, "is_admin": is_admin})
         self.list_widget.addItem(item)
 
+class TextEditDialog(QDialog):
+    def __init__(self, brain: Brain):
+        super().__init__()
+
+        self.brain = brain
+        self.edited_field = None
+        self.chat_id = None
+        self.domain = None
+
+        self.setWindowTitle("Edit Chat Details")
+
+        dialog_layout = QVBoxLayout()
+        dialog_layout.setContentsMargins(5, 5, 5, 5)
+        dialog_layout.setSpacing(5)
+        self.setLayout(dialog_layout)
+
+        self.description_label = QLabel()
+        self.description_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+
+        self.text_edit = QTextEdit()
+        self.text_edit.setMinimumSize(QSize(200, 50))
+
+        button_container = QWidget()
+        button_container_layout = QHBoxLayout()
+        button_container_layout.setContentsMargins(0, 0, 0, 0)
+        button_container_layout.setSpacing(5)
+        button_container.setLayout(button_container_layout)
+
+        apply_button = QPushButton()
+        apply_button.setText("Apply")
+        apply_button.setFixedSize(125, 25)
+        apply_button.clicked.connect(self.apply)
+
+        cancel_button = QPushButton()
+        cancel_button.setText("Cancel")
+        cancel_button.setFixedSize(125, 25)
+        cancel_button.clicked.connect(self.reject)
+
+        button_container_layout.addWidget(cancel_button)
+        button_container_layout.addWidget(apply_button)
+
+        dialog_layout.addWidget(self.description_label)
+        dialog_layout.addWidget(self.text_edit)
+        dialog_layout.addWidget(button_container)
+
+    def apply(self):
+        # PROCESS REQUEST USING BRAIN
+        text = self.text_edit.toPlainText()
+        if self.edited_field == "name":
+            self.brain.set_chat_display_name(self.chat_id, self.domain, text)
+
+        elif self.edited_field == "description":
+            self.brain.set_chat_description(self.chat_id, self.domain, text)
+
+        self.accept()
+
+    def set_chat_details(self, chat_id: str, domain: str):
+        self.chat_id = chat_id
+        self.domain = domain
+
+    def set_edited_field(self, edited_field: str):
+        self.edited_field = edited_field
+
+    def set_text(self, text: str):
+        self.text_edit.setPlainText(text)
+
+    def set_text_hint(self, text: str):
+        self.text_edit.setPlaceholderText(text)
+
+    def set_label_text(self, text: str):
+        self.description_label.setText(text)
+
+
 class ChatDetails(QScrollArea):
     """
     TO DO:
         - add 'remove members' button dialog
         - add 'add members' button dialog
+        - add 'edit name' button dialog
+        - add 'edit description' button dialog
     """
     chat_history_requested = pyqtSignal()
 
-    def __init__(self, brain: Brain, chat_id: str, domain: str):
+    def __init__(self, brain: Brain, text_dialog: TextEditDialog, chat_id: str, domain: str):
         super().__init__()
 
         self.brain = brain
+        self.text_edit_dialog = text_dialog
         self.chat_id = chat_id
         self.domain = domain
 
@@ -480,7 +556,7 @@ class ChatDetails(QScrollArea):
             self.edit_name_button.setIcon(QIcon("./Icons/edit_icon.png"))
             self.edit_name_button.setFixedSize(20, 20)
             self.edit_name_button.setIconSize(QSize(16, 16))
-            # edit_name_button.clicked.connect() # IMPLEMENT DIALOG FOR CHAT NAME CHANGE
+            self.edit_name_button.clicked.connect(self.edit_name)
 
             chat_name_container_layout.addWidget(self.chat_name, alignment=Qt.AlignmentFlag.AlignRight)
             chat_name_container_layout.addWidget(self.edit_name_button, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -490,10 +566,16 @@ class ChatDetails(QScrollArea):
         chat_description_label = QLabel()
         chat_description_label.setText('Description:')
 
-        self.chat_description_text = QLabel()
+        self.chat_description_text = QTextEdit()
         chat_description = self.brain.get_chat_description(self.chat_id, self.domain)
-        self.chat_description_text.setText(chat_description)
-        self.chat_description_text.setWordWrap(True)
+        self.chat_description_text.setPlainText(chat_description)
+        self.chat_description_text.setReadOnly(True)
+        self.chat_description_text.setFrameShape(QTextEdit.Shape.NoFrame)
+        self.chat_description_text.setStyleSheet("background: transparent;")
+        self.chat_description_text.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.chat_description_text.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+        self.chat_description_text.document().setDocumentMargin(0)
+        self.chat_description_text.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
         chat_description = QWidget()
         chat_description_layout = QVBoxLayout()
@@ -509,7 +591,7 @@ class ChatDetails(QScrollArea):
             self.change_chat_description_button.setIcon(QIcon("./Icons/edit_icon.png"))
             self.change_chat_description_button.setFixedSize(20, 20)
             self.change_chat_description_button.setIconSize(QSize(16, 16))
-            # self.change_chat_description_button.clicked.connect() # IMPLEMENT DIALOG FOR CHAT DESCRIPTION CHANGE
+            self.change_chat_description_button.clicked.connect(self.edit_description)
             chat_description_layout.addWidget(self.change_chat_description_button, alignment=Qt.AlignmentFlag.AlignLeft)
 
         self.container = QWidget()
@@ -558,6 +640,44 @@ class ChatDetails(QScrollArea):
         self.setWidget(self.container)
         self.setWidgetResizable(True)
 
+    def __resize_description_box(self):
+        text_height = int(self.chat_description_text.document().size().height()) + 2
+        box_height = self.chat_description_text.height()
+        if text_height != box_height:
+            self.chat_description_text.setFixedHeight(text_height)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.__resize_description_box()
+
+    def edit_name(self):
+        if self.text_edit_dialog.isVisible():
+            self.text_edit_dialog.raise_()
+            self.text_edit_dialog.activateWindow()
+            return
+
+        self.text_edit_dialog.set_chat_details(self.chat_id, self.domain)
+        self.text_edit_dialog.set_edited_field("name")
+        self.text_edit_dialog.set_text_hint("Type chat name...")
+        current_name = self.chat_name.text()
+        self.text_edit_dialog.set_text(current_name)
+        self.text_edit_dialog.set_label_text("Change Chat Name:")
+        self.text_edit_dialog.exec()
+
+    def edit_description(self):
+        if self.text_edit_dialog.isVisible():
+            self.text_edit_dialog.raise_()
+            self.text_edit_dialog.activateWindow()
+            return
+
+        self.text_edit_dialog.set_chat_details(self.chat_id, self.domain)
+        self.text_edit_dialog.set_edited_field("description")
+        self.text_edit_dialog.set_text_hint("Type chat description...")
+        current_name = self.chat_description_text.toPlainText()
+        self.text_edit_dialog.set_text(current_name)
+        self.text_edit_dialog.set_label_text("Change Chat Description:")
+        self.text_edit_dialog.exec()
+
     def update_labels(self):
         chat_icon_path = self.brain.get_chat_icon_path(self.chat_id, self.domain)
         self.chat_icon.setIcon(QIcon(chat_icon_path))
@@ -565,6 +685,7 @@ class ChatDetails(QScrollArea):
         self.chat_name.setText(chat_name)
         chat_description = self.brain.get_chat_description(self.chat_id, self.domain)
         self.chat_description_text.setText(chat_description)
+        self.__resize_description_box()
 
     def handle_chat_description_change(self, chat_id: str, domain: str):
         if self.chat_id == chat_id and self.domain == domain:
@@ -660,7 +781,7 @@ class Chat(QWidget):
         self.chat_messages.edit_message(message_id, text)
 
 class ChatBubble(QWidget):
-    def __init__(self, brain: Brain, chat_id: str, domain: str):
+    def __init__(self, brain: Brain, text_dialog: TextEditDialog, chat_id: str, domain: str):
         super().__init__()
 
         self.brain = brain
@@ -672,7 +793,7 @@ class ChatBubble(QWidget):
         self.chat = Chat(brain, chat_id, domain)
         self.chat.chat_details_requested.connect(self.display_chat_details)
 
-        self.chat_details_widget = ChatDetails(brain, chat_id, domain)
+        self.chat_details_widget = ChatDetails(brain, text_dialog, chat_id, domain)
         self.chat_details_widget.chat_history_requested.connect(self.display_chat)
 
         self.widget_layout = QStackedLayout()
@@ -886,6 +1007,8 @@ class ChatHistory(QWidget):
 
         self.brain = brain
 
+        self.text_dialog = TextEditDialog(brain)
+
         self.max_bubbles = Brain.MAX_CHAT_BUBBLES + 1 # 1 screen for no chats
 
         self.widget_layout = QStackedLayout()
@@ -954,7 +1077,7 @@ class ChatHistory(QWidget):
             self.widget_layout.removeWidget(oldest_widget)
             oldest_widget.deleteLater()
 
-        new_bubble = ChatBubble(self.brain, chat_id, domain)
+        new_bubble = ChatBubble(self.brain, self.text_dialog, chat_id, domain)
         # at index 0 there is a special screen for when there are no chats selected
         self.widget_layout.insertWidget(1, new_bubble)
         self.widget_layout.setCurrentIndex(1)
