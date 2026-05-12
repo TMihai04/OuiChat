@@ -116,6 +116,7 @@ class LogInDialog(QDialog):
                 "icon_path": "./Icons/default_user_icon.png",
                 "request_token": "TOKEN",
                 "refresh_token": "REFRESH_TOKEN",
+                "blacklist": ["fifo3"]
             }
 
             self.brain.add_user(user_data) # also sets it as the current user

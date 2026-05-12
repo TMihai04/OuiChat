@@ -61,6 +61,43 @@ class Brain(QObject):
         self.socket_manager.chat_updated.connect(self.update_chat)
         self.add_new_messages.connect(self.update_timestamps)
 
+    def user_is_blocked(self, username: str):
+        return username in self.current_user['blacklist']
+
+    def user_is_reachable(self, username: str):
+        current_user_domain = self.get_current_user_domain()
+        users = self.domain_users_list.get(current_user_domain, None)
+        if users is None: return False
+
+        usernames = [user['username'] for user in users]
+        return username in usernames
+
+    def block_user(self, username: str):
+        self.current_user['blacklist'].append(username)
+
+        current_user_username = self.get_current_user_username()
+        current_user_domain = self.get_current_user_domain()
+
+        # SEND REQUEST TO SERVER TO MAKE CHAT READ-ONLY
+
+        chat_id = self.p2p_chat_exists(current_user_username, username, current_user_domain)
+        if chat_id:
+            chat = self.find_chat(chat_id, current_user_domain)
+            chat['chat_setting'] = 'ro'
+
+    def unblock_user(self, username: str):
+        self.current_user['blacklist'].remove(username)
+
+        current_user_username = self.get_current_user_username()
+        current_user_domain = self.get_current_user_domain()
+
+        # SEND REQUEST TO SERVET TO MAKE CHAT READ-WRITE (if other user is reachable)
+
+        chat_id = self.p2p_chat_exists(current_user_username, username, current_user_domain)
+        if chat_id and self.user_is_reachable(username):
+            chat = self.find_chat(chat_id, current_user_domain)
+            chat['chat_setting'] = 'rw'
+
     def get_domain_users(self, domain: str):
         users = self.domain_users_list.get(domain, None)
         return users
@@ -94,32 +131,6 @@ class Brain(QObject):
         for (chat_id, domain), messages_list in messages.items():
             last_message_timestamp = messages_list[-1]['timestamp']
             self.set_last_message_timestamp(chat_id, domain, last_message_timestamp)
-
-    def get_user_block_status(self, username: str, domain: str, check_username: str):
-        user_details = self.get_user_details(username, domain)
-        if not user_details: return False
-        return check_username in user_details['black_list']
-
-    def get_cu_user_block_status(self, username: str):
-        current_user_username = self.get_current_user_username()
-        current_user_domain = self.get_current_user_domain()
-        return self.get_user_block_status(current_user_username, current_user_domain, username)
-
-    def block_user(self, username: str):
-        current_user_username = self.get_current_user_username()
-        current_user_domain = self.get_current_user_domain()
-
-        user_details = self.get_user_details(current_user_username, current_user_domain)
-        if username not in user_details['black_list']:
-            user_details['black_list'].append(username)
-
-    def unblock_user(self, username: str):
-        current_user_username = self.get_current_user_username()
-        current_user_domain = self.get_current_user_domain()
-
-        user_details = self.get_user_details(current_user_username, current_user_domain)
-        if username in user_details['black_list']:
-            user_details['black_list'].remove(username)
 
     def get_user_icon_path(self, username: str, domain: str):
         user_data = self.get_user_details(username, domain)
@@ -286,6 +297,9 @@ class Brain(QObject):
 
     def get_current_user_icon(self):
         return self.current_user["icon_path"]
+
+    def get_current_user_blacklist(self):
+        return self.current_user["blacklist"]
 
     def add_user(self, user_data: dict):
         self.users_list.append(user_data)

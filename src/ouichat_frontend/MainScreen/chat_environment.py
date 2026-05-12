@@ -709,6 +709,8 @@ class UsersList(QListWidget):
         self.brain.current_user_changed.connect(self.handle_user_change)
 
         self.setIconSize(QSize(32, 32))
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.show_context_menu)
 
         self.itemClicked.connect(self.handle_item_clicked_changed)
 
@@ -718,6 +720,47 @@ class UsersList(QListWidget):
         current_user_domain = self.brain.get_current_user_domain()
         domain_users = self.brain.get_domain_users(current_user_domain)
         self.add_users(current_user_domain, domain_users)
+
+    def show_context_menu(self, position):
+        item = self.itemAt(position)
+        if not item: return
+
+        item_data = item.data(Qt.ItemDataRole.UserRole)
+        username = item_data['username']
+
+        cu_blacklist = self.brain.get_current_user_blacklist()
+
+        block_user = object()
+        unblock_user = object()
+
+        menu = QMenu()
+
+        if username in cu_blacklist:
+            unblock_user = menu.addAction("Unblock User")
+        else:
+            block_user = menu.addAction("Block User")
+
+        global_pos = self.mapToGlobal(position)
+        selected_action = menu.exec(global_pos)
+
+        # Checking to see if the item wasn't removed while the context menu was opened
+        if not item.listWidget(): return
+
+        if selected_action == unblock_user:
+            self.__unblock_user(item)
+
+        elif selected_action == block_user:
+            self.__block_user(item)
+
+    def __block_user(self, item: QListWidgetItem):
+        item_data = item.data(Qt.ItemDataRole.UserRole)
+        username = item_data['username']
+        self.brain.block_user(username)
+
+    def __unblock_user(self, item: QListWidgetItem):
+        item_data = item.data(Qt.ItemDataRole.UserRole)
+        username = item_data['username']
+        self.brain.unblock_user(username)
 
     def handle_item_clicked_changed(self, item: QListWidgetItem):
         current_user_username = self.brain.get_current_user_username()
@@ -730,12 +773,16 @@ class UsersList(QListWidget):
 
         chat_id = self.brain.p2p_chat_exists(current_user_username, username, domain)
         if chat_id is None:
-            ret = self.brain.create_p2p_chat(username, domain)
-            if not ret[0]:
-                error_message = ret[1]
-                # ERROR WINDOW POPUP
+            cu_blacklist = self.brain.get_current_user_blacklist()
+            if username not in cu_blacklist:
+                ret = self.brain.create_p2p_chat(username, domain)
+                if not ret[0]:
+                    error_message = ret[1]
+                    # ERROR WINDOW POPUP
+                    return
+                chat_id = ret[1]
+            else:
                 return
-            chat_id = ret[1]
 
         self.brain.select_chat.emit(chat_id, domain)
 
@@ -792,6 +839,9 @@ class UsersList(QListWidget):
                 item.setHidden(False)
 
 class UsersTab(QWidget):
+    """
+    TO DO:
+    """
     def __init__(self, brain: Brain):
         super().__init__()
 
@@ -831,10 +881,6 @@ class UsersTab(QWidget):
                 item.setHidden(True)
 
 class ChatHistory(QWidget):
-    """
-    TO DO:
-        - CONTEXT MENU (block user)
-    """
     def __init__(self, brain: Brain):
         super().__init__()
 

@@ -353,7 +353,7 @@ class ChatList(QWidget):
         mark_read_action = menu.addAction("Mark as Read")
 
         if chat_type == "p2p":
-            other_user_is_blocked = self.brain.get_cu_user_block_status(other_user_username)
+            other_user_is_blocked = self.brain.user_is_blocked(other_user_username)
             if not other_user_is_blocked:
                 menu.addSeparator()
                 block_user_action = menu.addAction("Block User")
@@ -403,7 +403,6 @@ class ChatList(QWidget):
         domain = item_data['domain']
 
         current_user_username = self.brain.get_current_user_username()
-        current_user_domain = self.brain.get_current_user_domain()
 
         chat_usernames = self.brain.get_chat_user_usernames(chat_id, domain)
         other_user_username = chat_usernames[0] if chat_usernames[0] != current_user_username else chat_usernames[1]
@@ -413,10 +412,10 @@ class ChatList(QWidget):
         else:
             self.brain.unblock_user(other_user_username)
 
-        cu_in_other_user_black_list = self.brain.get_user_block_status(other_user_username, current_user_domain, current_user_username)
-        other_user_in_cu_black_list = self.brain.get_cu_user_block_status(other_user_username)
+        user_is_reachable = self.brain.user_is_reachable(other_user_username)
+        user_is_blocked = self.brain.user_is_blocked(other_user_username)
 
-        setting = "ro" if cu_in_other_user_black_list or other_user_in_cu_black_list else "rw"
+        setting = "ro" if not user_is_reachable or user_is_blocked else "rw"
 
         self.brain.set_chat_setting(chat_id, domain, setting)
 
