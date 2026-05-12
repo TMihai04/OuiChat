@@ -791,13 +791,49 @@ class UsersList(QListWidget):
             else:
                 item.setHidden(False)
 
+class UsersTab(QWidget):
+    def __init__(self, brain: Brain):
+        super().__init__()
+
+        self.brain = brain
+
+        tab_layout = QVBoxLayout()
+        tab_layout.setContentsMargins(0, 0, 0, 0)
+        tab_layout.setSpacing(5)
+        self.setLayout(tab_layout)
+
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("Search user...")
+        self.search_bar.setFixedSize(MEMBERS_SEARCH_BAR_WIDTH, 25)
+        search_icon = QIcon("Icons/search_icon.png")
+        self.search_bar.addAction(search_icon, QLineEdit.ActionPosition.LeadingPosition)
+        self.search_bar.textChanged.connect(self.search)
+
+        self.users_list = UsersList(brain)
+
+        tab_layout.addWidget(self.search_bar)
+        tab_layout.addWidget(self.users_list)
+
+    def search(self, text):
+        for row in range(self.users_list.count()):
+            item = self.users_list.item(row)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            username = item_data['username']
+            user_domain = item_data['domain']
+            current_user_username = self.brain.get_current_user_username()
+            current_user_domain = self.brain.get_current_user_domain()
+            if user_domain == current_user_domain and current_user_username != username:
+                if text == "" or text in item.text():
+                    item.setHidden(False)
+                else:
+                    item.setHidden(True)
+            else:
+                item.setHidden(True)
+
 class ChatHistory(QWidget):
     """
     TO DO:
-        - IMPLEMENT THE USERS LIST WIDGET INSTEAD OF THE NO CHATS LABEL
-            EACH USER IS CLICKABLE AND CREATES A CHAT (IF NOT EXISTENT ALREADY)
-            SENDS YOU TO THE CHAT AUTOMATICALLY
-            SEARCH BAR FOR USERS
+        - CONTEXT MENU (block user)
     """
     def __init__(self, brain: Brain):
         super().__init__()
@@ -812,8 +848,8 @@ class ChatHistory(QWidget):
 
         self.setLayout(self.widget_layout)
 
-        users_list = UsersList(brain)
-        self.widget_layout.insertWidget(0, users_list)
+        users_tab = UsersTab(brain)
+        self.widget_layout.insertWidget(0, users_tab)
 
         self.widget_layout.setCurrentIndex(0)
 
