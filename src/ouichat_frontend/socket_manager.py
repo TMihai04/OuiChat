@@ -92,23 +92,15 @@ class SocketManager(QObject):
         return messages
 
     def request_users(self, domain: str):
-        ret = [
-            {
-                "username": "fifo",
-                "icon_path": "./Icons/default_user_icon.png",
-                "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-            },
-            {
-                "username": "fifo2",
-                "icon_path": "./Icons/default_user_icon.png",
-                "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-            },
-            {
-                "username": "fifo3",
-                "icon_path": "./Icons/default_user_icon.png",
-                "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-            }
-        ]
+        ret = [{
+            "username": "fifo",
+            "icon_path": "./Icons/default_user_icon.png",
+            "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
+        }, *[{
+            "username": f"fifo{idx}",
+            "icon_path": "./Icons/default_user_icon.png",
+            "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
+        } for idx in range(10)]]
 
         return ret
 
@@ -135,3 +127,24 @@ class SocketManager(QObject):
 
         # returns None if error
         return chat_data
+
+    def request_create_chatroom(self, domain: str, creator_username: str, users: list):
+        chat_data = {
+            "chat_type": "chatroom",
+            "chat_setting": "rw",
+            "domain": domain,
+            "chat_id": str(int(random.random() * 10000)),
+            "display_name": f"{creator_username}s chatroom",
+            "description": "",
+            "icon_path": "./Icons/chat_room_icon.png",
+            "creator": creator_username,
+            "last_message_timestamp": 0,
+            "users":[{
+                "username": user,
+                "is_admin": user == creator_username,
+                "last_seen_time": 0
+            } for user in users]
+        }
+
+        return chat_data
+

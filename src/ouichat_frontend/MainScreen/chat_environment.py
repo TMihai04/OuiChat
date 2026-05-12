@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QPushButton, QVBoxLayout, QLabel, QStackedLayout, QWidget, QHBoxLayout,
-    QTextEdit, QSizePolicy, QScrollArea, QLineEdit, QListWidget, QAbstractItemView, QListWidgetItem, QMenu, QDialog
+    QTextEdit, QSizePolicy, QScrollArea, QLineEdit, QListWidget, QAbstractItemView, QListWidgetItem, QMenu
 )
 
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QEvent
@@ -8,6 +8,7 @@ from PyQt6.QtGui import QIcon, QPixmap, QFontMetrics, QEnterEvent, QTextOption
 
 import time
 
+from ouichat_frontend.dialogs import AddUsersDialog, RemoveUsersDialog, TextEditDialog
 from ouichat_frontend.brain import Brain
 from ouichat_frontend.socket_manager import message_args_to_dict
 
@@ -312,7 +313,21 @@ class ChatMessagesArea(QScrollArea):
                     widget.edit_text(text)
                     return
 
+class CustomListWidget(QListWidget):
+    def __init__(self):
+        super().__init__()
+
+    def wheelEvent(self, event):
+        super().wheelEvent(event)
+        event.accept()
+
 class ChatMembersList(QWidget):
+    """
+    TO DO:
+        - SORT MEMBERS LIST
+        - SORT MEMBERS LIST IN THE DIALOGS AS WELL
+        - IMPLEMENT SEARCH BAR IN DIALOGS
+    """
     def __init__(self, brain: Brain, chat_id: str, domain: str):
         super().__init__()
 
@@ -345,7 +360,7 @@ class ChatMembersList(QWidget):
         self.setLayout(self.widget_layout)
 
         chat_users = self.brain.get_chat_users(self.chat_id, self.domain)
-        self.initialize_members(chat_users)
+        self.add_members_dicts(chat_users)
 
     def show_context_menu(self, position):
         current_user_domain = self.brain.get_current_user_domain()
@@ -423,10 +438,24 @@ class ChatMembersList(QWidget):
             else:
                 item.setHidden(True)
 
-    def initialize_members(self, members: list):
+    def add_members_dicts(self, members: list):
         for member in members:
             member_icon = self.brain.get_user_icon_path(member['username'], self.domain)
             self.add_entry(member['username'], member_icon, member['is_admin'])
+
+    def add_members_usernames(self, usernames: list):
+        for username in usernames:
+            user_icon = self.brain.get_user_icon_path(username, self.domain)
+            is_admin = self.brain.user_is_admin(self.chat_id, self.domain, username)
+            self.add_entry(username, user_icon, is_admin)
+
+    def remove_members_usernames(self, usernames: list):
+        for row in reversed(range(self.list_widget.count())):
+            item = self.list_widget.item(row)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            username = item_data['username']
+            if username in usernames:
+                self.list_widget.takeItem(row)
 
     def add_entry(self, username: str, user_icon_path: str, is_admin: bool):
         item = QListWidgetItem()
@@ -434,79 +463,6 @@ class ChatMembersList(QWidget):
         item.setText(f"{username}{" (Admin)" if is_admin else ""}")
         item.setData(Qt.ItemDataRole.UserRole, {"username": username, "is_admin": is_admin})
         self.list_widget.addItem(item)
-
-class TextEditDialog(QDialog):
-    def __init__(self, brain: Brain):
-        super().__init__()
-
-        self.brain = brain
-        self.edited_field = None
-        self.chat_id = None
-        self.domain = None
-
-        self.setWindowTitle("Edit Chat Details")
-
-        dialog_layout = QVBoxLayout()
-        dialog_layout.setContentsMargins(5, 5, 5, 5)
-        dialog_layout.setSpacing(5)
-        self.setLayout(dialog_layout)
-
-        self.description_label = QLabel()
-        self.description_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
-
-        self.text_edit = QTextEdit()
-        self.text_edit.setMinimumSize(QSize(200, 50))
-
-        button_container = QWidget()
-        button_container_layout = QHBoxLayout()
-        button_container_layout.setContentsMargins(0, 0, 0, 0)
-        button_container_layout.setSpacing(5)
-        button_container.setLayout(button_container_layout)
-
-        apply_button = QPushButton()
-        apply_button.setText("Apply")
-        apply_button.setFixedSize(125, 25)
-        apply_button.clicked.connect(self.apply)
-
-        cancel_button = QPushButton()
-        cancel_button.setText("Cancel")
-        cancel_button.setFixedSize(125, 25)
-        cancel_button.clicked.connect(self.reject)
-
-        button_container_layout.addWidget(cancel_button)
-        button_container_layout.addWidget(apply_button)
-
-        dialog_layout.addWidget(self.description_label)
-        dialog_layout.addWidget(self.text_edit)
-        dialog_layout.addWidget(button_container)
-
-    def apply(self):
-        # PROCESS REQUEST USING BRAIN
-        text = self.text_edit.toPlainText()
-        if self.edited_field == "name":
-            self.brain.set_chat_display_name(self.chat_id, self.domain, text)
-
-        elif self.edited_field == "description":
-            self.brain.set_chat_description(self.chat_id, self.domain, text)
-
-        self.accept()
-
-    def set_chat_details(self, chat_id: str, domain: str):
-        self.chat_id = chat_id
-        self.domain = domain
-
-    def set_edited_field(self, edited_field: str):
-        self.edited_field = edited_field
-
-    def set_text(self, text: str):
-        self.text_edit.setPlainText(text)
-
-    def set_text_hint(self, text: str):
-        self.text_edit.setPlaceholderText(text)
-
-    def set_label_text(self, text: str):
-        self.description_label.setText(text)
-
 
 class ChatDetails(QScrollArea):
     """
@@ -518,11 +474,14 @@ class ChatDetails(QScrollArea):
     """
     chat_history_requested = pyqtSignal()
 
-    def __init__(self, brain: Brain, text_dialog: TextEditDialog, chat_id: str, domain: str):
+    def __init__(self, brain: Brain, text_dialog: TextEditDialog, add_users_dialog: AddUsersDialog,
+                 remove_users_dialog: RemoveUsersDialog, chat_id: str, domain: str):
         super().__init__()
 
         self.brain = brain
         self.text_edit_dialog = text_dialog
+        self.add_users_dialog = add_users_dialog
+        self.remove_users_dialog = remove_users_dialog
         self.chat_id = chat_id
         self.domain = domain
 
@@ -612,11 +571,13 @@ class ChatDetails(QScrollArea):
             add_members_button.setIcon(QIcon("./Icons/plus_icon.png"))
             add_members_button.setText("Add members")
             add_members_button.setFixedWidth(130)
+            add_members_button.clicked.connect(self.add_members)
 
             remove_members_button = QPushButton()
             remove_members_button.setIcon(QIcon("./Icons/minus_icon.png"))
             remove_members_button.setText("Remove members")
             remove_members_button.setFixedWidth(130)
+            remove_members_button.clicked.connect(self.remove_members)
 
             self.button_container = QWidget()
             button_container_layout = QHBoxLayout()
@@ -639,6 +600,36 @@ class ChatDetails(QScrollArea):
 
         self.setWidget(self.container)
         self.setWidgetResizable(True)
+
+    def add_members(self):
+        if self.add_users_dialog.isVisible():
+            self.add_users_dialog.raise_()
+            self.add_users_dialog.activateWindow()
+            return
+
+        self.add_users_dialog.set_chat_details(self.chat_id, self.domain)
+        ret = self.add_users_dialog.load_users()
+        if not ret:
+            error_msg = "Could not load chatroom members!"
+            # ERROR WINDOW POPUP
+            return
+
+        self.add_users_dialog.exec()
+
+    def remove_members(self):
+        if self.remove_users_dialog.isVisible():
+            self.remove_users_dialog.raise_()
+            self.remove_users_dialog.activateWindow()
+            return
+
+        self.remove_users_dialog.set_chat_details(self.chat_id, self.domain)
+        ret = self.remove_users_dialog.load_users()
+        if not ret:
+            error_msg = "Could not load chatroom members!"
+            # ERROR WINDOW POPUP
+            return
+
+        self.remove_users_dialog.exec()
 
     def __resize_description_box(self):
         text_height = int(self.chat_description_text.document().size().height()) + 2
@@ -693,9 +684,10 @@ class ChatDetails(QScrollArea):
 
     def update_description(self, username: str, domain: str):
         chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
-        if chat_type == 'p2p' and self.domain == domain:
+        if chat_type == 'p2p':
             # no member management buttons
-            self.update_labels()
+            if self.domain == domain:
+                self.update_labels()
             return
 
         if domain == self.domain:
@@ -707,6 +699,12 @@ class ChatDetails(QScrollArea):
             self.button_container.setVisible(False)
             self.change_chat_description_button.setVisible(False)
             self.edit_name_button.setVisible(False)
+
+    def add_users_usernames(self, usernames: list):
+        self.chat_members_list.add_members_usernames(usernames)
+
+    def remove_users_usernames(self, usernames: list):
+        self.chat_members_list.remove_members_usernames(usernames)
 
 class Chat(QWidget):
     chat_details_requested = pyqtSignal()
@@ -781,7 +779,8 @@ class Chat(QWidget):
         self.chat_messages.edit_message(message_id, text)
 
 class ChatBubble(QWidget):
-    def __init__(self, brain: Brain, text_dialog: TextEditDialog, chat_id: str, domain: str):
+    def __init__(self, brain: Brain, text_dialog: TextEditDialog, add_users_dialog: AddUsersDialog,
+                 remove_users_dialog: RemoveUsersDialog, chat_id: str, domain: str):
         super().__init__()
 
         self.brain = brain
@@ -793,7 +792,7 @@ class ChatBubble(QWidget):
         self.chat = Chat(brain, chat_id, domain)
         self.chat.chat_details_requested.connect(self.display_chat_details)
 
-        self.chat_details_widget = ChatDetails(brain, text_dialog, chat_id, domain)
+        self.chat_details_widget = ChatDetails(brain, text_dialog, add_users_dialog, remove_users_dialog, chat_id, domain)
         self.chat_details_widget.chat_history_requested.connect(self.display_chat)
 
         self.widget_layout = QStackedLayout()
@@ -821,6 +820,12 @@ class ChatBubble(QWidget):
 
     def edit_message(self, message_id: str, text: str):
         self.chat.edit_message(message_id, text)
+
+    def add_users_usernames(self, usernames: list):
+        self.chat_details_widget.add_users_usernames(usernames)
+
+    def remove_users_usernames(self, usernames: list):
+        self.chat_details_widget.remove_users_usernames(usernames)
 
 class UsersList(QListWidget):
     def __init__(self, brain: Brain):
@@ -1002,12 +1007,14 @@ class UsersTab(QWidget):
                 item.setHidden(True)
 
 class ChatHistory(QWidget):
-    def __init__(self, brain: Brain):
+    def __init__(self, brain: Brain, add_users_dialog: AddUsersDialog):
         super().__init__()
 
         self.brain = brain
 
         self.text_dialog = TextEditDialog(brain)
+        self.add_users_dialog = add_users_dialog
+        self.remove_users_dialog = RemoveUsersDialog(brain)
 
         self.max_bubbles = Brain.MAX_CHAT_BUBBLES + 1 # 1 screen for no chats
 
@@ -1027,6 +1034,24 @@ class ChatHistory(QWidget):
         self.brain.add_new_messages.connect(self.add_messages)
         self.brain.remove_messages.connect(self.remove_messages)
         self.brain.message_edited.connect(self.edit_message)
+        self.brain.removed_members_from_chat.connect(self.remove_users)
+        self.brain.added_members_to_chat.connect(self.add_users)
+
+    def add_users(self, chat_id: str, domain: str, users: list):
+        for idx in range(self.widget_layout.count()):
+            widget = self.widget_layout.widget(idx)
+            if isinstance(widget, ChatBubble):
+                if widget.chat_id == chat_id and widget.domain == domain:
+                    widget.add_users_usernames(users)
+                    return
+
+    def remove_users(self, chat_id: str, domain: str, users: list):
+        for idx in range(self.widget_layout.count()):
+            widget = self.widget_layout.widget(idx)
+            if isinstance(widget, ChatBubble):
+                if widget.chat_id == chat_id and widget.domain == domain:
+                    widget.remove_users_usernames(users)
+                    return
 
     def show_chat(self, chat_id: str, domain: str):
         current_chat_idx = self.widget_layout.currentIndex()
@@ -1077,7 +1102,7 @@ class ChatHistory(QWidget):
             self.widget_layout.removeWidget(oldest_widget)
             oldest_widget.deleteLater()
 
-        new_bubble = ChatBubble(self.brain, self.text_dialog, chat_id, domain)
+        new_bubble = ChatBubble(self.brain, self.text_dialog, self.add_users_dialog, self.remove_users_dialog,chat_id, domain)
         # at index 0 there is a special screen for when there are no chats selected
         self.widget_layout.insertWidget(1, new_bubble)
         self.widget_layout.setCurrentIndex(1)
@@ -1334,12 +1359,12 @@ class ChatEnvironment(QWidget):
     """
     TO DO:
     """
-    def __init__(self, brain: Brain):
+    def __init__(self, brain: Brain, add_users_dialog: AddUsersDialog):
         super().__init__()
 
         self.brain = brain
 
-        self.chat_history = ChatHistory(brain)
+        self.chat_history = ChatHistory(brain, add_users_dialog)
         self.message_window = MessageWindow(brain)
 
         layout = QVBoxLayout()

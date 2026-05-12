@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QIcon, QStandardItemModel, QPixmap, QPainter, QMouseEvent
 
+from ouichat_frontend.dialogs import LogInDialog, AddUsersDialog
 from ouichat_frontend.brain import Brain
 
 MAX_USERS = 3
@@ -136,8 +137,10 @@ class ChatList(QWidget):
     """
     TO DO:
     """
-    def __init__(self, brain: Brain):
+    def __init__(self, brain: Brain, add_users_dialog: AddUsersDialog):
         super().__init__()
+
+        self.add_users_dialog = add_users_dialog
 
         self.brain = brain
         self.brain.current_user_changed.connect(self.handle_current_user_changed)
@@ -179,9 +182,29 @@ class ChatList(QWidget):
         self.new_chat_button.setIconSize(QSize(16, 16))
         self.new_chat_button.setIcon(QIcon("./Icons/plus_icon.png"))
         self.new_chat_button.setText("New Chat")
-        # self.new_chat_button.clicked.connect() # CONNECT TO ADD USERS DIALOG
+        self.new_chat_button.clicked.connect(self.create_chat)
 
         self.widget_layout.addWidget(self.new_chat_button)
+
+    def create_chat(self):
+        if self.add_users_dialog.isVisible():
+            self.add_users_dialog.raise_()
+            self.add_users_dialog.activateWindow()
+            return
+
+        self.add_users_dialog.reset_chat_details()
+        ret = self.add_users_dialog.load_users()
+        if not ret:
+            error_msg = "Could not load domain members!"
+            # ERROR WINDOW POPUP
+            return
+
+        ret = self.add_users_dialog.exec()
+        if ret == QDialog.DialogCode.Accepted:
+            chat_details = self.add_users_dialog.get_chat_details()
+            chat_id = chat_details['chat_id'] if chat_details['chat_id'] is not None else ""
+            domain = chat_details['domain'] if chat_details['domain'] is not None else ""
+            self.brain.select_chat.emit(chat_id, domain)
 
     def find_chat_by_id_and_domain(self, chat_id: str, domain: str):
         for row in range(self.list_widget.count()):
@@ -437,7 +460,7 @@ class ChatList(QWidget):
             self.list_widget.setCurrentRow(-1)
 
         current_user_username = self.brain.get_current_user_username()
-        self.brain.remove_user_from_chat(item_data['chat_id'], item_data['domain'], current_user_username)
+        self.brain.remove_users_from_chat(item_data['chat_id'], item_data['domain'], [current_user_username])
         self.search(self.search_bar.text())
         # IMPLEMENT REQUESTS TO SERVER
 
@@ -463,10 +486,10 @@ class ChatList(QWidget):
         self.set_unread_icon(item, chat_id, domain, False)
 
 class ChatsAndUsersPanel(QWidget):
-    def __init__(self, brain: Brain, login_dialog):
+    def __init__(self, brain: Brain, login_dialog: LogInDialog, add_users_dialog: AddUsersDialog):
         super().__init__()
 
-        chat_list = ChatList(brain)
+        chat_list = ChatList(brain, add_users_dialog)
 
         interactions = LeftPanelInteractions(brain, login_dialog)
 

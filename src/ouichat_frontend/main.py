@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (
 )
 
 from SettingsScreen.settings_screen import SettingsScreen
-from login_dialog import LogInDialog
+from dialogs import LogInDialog
 from MainScreen.main_screen import MainScreen
 from ouichat_frontend.brain import Brain
 

@@ -8,12 +8,13 @@ class Brain(QObject):
     chats_added = pyqtSignal(list)
     chat_removed = pyqtSignal(dict)
 
-    user_added = pyqtSignal(dict)
-    user_removed = pyqtSignal(dict)
     current_user_changed = pyqtSignal(str, str)
     chat_selected = pyqtSignal(str, str)
     select_chat = pyqtSignal(str, str)
     change_textbox_visibility = pyqtSignal(bool)
+
+    added_members_to_chat = pyqtSignal(str, str, list)
+    removed_members_from_chat = pyqtSignal(str, str, list)
 
     chat_updated = pyqtSignal(str, str)
 
@@ -60,6 +61,31 @@ class Brain(QObject):
         self.chat_selected.connect(self.set_current_chat)
         self.socket_manager.chat_updated.connect(self.update_chat)
         self.add_new_messages.connect(self.update_timestamps)
+
+    def add_users_to_chat(self, chat_id: str, domain: str, users: list):
+        chat = self.find_chat(chat_id, domain)
+        if not chat: return False, "Could NOT find chatroom!"
+
+        # PASS REQUEST THROUGH SERVER AND UPDATE LIST ONLY ON SERVER UPDATE
+        chat['users'].extend([{
+            "username": user,
+            "is_admin": False,
+            "last_seen_time": 0
+        } for user in users])
+
+        self.added_members_to_chat.emit(chat_id, domain, users)
+        return True, None
+
+    def create_chatroom(self, users: list):
+        current_user_username = self.get_current_user_username()
+        current_user_domain = self.get_current_user_domain()
+
+        users.append(current_user_username)
+        chat = self.socket_manager.request_create_chatroom(current_user_domain, current_user_username, users)
+        if not chat: return False, "Could NOT create chatroom!"
+
+        self.add_chats([chat])
+        return True, chat['chat_id'], chat['domain']
 
     def set_chat_display_name(self, chat_id: str, domain: str, display_name: str):
         chat = self.find_chat(chat_id, domain)
@@ -184,17 +210,15 @@ class Brain(QObject):
         if setting != 'rw' and setting != 'ro': return
         chat['chat_setting'] = setting
 
-    def remove_user_from_chat(self, chat_id: str, domain: str, username: str):
-        chats = self.chats_list.get(domain, None)
-        if not chats: return
+    def remove_users_from_chat(self, chat_id: str, domain: str, users: list):
+        chat = self.find_chat(chat_id, domain)
+        if chat is None: return False, "Could NOT find chatroom!"
 
-        for chat in chats:
-            if chat['chat_id'] == chat_id:
-                users_list = chat['users']
-                for user in users_list:
-                    if user['username'] == username:
-                        users_list.remove(user)
-                        return
+        chat['users'] = [user for user in chat['users'] if user['username'] not in users]
+
+        self.removed_members_from_chat.emit(chat_id, domain, users)
+        return True, None
+
 
     def get_last_message_timestamp(self, chat_id: str, domain: str):
         chat = self.find_chat(chat_id, domain)
