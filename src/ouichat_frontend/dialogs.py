@@ -173,9 +173,25 @@ class AddUsersDialog(QDialog):
         dialog_layout.setSpacing(5)
         self.setLayout(dialog_layout)
 
+        top_container = QWidget()
+        top_container_layout = QHBoxLayout()
+        top_container_layout.setContentsMargins(0, 0, 0, 0)
+        top_container_layout.setSpacing(5)
+        top_container.setLayout(top_container_layout)
+
         add_users_label = QLabel()
-        add_users_label.setText("Add Users")
+        add_users_label.setText("Add Users:")
         add_users_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("Search user...")
+        self.search_bar.setFixedSize(200, 25)
+        search_icon = QIcon("Icons/search_icon.png")
+        self.search_bar.addAction(search_icon, QLineEdit.ActionPosition.LeadingPosition)
+        self.search_bar.textChanged.connect(self.search)
+
+        top_container_layout.addWidget(add_users_label, alignment=Qt.AlignmentFlag.AlignLeft)
+        top_container_layout.addWidget(self.search_bar, alignment=Qt.AlignmentFlag.AlignRight)
 
         self.list_widget = CustomListWidget()
         self.list_widget.setIconSize(QSize(32, 32))
@@ -203,9 +219,20 @@ class AddUsersDialog(QDialog):
         button_container_layout.addWidget(cancel_button)
         button_container_layout.addWidget(add_members_button)
 
-        dialog_layout.addWidget(add_users_label)
+        dialog_layout.addWidget(top_container)
         dialog_layout.addWidget(self.list_widget)
         dialog_layout.addWidget(button_container)
+
+        self.adjustSize()
+        self.setFixedWidth(self.width())
+
+    def search(self, text):
+        for row in range(self.list_widget.count()):
+            item = self.list_widget.item(row)
+            if text == "" or text in item.text():
+                item.setHidden(False)
+            else:
+                item.setHidden(True)
 
     def add_users(self):
         users_to_be_added = []
@@ -287,14 +314,31 @@ class RemoveUsersDialog(QDialog):
         self.chat_id = None
         self.domain = None
 
+
         dialog_layout = QVBoxLayout()
         dialog_layout.setContentsMargins(5, 5, 5, 5)
         dialog_layout.setSpacing(5)
         self.setLayout(dialog_layout)
 
+        top_container = QWidget()
+        top_container_layout = QHBoxLayout()
+        top_container_layout.setContentsMargins(0, 0, 0, 0)
+        top_container_layout.setSpacing(5)
+        top_container.setLayout(top_container_layout)
+
         remove_users_label = QLabel()
-        remove_users_label.setText("Remove Users")
+        remove_users_label.setText("Remove Users:")
         remove_users_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("Search user...")
+        self.search_bar.setFixedSize(200, 25)
+        search_icon = QIcon("Icons/search_icon.png")
+        self.search_bar.addAction(search_icon, QLineEdit.ActionPosition.LeadingPosition)
+        self.search_bar.textChanged.connect(self.search)
+
+        top_container_layout.addWidget(remove_users_label, alignment=Qt.AlignmentFlag.AlignLeft)
+        top_container_layout.addWidget(self.search_bar, alignment=Qt.AlignmentFlag.AlignRight)
 
         self.list_widget = CustomListWidget()
         self.list_widget.setIconSize(QSize(32, 32))
@@ -322,9 +366,20 @@ class RemoveUsersDialog(QDialog):
         button_container_layout.addWidget(cancel_button)
         button_container_layout.addWidget(remove_members_button)
 
-        dialog_layout.addWidget(remove_users_label)
+        dialog_layout.addWidget(top_container)
         dialog_layout.addWidget(self.list_widget)
         dialog_layout.addWidget(button_container)
+
+        self.adjustSize()
+        self.setFixedWidth(self.width())
+
+    def search(self, text):
+        for row in range(self.list_widget.count()):
+            item = self.list_widget.item(row)
+            if text == "" or text in item.text():
+                item.setHidden(False)
+            else:
+                item.setHidden(True)
 
     def remove_users(self):
         users_to_be_removed = []
