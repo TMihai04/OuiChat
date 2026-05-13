@@ -135,12 +135,6 @@ class CustomListWidgetItem(QListWidgetItem):
         super().__init__()
 
     def __lt__(self, other: QListWidgetItem):
-        self_is_checked = self.checkState() == Qt.CheckState.Checked
-        other_is_checked = other.checkState() == Qt.CheckState.Checked
-
-        if self_is_checked != other_is_checked:
-            return self_is_checked
-
         return self.text().lower() < other.text().lower()
 
 def create_manage_users_item(username: str, icon_path: str):
@@ -244,7 +238,7 @@ class UsersDialog(QDialog):
         top_container_right_layout.addWidget(selected_users_label, alignment=Qt.AlignmentFlag.AlignLeft)
         top_container_right_layout.addWidget(self.search_bar_right, alignment=Qt.AlignmentFlag.AlignRight)
 
-        self.list_widget_right = CustomListWidget()
+        self.list_widget_right = QListWidget()
         self.list_widget_right.setIconSize(QSize(32, 32))
         self.list_widget_right.setMinimumHeight(200)
         self.list_widget_right.setFixedWidth(LIST_WIDGET_FIXED_WIDTH)
@@ -286,17 +280,19 @@ class UsersDialog(QDialog):
         self.setFixedWidth(self.width())
 
     def search_left(self, text):
+        search_text = text.lower()
         for row in range(self.list_widget_left.count()):
             item = self.list_widget_left.item(row)
-            if text == "" or text in item.text():
+            if search_text == "" or search_text in item.text().lower():
                 item.setHidden(False)
             else:
                 item.setHidden(True)
 
     def search_right(self, text):
+        search_text = text.lower()
         for row in range(self.list_widget_right.count()):
             item = self.list_widget_right.item(row)
-            if text == "" or text in item.text():
+            if search_text == "" or search_text in item.text().lower():
                 item.setHidden(False)
             else:
                 item.setHidden(True)
@@ -326,7 +322,9 @@ class UsersDialog(QDialog):
                     return
 
     def clear_list(self):
+        self.list_widget_left.blockSignals(True)
         self.list_widget_left.clear()
+        self.list_widget_left.blockSignals(False)
         self.list_widget_right.clear()
 
     def reset_chat_details(self):
@@ -401,6 +399,7 @@ class AddUsersDialog(UsersDialog):
             item = create_manage_users_item(username, user_icon)
             self.list_widget_left.addItem(item)
 
+        self.list_widget_left.sortItems(Qt.SortOrder.AscendingOrder)
         return True
 
 class RemoveUsersDialog(UsersDialog):
@@ -444,6 +443,7 @@ class RemoveUsersDialog(UsersDialog):
             item = create_manage_users_item(username, user_icon)
             self.list_widget_left.addItem(item)
 
+        self.list_widget_left.sortItems(Qt.SortOrder.AscendingOrder)
         return True
 
 class TextEditDialog(QDialog):
