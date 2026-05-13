@@ -156,9 +156,6 @@ class CustomListWidgetItem(QListWidgetItem):
             return self.text().lower() > other.text().lower()
 
 class ChatList(QWidget):
-    """
-    TO DO:
-    """
     def __init__(self, brain: Brain, add_users_dialog: AddUsersDialog):
         super().__init__()
 

@@ -322,10 +322,6 @@ class CustomListWidget(QListWidget):
         event.accept()
 
 class ChatMembersList(QWidget):
-    """
-    TO DO:
-        - SORT MEMBERS LIST
-    """
     def __init__(self, brain: Brain, chat_id: str, domain: str):
         super().__init__()
 
@@ -463,13 +459,6 @@ class ChatMembersList(QWidget):
         self.list_widget.addItem(item)
 
 class ChatDetails(QScrollArea):
-    """
-    TO DO:
-        - add 'remove members' button dialog
-        - add 'add members' button dialog
-        - add 'edit name' button dialog
-        - add 'edit description' button dialog
-    """
     chat_history_requested = pyqtSignal()
 
     def __init__(self, brain: Brain, text_dialog: TextEditDialog, add_users_dialog: AddUsersDialog,
@@ -972,9 +961,6 @@ class UsersList(QListWidget):
         self.sortItems(Qt.SortOrder.AscendingOrder)
 
 class UsersTab(QWidget):
-    """
-    TO DO:
-    """
     def __init__(self, brain: Brain):
         super().__init__()
 
@@ -1363,9 +1349,6 @@ class MessageWindow(QWidget):
         pass
 
 class ChatEnvironment(QWidget):
-    """
-    TO DO:
-    """
     def __init__(self, brain: Brain, add_users_dialog: AddUsersDialog):
         super().__init__()
 
