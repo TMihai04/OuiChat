@@ -35,7 +35,7 @@ class SocketManager(QObject):
     def request_chats(self, username: str, domain: str):
 
         chats = []
-        for idx in range(20):  # adding 20 chat rooms to the list
+        for idx in reversed(range(20)):  # adding 20 chat rooms to the list
             chat_data = {
                 "chat_type": "chatroom",  # {"chatroom", "p2p"}
                 "chat_setting": "rw",  # {"rw", "ro"}
@@ -100,7 +100,7 @@ class SocketManager(QObject):
             "username": f"fifo{idx}",
             "icon_path": "./Icons/default_user_icon.png",
             "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-        } for idx in range(10)]]
+        } for idx in reversed(range(10))]]
 
         return ret
 

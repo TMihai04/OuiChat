@@ -133,6 +133,28 @@ class CustomListWidget(QListWidget):
             return
         super().mousePressEvent(event)
 
+class CustomListWidgetItem(QListWidgetItem):
+    def __init__(self, brain: Brain):
+        super().__init__()
+
+        self.brain = brain
+
+    def __lt__(self, other: QListWidgetItem):
+        left_item_data = self.data(Qt.ItemDataRole.UserRole)
+        left_chat_id = left_item_data['chat_id']
+        left_domain = left_item_data['domain']
+        left_last_message_timestamp = self.brain.get_last_message_timestamp(left_chat_id, left_domain)
+
+        right_item_data = other.data(Qt.ItemDataRole.UserRole)
+        right_chat_id = right_item_data['chat_id']
+        right_domain = right_item_data['domain']
+        right_last_message_timestamp = self.brain.get_last_message_timestamp(right_chat_id, right_domain)
+
+        if left_last_message_timestamp != right_last_message_timestamp:
+            return left_last_message_timestamp < right_last_message_timestamp
+        else:
+            return self.text().lower() > other.text().lower()
+
 class ChatList(QWidget):
     """
     TO DO:
@@ -148,6 +170,7 @@ class ChatList(QWidget):
         self.brain.last_seen_time_updated.connect(self.handle_last_seen_time_update)
         self.brain.chats_added.connect(self.add_chats)
         self.brain.select_chat.connect(self.select_chat)
+        self.brain.timestamps_updated.connect(self.sort_items)
 
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Search chat...")
@@ -216,10 +239,16 @@ class ChatList(QWidget):
                 return item
         return None
 
+    def sort_items(self):
+        self.list_widget.blockSignals(True)
+        self.list_widget.sortItems(Qt.SortOrder.DescendingOrder)
+        self.list_widget.blockSignals(False)
+
     def set_chats(self):
         chats_data = self.brain.get_chats()
         for chat in chats_data:
             self.add_chat(chat['chat_id'], chat['domain'])
+        self.sort_items()
 
     def set_unread_icon(self,  item: QListWidgetItem, chat_id: str, chat_domain: str, has_unread: bool = False):
         icon_path = self.brain.get_chat_icon_path(chat_id, chat_domain)
@@ -254,11 +283,12 @@ class ChatList(QWidget):
     def add_chats(self, chats: list):
         for chat in chats:
             self.add_chat(chat['chat_id'], chat['domain'])
+        self.sort_items()
         search_text = self.search_bar.text()
         self.search(search_text)
 
     def add_chat(self, chat_id: str, chat_domain: str):
-        item = QListWidgetItem()
+        item = CustomListWidgetItem(self.brain)
         self.__set_entry_characteristics(item, chat_id, chat_domain)
         item.setData(Qt.ItemDataRole.UserRole,
                      {

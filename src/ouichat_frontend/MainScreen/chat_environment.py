@@ -825,6 +825,13 @@ class ChatBubble(QWidget):
     def remove_users_usernames(self, usernames: list):
         self.chat_details_widget.remove_users_usernames(usernames)
 
+class CustomListWidgetItem(QListWidgetItem):
+    def __init__(self):
+        super().__init__()
+
+    def __lt__(self, other: QListWidgetItem):
+        return self.text().lower() < other.text().lower()
+
 class UsersList(QListWidget):
     def __init__(self, brain: Brain):
         super().__init__()
@@ -947,7 +954,7 @@ class UsersList(QListWidget):
         for user in users:
             if self.__user_already_in_list(user['username'], domain): continue
 
-            item = QListWidgetItem()
+            item = CustomListWidgetItem()
             item.setText(user['username'])
             icon_path = self.brain.get_user_icon_path(user['username'], domain)
             item.setIcon(QIcon(icon_path))
@@ -961,6 +968,8 @@ class UsersList(QListWidget):
                 item.setHidden(True)
             else:
                 item.setHidden(False)
+
+        self.sortItems(Qt.SortOrder.AscendingOrder)
 
 class UsersTab(QWidget):
     """

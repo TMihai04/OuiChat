@@ -21,6 +21,8 @@ class Brain(QObject):
     last_seen_time_updated = pyqtSignal(str, str)
 
     add_new_messages = pyqtSignal(dict)
+    timestamps_updated = pyqtSignal()
+
     set_textbox_text = pyqtSignal(str)
     remove_messages = pyqtSignal(dict)
     message_edited = pyqtSignal(str, str, str, str)
@@ -173,6 +175,8 @@ class Brain(QObject):
         for (chat_id, domain), messages_list in messages.items():
             last_message_timestamp = messages_list[-1]['timestamp']
             self.set_last_message_timestamp(chat_id, domain, last_message_timestamp)
+
+        self.timestamps_updated.emit()
 
     def get_user_icon_path(self, username: str, domain: str):
         user_data = self.get_user_details(username, domain)
