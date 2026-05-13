@@ -325,8 +325,6 @@ class ChatMembersList(QWidget):
     """
     TO DO:
         - SORT MEMBERS LIST
-        - SORT MEMBERS LIST IN THE DIALOGS AS WELL
-        - IMPLEMENT SEARCH BAR IN DIALOGS
     """
     def __init__(self, brain: Brain, chat_id: str, domain: str):
         super().__init__()
