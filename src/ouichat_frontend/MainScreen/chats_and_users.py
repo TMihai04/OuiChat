@@ -35,12 +35,14 @@ class LeftPanelInteractions(QWidget):
         settings_button.setIconSize(QSize(32, 32))
         settings_button.setIcon(QIcon("./Icons/settings_icon.png"))
         settings_button.clicked.connect(self.brain.main_window_settings_requested.emit)
+        settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         user_profile_button = QPushButton()
         user_profile_button.setFixedSize(40, 40)
         user_profile_button.setIconSize(QSize(32, 32))
         user_profile_button.setIcon(QIcon("./Icons/user_settings_icon.png"))
         user_profile_button.clicked.connect(self.brain.main_window_user_settings_requested.emit)
+        user_profile_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         user_icon = QIcon(self.brain.get_current_user_icon())
         current_user_username = self.brain.get_current_user_username()
@@ -126,12 +128,22 @@ def get_icon_with_badge(icon_path: str, has_unread: bool):
 class CustomListWidget(QListWidget):
     def __init__(self):
         super().__init__()
+        self.setMouseTracking(True)
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.RightButton:
             event.accept()
             return
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        item = self.itemAt(event.pos())
+        if item:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+        else:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+
+        super().mouseMoveEvent(event)
 
 class CustomListWidgetItem(QListWidgetItem):
     def __init__(self, brain: Brain):
@@ -203,6 +215,7 @@ class ChatList(QWidget):
         self.new_chat_button.setIcon(QIcon("./Icons/plus_icon.png"))
         self.new_chat_button.setText("New Chat")
         self.new_chat_button.clicked.connect(self.create_chat)
+        self.new_chat_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self.widget_layout.addWidget(self.new_chat_button)
 

@@ -320,10 +320,27 @@ class ChatMessagesArea(QScrollArea):
 class CustomListWidget(QListWidget):
     def __init__(self):
         super().__init__()
+        self.setMouseTracking(True)
 
     def wheelEvent(self, event):
         super().wheelEvent(event)
         event.accept()
+
+    def mouseMoveEvent(self, event):
+        item = self.itemAt(event.pos())
+        if item:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+        else:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+
+        super().mouseMoveEvent(event)
+
+class CustomListWidgetItem(QListWidgetItem):
+    def __init__(self):
+        super().__init__()
+
+    def __lt__(self, other: QListWidgetItem):
+        return self.text().lower() < other.text().lower()
 
 class ChatMembersList(QWidget):
     def __init__(self, brain: Brain, chat_id: str, domain: str):
@@ -340,7 +357,7 @@ class ChatMembersList(QWidget):
         self.search_bar.addAction(search_icon, QLineEdit.ActionPosition.LeadingPosition)
         self.search_bar.textChanged.connect(self.search)
 
-        self.list_widget = QListWidget()
+        self.list_widget = CustomListWidget()
         self.list_widget.setIconSize(QSize(32, 32))
         self.list_widget.setMinimumHeight(200)
         self.list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # no vertical scrollbar
@@ -440,12 +457,14 @@ class ChatMembersList(QWidget):
         for member in members:
             member_icon = self.brain.get_user_icon_path(member['username'], self.domain)
             self.add_entry(member['username'], member_icon, member['is_admin'])
+        self.list_widget.sortItems(Qt.SortOrder.AscendingOrder)
 
     def add_members_usernames(self, usernames: list):
         for username in usernames:
             user_icon = self.brain.get_user_icon_path(username, self.domain)
             is_admin = self.brain.user_is_admin(self.chat_id, self.domain, username)
             self.add_entry(username, user_icon, is_admin)
+        self.list_widget.sortItems(Qt.SortOrder.AscendingOrder)
 
     def remove_members_usernames(self, usernames: list):
         for row in reversed(range(self.list_widget.count())):
@@ -456,7 +475,7 @@ class ChatMembersList(QWidget):
                 self.list_widget.takeItem(row)
 
     def add_entry(self, username: str, user_icon_path: str, is_admin: bool):
-        item = QListWidgetItem()
+        item = CustomListWidgetItem()
         item.setIcon(QIcon(user_icon_path))
         item.setText(f"{username}{" (Admin)" if is_admin else ""}")
         item.setData(Qt.ItemDataRole.UserRole, {"username": username, "is_admin": is_admin})
@@ -483,10 +502,11 @@ class ChatDetails(QScrollArea):
         self.back_button.setFixedSize(30, 30)
         self.back_button.setIcon(QIcon("./Icons/close_icon.png"))
         self.back_button.clicked.connect(self.chat_history_requested.emit)
+        self.back_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self.chat_icon = QPushButton()
         self.chat_icon.setIconSize(QSize(64, 64))
-        self.chat_icon.setFixedSize(70, 70)
+        self.chat_icon.setFixedSize(64, 64)
         chat_icon_path = self.brain.get_chat_icon_path(self.chat_id, self.domain)
         self.chat_icon.setIcon(QIcon(chat_icon_path))
         self.chat_icon.clicked.connect(self.change_chat_icon)
@@ -511,6 +531,7 @@ class ChatDetails(QScrollArea):
             self.edit_name_button.setFixedSize(20, 20)
             self.edit_name_button.setIconSize(QSize(16, 16))
             self.edit_name_button.clicked.connect(self.edit_name)
+            self.edit_name_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
             chat_name_container_layout.addWidget(self.chat_name, alignment=Qt.AlignmentFlag.AlignRight)
             chat_name_container_layout.addWidget(self.edit_name_button, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -546,6 +567,7 @@ class ChatDetails(QScrollArea):
             self.change_chat_description_button.setFixedSize(20, 20)
             self.change_chat_description_button.setIconSize(QSize(16, 16))
             self.change_chat_description_button.clicked.connect(self.edit_description)
+            self.change_chat_description_button.setCursor(Qt.CursorShape.PointingHandCursor)
             chat_description_layout.addWidget(self.change_chat_description_button, alignment=Qt.AlignmentFlag.AlignLeft)
 
         self.container = QWidget()
@@ -567,12 +589,14 @@ class ChatDetails(QScrollArea):
             add_members_button.setText("Add members")
             add_members_button.setFixedWidth(130)
             add_members_button.clicked.connect(self.add_members)
+            add_members_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
             remove_members_button = QPushButton()
             remove_members_button.setIcon(QIcon("./Icons/minus_icon.png"))
             remove_members_button.setText("Remove members")
             remove_members_button.setFixedWidth(130)
             remove_members_button.clicked.connect(self.remove_members)
+            remove_members_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
             self.button_container = QWidget()
             button_container_layout = QHBoxLayout()
@@ -626,7 +650,11 @@ class ChatDetails(QScrollArea):
         self.brain.set_chat_icon_path(self.chat_id, self.domain, new_file_path)
 
         if old_file_path != "./Icons/chat_room_icon.png":
-            os.remove(old_file_path)
+            if os.path.exists(old_file_path):
+                try:
+                    os.remove(old_file_path)
+                except OSError:
+                    pass
 
     def add_members(self):
         if self.add_users_dialog.isVisible():
@@ -723,6 +751,11 @@ class ChatDetails(QScrollArea):
             self.change_chat_description_button.setVisible(user_is_admin)
             self.edit_name_button.setVisible(user_is_admin)
             self.chat_icon.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, not user_is_admin)
+            if user_is_admin:
+                self.chat_icon.setCursor(Qt.CursorShape.PointingHandCursor)
+            else:
+                self.chat_icon.setCursor(Qt.CursorShape.ArrowCursor)
+
         else:
             self.button_container.setVisible(False)
             self.change_chat_description_button.setVisible(False)
@@ -764,11 +797,13 @@ class Chat(QWidget):
         self.chat_details_button.setIcon(QIcon(chat_icon_path))
         self.chat_details_button.setFixedHeight(25)
         self.chat_details_button.clicked.connect(self.chat_details_requested.emit)
+        self.chat_details_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self.back_button = QPushButton()
         self.back_button.setFixedSize(25, 25)
         self.back_button.setIcon(QIcon("./Icons/left_arrow_icon.png"))
         self.back_button.clicked.connect(self.go_to_users_tab)
+        self.back_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         button_container_layout.addWidget(self.back_button)
         button_container_layout.addWidget(self.chat_details_button)
@@ -855,16 +890,10 @@ class ChatBubble(QWidget):
     def remove_users_usernames(self, usernames: list):
         self.chat_details_widget.remove_users_usernames(usernames)
 
-class CustomListWidgetItem(QListWidgetItem):
-    def __init__(self):
-        super().__init__()
-
-    def __lt__(self, other: QListWidgetItem):
-        return self.text().lower() < other.text().lower()
-
 class UsersList(QListWidget):
     def __init__(self, brain: Brain):
         super().__init__()
+        self.setMouseTracking(True)
 
         self.brain = brain
         self.brain.current_user_changed.connect(self.handle_user_change)
@@ -876,6 +905,15 @@ class UsersList(QListWidget):
         self.itemClicked.connect(self.handle_item_clicked_changed)
 
         self.initialize()
+
+    def mouseMoveEvent(self, event):
+        item = self.itemAt(event.pos())
+        if item:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+        else:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+
+        super().mouseMoveEvent(event)
 
     def initialize(self):
         current_user_domain = self.brain.get_current_user_domain()
@@ -1220,6 +1258,7 @@ class MessageContext(QWidget):
         exit_context_button.setIconSize(QSize(24, 24))
         exit_context_button.setIcon(QIcon("./Icons/close_icon.png"))
         exit_context_button.clicked.connect(self.reset_context)
+        exit_context_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         layout.addWidget(exit_context_button)
         layout.addWidget(self.context_label)
@@ -1289,6 +1328,7 @@ class AttachmentBubble(QWidget):
         remove_button.setIcon(QIcon("./Icons/close_icon.png"))
         remove_button.setIconSize(QSize(20, 20))
         remove_button.clicked.connect(self.emit_removed_file)
+        remove_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         widget_layout.addWidget(file_icon)
         widget_layout.addWidget(path_label)
@@ -1387,12 +1427,14 @@ class MessageWindow(QWidget):
         upload_file_button.setIconSize(QSize(32, 32))
         upload_file_button.setIcon(QIcon("./Icons/upload_file_icon.png"))
         upload_file_button.clicked.connect(self.upload_file)
+        upload_file_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         send_message_button = QPushButton()
         send_message_button.setFixedSize(40, 40)
         send_message_button.setIconSize(QSize(32, 32))
         send_message_button.setIcon(QIcon("./Icons/send_message_icon.png"))
         send_message_button.clicked.connect(self.send_message)
+        send_message_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self.text_box = ChatTextBox(brain)
         self.text_box.setMinimumWidth(200)

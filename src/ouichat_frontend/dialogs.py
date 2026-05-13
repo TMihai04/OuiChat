@@ -75,6 +75,7 @@ class LogInDialog(QDialog):
         log_in_button.setFixedSize(125, 25)
         log_in_button.setAutoDefault(False)
         log_in_button.clicked.connect(self.__validate_credentials)
+        log_in_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self.error_message = QLabel()
         self.error_message.setStyleSheet("color: red;")
@@ -150,7 +151,21 @@ def create_manage_users_item(username: str, icon_path: str):
     item.setCheckState(Qt.CheckState.Unchecked)
     return item
 
-class CustomListWidget(QListWidget):
+class CustomMouseListWidget(QListWidget):
+    def __init__(self):
+        super().__init__()
+        self.setMouseTracking(True)
+
+    def mouseMoveEvent(self, event):
+        item = self.itemAt(event.pos())
+        if item:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+        else:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+
+        super().mouseMoveEvent(event)
+
+class CustomListWidget(CustomMouseListWidget):
     def __init__(self):
         super().__init__()
 
@@ -238,13 +253,14 @@ class UsersDialog(QDialog):
         top_container_right_layout.addWidget(selected_users_label, alignment=Qt.AlignmentFlag.AlignLeft)
         top_container_right_layout.addWidget(self.search_bar_right, alignment=Qt.AlignmentFlag.AlignRight)
 
-        self.list_widget_right = QListWidget()
+        self.list_widget_right = CustomMouseListWidget()
         self.list_widget_right.setIconSize(QSize(32, 32))
         self.list_widget_right.setMinimumHeight(200)
         self.list_widget_right.setFixedWidth(LIST_WIDGET_FIXED_WIDTH)
         self.list_widget_right.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # no vertical scrollbar
         self.list_widget_right.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # no horizontal scrollbar
         self.list_widget_right.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.list_widget_right.itemClicked.connect(self.right_item_clicked)
 
         grid_container_layout.addWidget(top_container_left, 0, 0)
         grid_container_layout.addWidget(self.list_widget_left, 1, 0)
@@ -260,24 +276,37 @@ class UsersDialog(QDialog):
         button_container_layout.setSpacing(20)
         button_container.setLayout(button_container_layout)
 
-        add_members_button = QPushButton()
-        add_members_button.setText(f"{execute_button_text}")
-        add_members_button.setFixedSize(125, 25)
-        add_members_button.clicked.connect(self.perform_operation)
+        perform_operation_button = QPushButton()
+        perform_operation_button.setText(f"{execute_button_text}")
+        perform_operation_button.setFixedSize(125, 25)
+        perform_operation_button.clicked.connect(self.perform_operation)
+        perform_operation_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         cancel_button = QPushButton()
         cancel_button.setText("Cancel")
         cancel_button.setFixedSize(125, 25)
         cancel_button.clicked.connect(self.reject)
+        cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         button_container_layout.addWidget(cancel_button, alignment=Qt.AlignmentFlag.AlignRight)
-        button_container_layout.addWidget(add_members_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        button_container_layout.addWidget(perform_operation_button, alignment=Qt.AlignmentFlag.AlignLeft)
 
         dialog_layout.addWidget(grid_container)
         dialog_layout.addWidget(button_container)
 
         self.adjustSize()
         self.setFixedWidth(self.width())
+
+    def right_item_clicked(self, item: QListWidgetItem):
+        right_data = item.data(Qt.ItemDataRole.UserRole)
+        right_username = right_data['username']
+        for row in range(self.list_widget_left.count()):
+            left_item = self.list_widget_left.item(row)
+            left_data = left_item.data(Qt.ItemDataRole.UserRole)
+            left_username = left_data['username']
+            if  right_username == left_username:
+                left_item.setCheckState(Qt.CheckState.Unchecked)
+                return
 
     def search_left(self, text):
         search_text = text.lower()
@@ -478,11 +507,13 @@ class TextEditDialog(QDialog):
         apply_button.setText("Apply")
         apply_button.setFixedSize(125, 25)
         apply_button.clicked.connect(self.apply)
+        apply_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         cancel_button = QPushButton()
         cancel_button.setText("Cancel")
         cancel_button.setFixedSize(125, 25)
         cancel_button.clicked.connect(self.reject)
+        cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         button_container_layout.addWidget(cancel_button)
         button_container_layout.addWidget(apply_button)
