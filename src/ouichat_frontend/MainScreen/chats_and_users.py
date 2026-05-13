@@ -198,7 +198,7 @@ class ChatList(QWidget):
         self.search("")
 
         self.new_chat_button = QPushButton()
-        self.new_chat_button.setFixedHeight(25)
+        self.new_chat_button.setFixedHeight(37)
         self.new_chat_button.setIconSize(QSize(16, 16))
         self.new_chat_button.setIcon(QIcon("./Icons/plus_icon.png"))
         self.new_chat_button.setText("New Chat")

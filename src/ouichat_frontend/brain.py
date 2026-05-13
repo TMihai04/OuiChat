@@ -28,8 +28,11 @@ class Brain(QObject):
     message_edited = pyqtSignal(str, str, str, str)
 
     message_context_changed = pyqtSignal()
+    upload_context_files_added = pyqtSignal(list)
+    upload_context_files_removed = pyqtSignal(list)
 
     send_message = pyqtSignal()
+    clear_message_context = pyqtSignal()
 
     main_window_settings_requested = pyqtSignal()
     main_window_comms_requested = pyqtSignal()
