@@ -1400,8 +1400,8 @@ class AttachmentContext(QScrollArea):
 class MessageWindow(QWidget):
     """
     TO DO:
-        - implement send_message with requests
-        - implement upload_file without requests (UI to display which files you're uploading)
+        - implement the widgets for file messages
+        - implement mock sending files (in the message area send message method)
     """
     def __init__(self, brain: Brain):
         super().__init__()

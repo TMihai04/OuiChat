@@ -61,6 +61,8 @@ class LeftPanelInteractions(QWidget):
                                     )
         self.users_dropdown.addItem(add_user_icon, "Add User")
         self.users_dropdown.currentIndexChanged.connect(self.handle_users_dropdown)
+        self.users_dropdown.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.users_dropdown.view().setCursor(Qt.CursorShape.PointingHandCursor)
 
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)

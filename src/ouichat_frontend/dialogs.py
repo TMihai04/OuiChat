@@ -19,6 +19,11 @@ def make_request(domain: str, user: str, password: str):
     return True, "TOKEN"
 
 class LogInDialog(QDialog):
+    """
+    TO DO:
+        - when clicking enter in a field it selects the next field
+        - when clicking enter in the last field it hits the login button
+    """
     def __init__(self, brain: Brain):
         super().__init__()
 
