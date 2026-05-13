@@ -92,8 +92,18 @@ class Brain(QObject):
         self.add_chats([chat])
         return True, chat['chat_id'], chat['domain']
 
+    def set_chat_icon_path(self, chat_id: str, domain: str, icon_path: str):
+        chat = self.find_chat(chat_id, domain)
+        if not chat: return
+        chat['icon_path'] = icon_path
+
+        current_user_domain = self.get_current_user_domain()
+        if domain == current_user_domain:
+            self.chat_updated.emit(chat_id, domain)
+
     def set_chat_display_name(self, chat_id: str, domain: str, display_name: str):
         chat = self.find_chat(chat_id, domain)
+        if not chat: return
         chat['display_name'] = display_name
 
         current_user_domain = self.get_current_user_domain()
@@ -102,6 +112,7 @@ class Brain(QObject):
 
     def set_chat_description(self, chat_id: str, domain: str, description: str):
         chat = self.find_chat(chat_id, domain)
+        if not chat: return
         chat['description'] = description
 
         current_user_domain = self.get_current_user_domain()

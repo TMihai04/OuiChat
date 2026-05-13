@@ -8,6 +8,7 @@ from PyQt6.QtGui import QIcon, QPixmap, QFontMetrics, QEnterEvent, QTextOption
 
 import time
 import os
+from PIL import Image
 
 from ouichat_frontend.dialogs import AddUsersDialog, RemoveUsersDialog, TextEditDialog
 from ouichat_frontend.brain import Brain
@@ -488,6 +489,9 @@ class ChatDetails(QScrollArea):
         self.chat_icon.setFixedSize(70, 70)
         chat_icon_path = self.brain.get_chat_icon_path(self.chat_id, self.domain)
         self.chat_icon.setIcon(QIcon(chat_icon_path))
+        self.chat_icon.clicked.connect(self.change_chat_icon)
+        self.chat_icon.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.chat_icon.setStyleSheet("background: transparent; border: none; ")
 
         chat_name_container = QWidget()
         chat_name_container_layout = QHBoxLayout()
@@ -501,6 +505,7 @@ class ChatDetails(QScrollArea):
         self.chat_name.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
 
         if chat_type == "chatroom":
+
             self.edit_name_button = QPushButton()
             self.edit_name_button.setIcon(QIcon("./Icons/edit_icon.png"))
             self.edit_name_button.setFixedSize(20, 20)
@@ -590,6 +595,38 @@ class ChatDetails(QScrollArea):
 
         self.setWidget(self.container)
         self.setWidgetResizable(True)
+
+    def change_chat_icon(self):
+        file_path, selected_filter = QFileDialog.getOpenFileName(
+            self,  # Parent widget
+            "Select Image",  # Dialog Title
+            "",  # Starting directory ("" = last visited)
+            "Images (*.png *.jpg *.jpeg)"  # File filters
+        )
+
+        if not file_path:
+            return
+
+        with Image.open(file_path) as original_image:
+            image_copy = original_image.copy()
+
+        new_width = 64
+        new_height = 64
+        resized_copy = image_copy.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+        save_dir = "./CustomChatIcons"
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        new_file_path = f"{save_dir}/{self.chat_id}_{int(time.time())}.png"
+
+        resized_copy.save(new_file_path, "PNG")
+
+        old_file_path = self.brain.get_chat_icon_path(self.chat_id, self.domain)
+
+        self.brain.set_chat_icon_path(self.chat_id, self.domain, new_file_path)
+
+        if old_file_path != "./Icons/chat_room_icon.png":
+            os.remove(old_file_path)
 
     def add_members(self):
         if self.add_users_dialog.isVisible():
@@ -685,6 +722,7 @@ class ChatDetails(QScrollArea):
             self.button_container.setVisible(user_is_admin)
             self.change_chat_description_button.setVisible(user_is_admin)
             self.edit_name_button.setVisible(user_is_admin)
+            self.chat_icon.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, not user_is_admin)
         else:
             self.button_container.setVisible(False)
             self.change_chat_description_button.setVisible(False)
