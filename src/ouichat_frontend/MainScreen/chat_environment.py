@@ -1346,6 +1346,7 @@ class AttachmentContext(QScrollArea):
         self.brain.upload_context_files_added.connect(self.add_files)
         self.brain.clear_message_context.connect(self.clear_files)
         self.brain.chat_selected.connect(self.clear_files)
+        self.brain.clear_staged_files.connect(self.clear_files)
 
         self.setFixedHeight(37)
         self.setWidgetResizable(True)
@@ -1407,6 +1408,7 @@ class MessageWindow(QWidget):
         super().__init__()
 
         self.brain = brain
+        self.brain.message_context_changed.connect(self.handle_context_change)
 
         top_layout = QVBoxLayout()
         top_layout.setContentsMargins(0, 0, 0, 0)
@@ -1422,12 +1424,12 @@ class MessageWindow(QWidget):
         bottom_layout.setSpacing(5)
         bottom_widget.setLayout(bottom_layout)
 
-        upload_file_button = QPushButton()
-        upload_file_button.setFixedSize(40, 40)
-        upload_file_button.setIconSize(QSize(32, 32))
-        upload_file_button.setIcon(QIcon("./Icons/upload_file_icon.png"))
-        upload_file_button.clicked.connect(self.upload_file)
-        upload_file_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.upload_file_button = QPushButton()
+        self.upload_file_button.setFixedSize(40, 40)
+        self.upload_file_button.setIconSize(QSize(32, 32))
+        self.upload_file_button.setIcon(QIcon("./Icons/upload_file_icon.png"))
+        self.upload_file_button.clicked.connect(self.upload_file)
+        self.upload_file_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         send_message_button = QPushButton()
         send_message_button.setFixedSize(40, 40)
@@ -1439,7 +1441,7 @@ class MessageWindow(QWidget):
         self.text_box = ChatTextBox(brain)
         self.text_box.setMinimumWidth(200)
 
-        bottom_layout.addWidget(upload_file_button, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
+        bottom_layout.addWidget(self.upload_file_button, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
         bottom_layout.addWidget(self.text_box)
         bottom_layout.addWidget(send_message_button, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
 
@@ -1453,6 +1455,13 @@ class MessageWindow(QWidget):
         self.brain.send_message.connect(self.send_message)
         self.brain.change_textbox_visibility.connect(self.set_visibility_bool)
         self.brain.chat_selected.connect(self.set_visibility_str)
+
+    def handle_context_change(self):
+        edit_details = self.brain.get_edit_details()
+        if edit_details['is_edit']:
+            self.upload_file_button.setEnabled(False)
+        else:
+            self.upload_file_button.setEnabled(True)
 
     def set_visibility_bool(self, is_visible: bool):
         current_chat_setting = self.brain.get_current_chat_setting()

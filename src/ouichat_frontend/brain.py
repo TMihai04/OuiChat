@@ -32,6 +32,7 @@ class Brain(QObject):
     upload_context_files_removed = pyqtSignal(list)
 
     send_message = pyqtSignal()
+    clear_staged_files = pyqtSignal()
     clear_message_context = pyqtSignal()
 
     main_window_settings_requested = pyqtSignal()
@@ -305,8 +306,9 @@ class Brain(QObject):
         self.sender_icon_path = sender_icon_path
         self.message_snip = message_snip
         if is_edit:
-            self.message_context_changed.emit()
             self.set_reply(False)
+            self.message_context_changed.emit()
+            self.clear_staged_files.emit()
 
     def get_edit_details(self):
         return {
@@ -323,8 +325,8 @@ class Brain(QObject):
         self.reply_user_icon_path = reply_user_icon_path
         self.reply_snip = reply_snip
         if is_reply:
-            self.message_context_changed.emit()
             self.set_edit(False)
+            self.message_context_changed.emit()
 
     def get_reply_details(self):
         return {
