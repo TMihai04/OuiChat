@@ -1,6 +1,9 @@
 from PyQt6.QtCore import QObject, pyqtSignal
 
 import time
+import os
+import shutil
+import random
 
 from socket_manager import SocketManager
 
@@ -67,6 +70,13 @@ class Brain(QObject):
         self.chat_selected.connect(self.set_current_chat)
         self.socket_manager.chat_updated.connect(self.update_chat)
         self.add_new_messages.connect(self.update_timestamps)
+
+    def upload_files(self, file_list: list):
+        files = self.socket_manager.request_upload_files(file_list)
+        return files
+
+    def download_files(self, ids: list):
+        self.socket_manager.request_download_files(ids)
 
     def add_users_to_chat(self, chat_id: str, domain: str, users: list):
         chat = self.find_chat(chat_id, domain)
@@ -452,8 +462,7 @@ class Brain(QObject):
             current_username = self.get_current_user_username()
             usernames = [usr['username'] for usr in chat['users']]
             other_username = usernames[0] if usernames[0] != current_username else usernames[1]
-            other_user_data = self.get_user_details(other_username, domain)
-            return other_user_data['username']
+            return other_username
 
     def get_chat_description(self, chat_id: str, domain: str):
         chat = self.find_chat(chat_id, domain)
@@ -466,7 +475,7 @@ class Brain(QObject):
             usernames = [usr['username'] for usr in chat['users']]
             other_username = usernames[0] if usernames[0] != current_username else usernames[1]
             other_user_data = self.get_user_details(other_username, domain)
-            return other_user_data['description']
+            return other_user_data['description'] if other_user_data else ""
 
     def get_chat_icon_path(self, chat_id: str, domain: str):
         chat = self.find_chat(chat_id, domain)
@@ -479,7 +488,7 @@ class Brain(QObject):
             usernames = [usr['username'] for usr in chat['users']]
             other_username = usernames[0] if usernames[0] != current_username else usernames[1]
             other_user_data = self.get_user_details(other_username, domain)
-            return other_user_data['icon_path']
+            return other_user_data['icon_path'] if other_user_data else "./Icons/default_user_icon.png"
 
     def get_chat_users(self, chat_id: str, domain: str):
         chat = self.find_chat(chat_id, domain)

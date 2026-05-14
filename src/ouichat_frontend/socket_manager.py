@@ -1,11 +1,23 @@
 import time
 import random
+import os
+import shutil
 from PyQt6.QtCore import pyqtSignal, QObject
 
+UPLOAD_DIR_PATH = "./Uploads/"
+
+uploaded_files = []
+
+def get_file_path(file_id: int):
+    for file_entry in uploaded_files:
+        if file_entry["file_id"] == file_id:
+            return file_entry["file_path"]
+
+    return None
 
 def message_args_to_dict(chat_id: str, domain: str, message_id: str, sender: str, sender_icon_path: str,
                          was_edited: bool, is_reply: bool, reply_sender: str, reply_sender_icon_path: str,
-                         reply_snip: str, timestamp: float, text: str):
+                         reply_snip: str, timestamp: float, text: str, files: list):
     return {
         "chat_id": chat_id,
         "domain": domain,
@@ -18,7 +30,8 @@ def message_args_to_dict(chat_id: str, domain: str, message_id: str, sender: str
         "reply_sender_icon_path": reply_sender_icon_path,
         "reply_snip": reply_snip,
         "timestamp": timestamp,
-        "text": text
+        "text": text,
+        "uploaded_files": files,
     }
 
 class SocketManager(QObject):
@@ -76,7 +89,7 @@ class SocketManager(QObject):
             message = message_args_to_dict(
                 chat_id = chat_id,
                 domain = domain,
-                message_id = f"{idx}",
+                message_id = str(int(random.random() * 10000)),
                 sender = f"TEST_SENDER_{idx}",
                 sender_icon_path = "./Icons/default_user_icon.png",
                 was_edited = was_edited,
@@ -85,7 +98,8 @@ class SocketManager(QObject):
                 reply_sender_icon_path = "./Icons/default_user_icon.png",
                 reply_snip = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
                 timestamp = time.time(),
-                text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
+                text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
+                files = []
             )
             messages.append(message)
 
@@ -148,3 +162,49 @@ class SocketManager(QObject):
 
         return chat_data
 
+    def request_upload_files(self, file_list: list):
+        files = []
+        if not os.path.isdir(UPLOAD_DIR_PATH):
+            os.mkdir(UPLOAD_DIR_PATH)
+
+        for file_path in file_list:
+            file_id = str(int(random.random() * 10000))
+            file_name = os.path.basename(file_path)
+            new_file_path = f"{UPLOAD_DIR_PATH}/{file_id}_{file_name}"
+            shutil.copy2(file_path, new_file_path)
+            files.append({
+                "file_id": file_id,
+                "file_name": file_name
+            })
+            uploaded_files.append({
+                "file_id": file_id,
+                "file_path": new_file_path
+            })
+
+        return files
+
+    def request_download_files(self, file_ids: list):
+        home_dir = os.path.expanduser('~')
+        downloads_folder = os.path.join(home_dir, 'Downloads')
+
+        if not os.path.exists(downloads_folder):
+            os.makedirs(downloads_folder)
+
+        for file_id in file_ids:
+            file_path = get_file_path(file_id)
+            if not file_path: return # ERROR INEXISTENT FILE
+
+            file_name = os.path.basename(file_path).split("_", 1)[1]
+            base_name, ext = os.path.splitext(file_name)
+            save_path = os.path.join(downloads_folder, file_name)
+
+            counter = 1
+            while os.path.exists(save_path):
+                new_name = f"{base_name} ({counter}){ext}"
+                save_path = os.path.join(downloads_folder, new_name)
+                counter += 1
+
+            try:
+                shutil.copy2(file_path, save_path)
+            except Exception as e:
+                print(f"Download failed: {e}")

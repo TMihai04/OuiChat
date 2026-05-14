@@ -1,3 +1,5 @@
+import random
+
 from PyQt6.QtWidgets import (
     QPushButton, QVBoxLayout, QLabel, QStackedLayout, QWidget, QHBoxLayout, QFileDialog,
     QTextEdit, QSizePolicy, QScrollArea, QLineEdit, QListWidget, QAbstractItemView, QListWidgetItem, QMenu
@@ -15,6 +17,7 @@ from ouichat_frontend.brain import Brain
 from ouichat_frontend.socket_manager import message_args_to_dict
 
 RIGHT_PANE_MIN_WIDTH = 310
+DOWNLOAD_WIDGET_WIDTH = 250
 MEMBERS_SEARCH_BAR_WIDTH = 200
 
 class ElidedLabel(QLabel):
@@ -46,15 +49,62 @@ class ElidedLabel(QLabel):
         text_width = metrics.horizontalAdvance(self.full_text)
         return QSize(text_width, super().sizeHint().height())
 
+class DownloadAttachmentBubble(QWidget):
+    def __init__(self, brain: Brain, file_id: int, file_path: str):
+        super().__init__()
+
+        self.brain = brain
+
+        self.file_id = file_id
+
+        self.setFixedHeight(32)
+        self.setFixedWidth(DOWNLOAD_WIDGET_WIDTH)
+        self.setObjectName("DownloadFileWidget")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet("#DownloadFileWidget { background-color: #2D2D2D; border-radius: 5px; }")
+
+        self.full_file_path = file_path
+        self.file_path = os.path.basename(file_path)
+        self.file_extension = os.path.splitext(self.file_path)[1].lower()
+
+        widget_layout = QHBoxLayout()
+        widget_layout.setContentsMargins(2, 0, 2, 0)
+        widget_layout.setSpacing(5)
+        self.setLayout(widget_layout)
+
+        file_icon = QLabel()
+        file_icon_path = "./Icons/file_uploaded_icon.png"
+        file_icon.setPixmap(QPixmap(file_icon_path).scaled(32, 32))
+
+        path_label = ElidedLabel()
+        path_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        path_label.setText(self.file_path)
+
+        remove_button = QPushButton()
+        remove_button.setFixedSize(32, 32)
+        remove_button.setIcon(QIcon("./Icons/download_file_icon.png"))
+        remove_button.setIconSize(QSize(32, 32))
+        remove_button.clicked.connect(self.download_file)
+        remove_button.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        widget_layout.addWidget(file_icon)
+        widget_layout.addWidget(path_label, stretch=1)
+        widget_layout.addWidget(remove_button)
+
+    def download_file(self):
+        self.brain.download_files([self.file_id])
+
 class ChatMessage(QWidget):
     """
     TO DO:
         - implement context menu with requests
+        - IT WORKS TO SEND MESSAGES WITH ONLY FILES BUT IF YOU EDIT THE TEXT OF THAT MESSAGE
+            THE MESSAGE IN THE TEXT DOESN'T SHOW
     """
     def __init__(self, brain: Brain, chat_id: str, domain: str,
                  message_id: str, sender: str, sender_icon_path: str, was_edited: bool, is_reply: bool,
                  reply_sender: str | None, reply_sender_icon_path: str | None, reply_snip: str | None, timestamp: str,
-                 text: str):
+                 text: str, uploaded_files: list | None = None):
         super().__init__()
 
         self.brain = brain
@@ -121,6 +171,8 @@ class ChatMessage(QWidget):
         self.message_text.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
         self.message_text.document().setDocumentMargin(0)
         self.message_text.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        if text == "":
+            self.message_text.setHidden(True)
 
         message_area = QWidget()
         message_area_layout = QVBoxLayout()
@@ -132,6 +184,20 @@ class ChatMessage(QWidget):
             message_area_layout.addWidget(reply_area)
         message_area_layout.addWidget(self.message_details)
         message_area_layout.addWidget(self.message_text)
+
+        if uploaded_files:
+            self.uploaded_files = uploaded_files
+            files_container = QWidget()
+            files_container_layout = QVBoxLayout()
+            files_container_layout.setContentsMargins(0, 0, 0, 0)
+            files_container_layout.setSpacing(5)
+            files_container.setLayout(files_container_layout)
+
+            for file_data in uploaded_files:
+                bubble = DownloadAttachmentBubble(brain, file_data['file_id'], file_data['file_name'])
+                files_container_layout.addWidget(bubble)
+
+            message_area_layout.addWidget(files_container)
 
         top_layout = QHBoxLayout()
         top_layout.setContentsMargins(0, 0, 0, 0)
@@ -153,12 +219,15 @@ class ChatMessage(QWidget):
 
     def edit_text(self, text):
         self.message_text.setPlainText(text)
+        self.message_text.setHidden(False)
 
         if not self.was_edited:
             old_message_details = self.message_details.text()
             new_message_details = old_message_details + " (Edited)"
             self.message_details.setText(new_message_details)
             self.was_edited = True
+
+        self.__resize_text_box()
     
     def show_context_menu(self, position):
         current_user_username = self.brain.get_current_user_username()
@@ -296,7 +365,8 @@ class ChatMessagesArea(QScrollArea):
                 reply_sender_icon_path = message['reply_sender_icon_path'],
                 reply_snip = message['reply_snip'],
                 timestamp = formatted_time,
-                text = message['text']
+                text = message['text'],
+                uploaded_files = message['uploaded_files']
             )
             self.container_layout.insertWidget(position, message_widget)
             position += 1
@@ -1398,11 +1468,12 @@ class AttachmentContext(QScrollArea):
         self.staged_files.clear()
         self.setVisible(False)
 
+    def get_staged_files(self):
+        return self.staged_files
+
 class MessageWindow(QWidget):
     """
     TO DO:
-        - implement the widgets for file messages
-        - implement mock sending files (in the message area send message method)
     """
     def __init__(self, brain: Brain):
         super().__init__()
@@ -1494,7 +1565,8 @@ class MessageWindow(QWidget):
         # ON RESPONSE = OK, CLEAR THE TEXTBOX AND SET REPLY DETAILS AND EDIT DETAILS TO NONE
 
         text = self.text_box.toPlainText().strip()
-        if text == "": return
+        staged_files = self.upload_context_widget.get_staged_files()
+        if text == "" and len(staged_files) == 0: return
 
         current_chat_id = self.brain.get_current_chat_id()
         current_chat_domain = self.brain.get_current_chat_domain()
@@ -1521,10 +1593,12 @@ class MessageWindow(QWidget):
         # MAKE REQUEST
         # ONLY ADD AND DISPLAY MESSAGE ON SERVER UPDATE
 
+        files = self.brain.upload_files(staged_files)
+
         message = message_args_to_dict(
             chat_id = current_chat_id,
             domain = current_chat_domain,
-            message_id = "NEWLY_SENT_MESSAGE",
+            message_id = str(int(random.random() * 10000)),
             sender = current_user_username,
             sender_icon_path = current_user_icon_path,
             was_edited = False,
@@ -1533,7 +1607,8 @@ class MessageWindow(QWidget):
             reply_sender_icon_path = reply_details['reply_sender_icon_path'],
             reply_snip = reply_details['reply_snip'],
             timestamp = time.time(),
-            text = text
+            text = text,
+            files = files
         )
 
         self.brain.add_new_messages.emit({
