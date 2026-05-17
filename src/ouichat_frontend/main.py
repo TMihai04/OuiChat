@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
 from SettingsScreen.settings_screen import SettingsScreen
 from dialogs import LogInDialog
 from MainScreen.main_screen import MainScreen
+from UserSettingsScreen.user_settings_screen import UserSettingsScreen
 from ouichat_frontend.brain import Brain
 
 class MainWindow(QMainWindow):
@@ -23,11 +24,12 @@ class MainWindow(QMainWindow):
         settings_screen_widget = SettingsScreen(brain)
         self.brain.main_window_comms_requested.connect(self.go_to_comms)
 
-        # user_settings_widget = UserSettings()
-        # self.brain.main_window_user_settings_requested.connect(self.go_to_user_settings)
+        user_settings_widget = UserSettingsScreen(brain)
+        self.brain.main_window_user_settings_requested.connect(self.go_to_user_settings)
 
         self.main_layout.addWidget(main_screen_widget)
         self.main_layout.addWidget(settings_screen_widget)
+        self.main_layout.addWidget(user_settings_widget)
 
         central_widget = QWidget()
         central_widget.setLayout(self.main_layout)

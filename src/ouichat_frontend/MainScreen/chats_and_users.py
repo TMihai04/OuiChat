@@ -16,8 +16,7 @@ LEFT_PANEL_WIDTH = 270
 class LeftPanelInteractions(QWidget):
     """
     TO DO:
-        - IMPLEMENT USER LOGOUT
-        - IMPLEMENT USER SETTINGS
+        - IMPLEMENT USER LOGOUT OPTION IN THE USER SETTINGS
         - handle case where all users logged out (and by default handle the case of the first user to login)
             HINT:   - maybe smth to do with checking how many users are currently logged in
     """
@@ -27,6 +26,8 @@ class LeftPanelInteractions(QWidget):
         super().__init__()
 
         self.brain = brain
+        self.brain.user_updated.connect(self.handle_user_updated)
+
         self.login_dialog = login_dialog
         self.previous_user_row = 0
 
@@ -74,8 +75,22 @@ class LeftPanelInteractions(QWidget):
 
         self.setLayout(layout)
 
-    def set_initial_user(self):
-        pass
+    def handle_user_updated(self, username: str, domain: str):
+        logged_users = self.brain.get_logged_users()
+
+        for user in logged_users:
+            if user['username'] == username and user['domain'] == domain:
+                self.update_user(user['username'], user['domain'])
+                return
+
+    def update_user(self, username: str, domain: str):
+        for idx in range(self.users_dropdown.count()):
+            item_data = self.users_dropdown.itemData(idx)
+            if item_data is None: continue
+            if item_data['username'] == username and item_data['domain'] == domain:
+                user_icon = self.brain.get_user_icon_path(username, domain)
+                self.users_dropdown.setItemIcon(idx, QIcon(user_icon))
+                return
 
     def handle_users_dropdown(self, row:int):
         self.brain.set_current_user_last_seen_time_current_chat()
@@ -178,6 +193,7 @@ class ChatList(QWidget):
         self.brain = brain
         self.brain.current_user_changed.connect(self.handle_current_user_changed)
         self.brain.chat_updated.connect(self.update_chat)
+        self.brain.user_updated.connect(self.update_user_chat)
         self.brain.last_seen_time_updated.connect(self.handle_last_seen_time_update)
         self.brain.chats_added.connect(self.add_chats)
         self.brain.select_chat.connect(self.select_chat)
@@ -194,7 +210,6 @@ class ChatList(QWidget):
         self.list_widget.setIconSize(QSize(32, 32))
         self.list_widget.setFixedWidth(LEFT_PANEL_WIDTH)
         self.list_widget.setMinimumHeight(185)
-        self.list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # no vertical scrollbar
         self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # no horizontal scrollbar
         self.list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list_widget.customContextMenuRequested.connect(self.show_context_menu)
@@ -220,6 +235,18 @@ class ChatList(QWidget):
         self.new_chat_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self.widget_layout.addWidget(self.new_chat_button)
+
+    def update_user_chat(self, username: str, domain: str):
+        current_user_username = self.brain.get_current_user_username()
+        if username == current_user_username: return
+        chat_id = self.brain.p2p_chat_exists(current_user_username, username, domain)
+        if chat_id is None: return
+        for idx in range(self.list_widget.count()):
+            item = self.list_widget.item(idx)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            if item_data['chat_id'] == chat_id and item_data['domain'] == domain:
+                self.__set_entry_characteristics(item, item_data['chat_id'], item_data['domain'])
+                return
 
     def create_chat(self):
         if self.add_users_dialog.isVisible():
@@ -358,6 +385,7 @@ class ChatList(QWidget):
                 self.set_unread_icon(item, chat_id, domain, has_unread)
 
     def search(self, text: str):
+        text = text.lower()
         current_user_username = self.brain.get_current_user_username()
         current_user_domain = self.brain.get_current_user_domain()
         for row in range(self.list_widget.count()):

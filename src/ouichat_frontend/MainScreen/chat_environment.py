@@ -12,7 +12,7 @@ import time
 import os
 from PIL import Image
 
-from ouichat_frontend.dialogs import AddUsersDialog, RemoveUsersDialog, TextEditDialog
+from ouichat_frontend.dialogs import AddUsersDialog, RemoveUsersDialog, ChatDetailsEditDialog
 from ouichat_frontend.brain import Brain
 from ouichat_frontend.socket_manager import message_args_to_dict
 
@@ -102,8 +102,8 @@ class ChatMessage(QWidget):
             THE MESSAGE IN THE TEXT DOESN'T SHOW
     """
     def __init__(self, brain: Brain, chat_id: str, domain: str,
-                 message_id: str, sender: str, sender_icon_path: str, was_edited: bool, is_reply: bool,
-                 reply_sender: str | None, reply_sender_icon_path: str | None, reply_snip: str | None, timestamp: str,
+                 message_id: str, sender: str, was_edited: bool, is_reply: bool,
+                 reply_sender: str | None, reply_snip: str | None, timestamp: str,
                  text: str, uploaded_files: list | None = None):
         super().__init__()
 
@@ -121,10 +121,12 @@ class ChatMessage(QWidget):
         self.message_id = message_id
 
         self.sender = sender
-        self.sender_icon_path = sender_icon_path
-        sender_icon = QLabel()
+        self.sender_icon = QLabel()
+        sender_icon_path = self.brain.get_user_icon_path(sender, domain)
         sender_pixmap = QPixmap(sender_icon_path).scaled(32, 32)
-        sender_icon.setPixmap(sender_pixmap)
+        self.sender_icon.setPixmap(sender_pixmap)
+        self.reply_sender = reply_sender
+        self.reply_sender_icon = None
 
         self.was_edited = was_edited
 
@@ -141,9 +143,10 @@ class ChatMessage(QWidget):
             replied_to_label.setText("Replied to:")
             replied_to_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
-            reply_sender_icon = QLabel()
+            self.reply_sender_icon = QLabel()
+            reply_sender_icon_path = self.brain.get_user_icon_path(reply_sender, domain)
             reply_sender_pixmap = QPixmap(reply_sender_icon_path).scaled(24, 24)
-            reply_sender_icon.setPixmap(reply_sender_pixmap)
+            self.reply_sender_icon.setPixmap(reply_sender_pixmap)
 
             replied_to_user_label = QLabel()
             replied_to_user_label.setText(f"{reply_sender}:")
@@ -153,7 +156,7 @@ class ChatMessage(QWidget):
             reply_snip_label.setText(reply_snip)
 
             reply_area_layout.addWidget(replied_to_label)
-            reply_area_layout.addWidget(reply_sender_icon)
+            reply_area_layout.addWidget(self.reply_sender_icon)
             reply_area_layout.addWidget(replied_to_user_label)
             reply_area_layout.addWidget(reply_snip_label)
 
@@ -204,8 +207,17 @@ class ChatMessage(QWidget):
         top_layout.setSpacing(5)
         self.setLayout(top_layout)
 
-        top_layout.addWidget(sender_icon, alignment=Qt.AlignmentFlag.AlignTop)
+        top_layout.addWidget(self.sender_icon, alignment=Qt.AlignmentFlag.AlignTop)
         top_layout.addWidget(message_area, stretch=1)
+
+    def set_sender_icon(self, icon_path: str):
+        pixmap = QPixmap(icon_path).scaled(32, 32)
+        self.sender_icon.setPixmap(pixmap)
+
+    def set_reply_sender_icon(self, icon_path: str):
+        if self.reply_sender is None: return
+        pixmap = QPixmap(icon_path).scaled(24, 24)
+        self.reply_sender_icon.setPixmap(pixmap)
 
     def __resize_text_box(self):
         text_height = int(self.message_text.document().size().height()) + 2
@@ -219,7 +231,7 @@ class ChatMessage(QWidget):
 
     def edit_text(self, text):
         self.message_text.setPlainText(text)
-        self.message_text.setHidden(False)
+        self.message_text.setHidden(text == "")
 
         if not self.was_edited:
             old_message_details = self.message_details.text()
@@ -267,10 +279,12 @@ class ChatMessage(QWidget):
             return
 
         if selected_action == reply:
-            self.brain.set_reply(True, self.sender, self.sender_icon_path, self.message_text.toPlainText())
+            sender_icon_path = self.brain.get_user_icon_path(self.sender, self.domain)
+            self.brain.set_reply(True, self.sender, sender_icon_path, self.message_text.toPlainText())
 
         elif selected_action == edit:
-            self.brain.set_edit(True, self.message_id, self.sender, self.sender_icon_path, self.message_text.toPlainText())
+            sender_icon_path = self.brain.get_user_icon_path(self.sender, self.domain)
+            self.brain.set_edit(True, self.message_id, self.sender, sender_icon_path, self.message_text.toPlainText())
             self.brain.set_textbox_text.emit(self.message_text.toPlainText())
 
         elif selected_action == delete:
@@ -318,6 +332,18 @@ class ChatMessagesArea(QScrollArea):
 
         self.load_old_messages(None)
 
+    def update_user(self, username: str, domain: str):
+        for idx in range(self.container_layout.count()):
+            widget = self.container_layout.itemAt(idx).widget()
+            if isinstance(widget, ChatMessage):
+                if widget.sender == username:
+                    icon_path = self.brain.get_user_icon_path(username, domain)
+                    widget.set_sender_icon(icon_path)
+                if widget.reply_sender == username:
+                    icon_path = self.brain.get_user_icon_path(username, domain)
+                    widget.set_reply_sender_icon(icon_path)
+
+
     def __height_changed(self, value: int):
         self.was_at_bottom = value >= self.scroll_bar.maximum() - 20
 
@@ -358,11 +384,9 @@ class ChatMessagesArea(QScrollArea):
                 domain = message['domain'],
                 message_id = message['message_id'],
                 sender = message['sender'],
-                sender_icon_path = message['sender_icon_path'],
                 was_edited = message['was_edited'],
                 is_reply = message['is_reply'],
                 reply_sender = message['reply_sender'],
-                reply_sender_icon_path = message['reply_sender_icon_path'],
                 reply_snip = message['reply_snip'],
                 timestamp = formatted_time,
                 text = message['text'],
@@ -516,6 +540,7 @@ class ChatMembersList(QWidget):
                     item.setData(Qt.ItemDataRole.UserRole, item_data)
 
     def search(self, text):
+        text = text.lower()
         for row in range(self.list_widget.count()):
             item = self.list_widget.item(row)
             if text == "" or text in item.text():
@@ -551,10 +576,21 @@ class ChatMembersList(QWidget):
         item.setData(Qt.ItemDataRole.UserRole, {"username": username, "is_admin": is_admin})
         self.list_widget.addItem(item)
 
+    def update_user(self, username: str, domain: str):
+        for idx in range(self.list_widget.count()):
+            item = self.list_widget.item(idx)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            if item_data['username'] == username:
+                user_icon = self.brain.get_user_icon_path(username, domain)
+                icon = QIcon(user_icon)
+                item.setIcon(icon)
+                return
+
+
 class ChatDetails(QScrollArea):
     chat_history_requested = pyqtSignal()
 
-    def __init__(self, brain: Brain, text_dialog: TextEditDialog, add_users_dialog: AddUsersDialog,
+    def __init__(self, brain: Brain, text_dialog: ChatDetailsEditDialog, add_users_dialog: AddUsersDialog,
                  remove_users_dialog: RemoveUsersDialog, chat_id: str, domain: str):
         super().__init__()
 
@@ -628,8 +664,8 @@ class ChatDetails(QScrollArea):
         chat_description_layout.setSpacing(5)
         chat_description.setLayout(chat_description_layout)
 
-        chat_description_layout.addWidget(chat_description_label, alignment=Qt.AlignmentFlag.AlignLeft)
-        chat_description_layout.addWidget(self.chat_description_text)
+        chat_description_layout.addWidget(chat_description_label, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        chat_description_layout.addWidget(self.chat_description_text, alignment=Qt.AlignmentFlag.AlignTop)
 
         if chat_type == "chatroom":
             self.change_chat_description_button = QPushButton()
@@ -638,7 +674,7 @@ class ChatDetails(QScrollArea):
             self.change_chat_description_button.setIconSize(QSize(16, 16))
             self.change_chat_description_button.clicked.connect(self.edit_description)
             self.change_chat_description_button.setCursor(Qt.CursorShape.PointingHandCursor)
-            chat_description_layout.addWidget(self.change_chat_description_button, alignment=Qt.AlignmentFlag.AlignLeft)
+            chat_description_layout.addWidget(self.change_chat_description_button, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignCenter)
 
         self.container = QWidget()
         self.container_layout = QVBoxLayout()
@@ -682,6 +718,8 @@ class ChatDetails(QScrollArea):
 
             self.brain.current_user_changed.connect(self.update_description)
 
+        self.container_layout.addStretch()
+
         current_user_username = self.brain.get_current_user_username()
         current_user_domain = self.brain.get_current_user_domain()
         self.update_description(current_user_username, current_user_domain)
@@ -691,6 +729,14 @@ class ChatDetails(QScrollArea):
         self.setWidgetResizable(True)
 
     def change_chat_icon(self):
+        """
+        TO DO:
+            - currently, the os blocks the file from being removed due to it being loaded in memory.
+                A solution for this is to add the path to a cleanup list, and when the app closes, delete
+                the files in the cleanup list.
+                Another solution is to save the file path in a separate file and, on app startup, when no widgets
+                are loaded, delete the files in the cleanup list.
+        """
         file_path, selected_filter = QFileDialog.getOpenFileName(
             self,  # Parent widget
             "Select Image",  # Dialog Title
@@ -708,7 +754,7 @@ class ChatDetails(QScrollArea):
         new_height = 64
         resized_copy = image_copy.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
-        save_dir = "./CustomChatIcons"
+        save_dir = "./Cache/ChatIcons"
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
         new_file_path = f"{save_dir}/{self.chat_id}_{int(time.time())}.png"
@@ -793,6 +839,13 @@ class ChatDetails(QScrollArea):
         self.text_edit_dialog.set_text(current_name)
         self.text_edit_dialog.set_label_text("Change Chat Description:")
         self.text_edit_dialog.exec()
+
+    def update_user(self, username: str, domain: str):
+        chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
+        if chat_type == 'p2p':
+            self.update_labels()
+        else:
+            self.chat_members_list.update_user(username, domain)
 
     def update_labels(self):
         chat_icon_path = self.brain.get_chat_icon_path(self.chat_id, self.domain)
@@ -884,23 +937,27 @@ class Chat(QWidget):
         self.brain.current_user_changed.connect(self.__handle_current_user_change)
         self.brain.chat_updated.connect(self.__handle_chat_update)
 
+    def __reload_chat_details(self):
+        chat_name = self.brain.get_chat_display_name(self.chat_id, self.domain)
+        self.chat_details_button.setText(chat_name)
+        chat_icon = self.brain.get_chat_icon_path(self.chat_id, self.domain)
+        self.chat_details_button.setIcon(QIcon(chat_icon))
+
+    def update_user(self, username: str, domain: str):
+        self.__reload_chat_details()
+        self.chat_messages.update_user(username, domain)
+
     def go_to_users_tab(self):
         self.brain.select_chat.emit("", "")
 
     def __handle_chat_update(self, chat_id: str, domain: str):
         if self.chat_id == chat_id and self.domain == domain:
-            chat_name = self.brain.get_chat_display_name(self.chat_id, self.domain)
-            self.chat_details_button.setText(chat_name)
-            chat_icon = self.brain.get_chat_icon_path(self.chat_id, self.domain)
-            self.chat_details_button.setIcon(QIcon(chat_icon))
+            self.__reload_chat_details()
 
     def __handle_current_user_change(self, _: str, domain: str):
         chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
         if domain == self.domain and chat_type == 'p2p':
-            chat_name = self.brain.get_chat_display_name(self.chat_id, self.domain)
-            self.chat_details_button.setText(chat_name)
-            chat_icon = self.brain.get_chat_icon_path(self.chat_id, self.domain)
-            self.chat_details_button.setIcon(QIcon(chat_icon))
+            self.__reload_chat_details()
 
     def add_messages(self, messages: list):
         self.chat_messages.add_messages(messages)
@@ -912,7 +969,7 @@ class Chat(QWidget):
         self.chat_messages.edit_message(message_id, text)
 
 class ChatBubble(QWidget):
-    def __init__(self, brain: Brain, text_dialog: TextEditDialog, add_users_dialog: AddUsersDialog,
+    def __init__(self, brain: Brain, text_dialog: ChatDetailsEditDialog, add_users_dialog: AddUsersDialog,
                  remove_users_dialog: RemoveUsersDialog, chat_id: str, domain: str):
         super().__init__()
 
@@ -936,7 +993,13 @@ class ChatBubble(QWidget):
         self.widget_layout.addWidget(self.chat)
         self.widget_layout.addWidget(self.chat_details_widget)
         self.widget_layout.setCurrentIndex(0)
-    
+
+    def update_user(self, username: str, domain: str):
+        chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
+        if chat_type == 'p2p':
+            self.chat.update_user(username, domain)
+        self.chat_details_widget.update_user(username, domain)
+
     def display_chat_details(self):
         self.widget_layout.setCurrentIndex(1)
         self.brain.change_textbox_visibility.emit(False)
@@ -967,6 +1030,7 @@ class UsersList(QListWidget):
 
         self.brain = brain
         self.brain.current_user_changed.connect(self.handle_user_change)
+        self.brain.user_updated.connect(self.handle_user_updated)
 
         self.setIconSize(QSize(32, 32))
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -975,6 +1039,16 @@ class UsersList(QListWidget):
         self.itemClicked.connect(self.handle_item_clicked_changed)
 
         self.initialize()
+
+    def handle_user_updated(self, username: str, domain: str):
+        for idx in range(self.count()):
+            item = self.item(idx)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            if item_data['username'] == username and item_data['domain'] == domain:
+                user_icon = self.brain.get_user_icon_path(username, domain)
+                icon = QIcon(user_icon)
+                item.setIcon(icon)
+                return
 
     def mouseMoveEvent(self, event):
         item = self.itemAt(event.pos())
@@ -1133,6 +1207,7 @@ class UsersTab(QWidget):
         tab_layout.addWidget(self.users_list)
 
     def search(self, text):
+        text = text.lower()
         for row in range(self.users_list.count()):
             item = self.users_list.item(row)
             item_data = item.data(Qt.ItemDataRole.UserRole)
@@ -1154,7 +1229,7 @@ class ChatHistory(QWidget):
 
         self.brain = brain
 
-        self.text_dialog = TextEditDialog(brain)
+        self.text_dialog = ChatDetailsEditDialog(brain)
         self.add_users_dialog = add_users_dialog
         self.remove_users_dialog = RemoveUsersDialog(brain)
 
@@ -1173,11 +1248,21 @@ class ChatHistory(QWidget):
 
         self.brain.chat_selected.connect(self.show_chat)
         self.brain.current_user_changed.connect(self.handle_current_user_change)
+        self.brain.user_updated.connect(self.handle_user_updated)
         self.brain.add_new_messages.connect(self.add_messages)
         self.brain.remove_messages.connect(self.remove_messages)
         self.brain.message_edited.connect(self.edit_message)
         self.brain.removed_members_from_chat.connect(self.remove_users)
         self.brain.added_members_to_chat.connect(self.add_users)
+
+    def handle_user_updated(self, username: str, domain: str):
+        for idx in range(self.widget_layout.count()):
+            widget = self.widget_layout.widget(idx)
+            if isinstance(widget, ChatBubble):
+                if widget.domain != domain: continue
+                user_in_chat = self.brain.user_is_in_chat(widget.chat_id, widget.domain, username)
+                if user_in_chat:
+                    widget.update_user(username, domain)
 
     def add_users(self, chat_id: str, domain: str, users: list):
         for idx in range(self.widget_layout.count()):
@@ -1384,7 +1469,7 @@ class AttachmentBubble(QWidget):
         self.setLayout(widget_layout)
 
         file_icon = QLabel()
-        file_icon_path = self.full_file_path if self.file_extension in [".png", ".jpeg", ".jpg"] else "./Icons/file_uploaded_icon.png"
+        file_icon_path = "./Icons/file_uploaded_icon.png"
         file_icon.setPixmap(QPixmap(file_icon_path).scaled(24, 24))
 
         path_label = ElidedLabel()
@@ -1600,11 +1685,9 @@ class MessageWindow(QWidget):
             domain = current_chat_domain,
             message_id = str(int(random.random() * 10000)),
             sender = current_user_username,
-            sender_icon_path = current_user_icon_path,
             was_edited = False,
             is_reply = reply_details['is_reply'],
             reply_sender = reply_details['reply_sender'],
-            reply_sender_icon_path = reply_details['reply_sender_icon_path'],
             reply_snip = reply_details['reply_snip'],
             timestamp = time.time(),
             text = text,

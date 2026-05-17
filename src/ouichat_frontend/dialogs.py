@@ -123,7 +123,6 @@ class LogInDialog(QDialog):
             user_data = {
                 "username": username,
                 "domain": domain,
-                "icon_path": "./Icons/default_user_icon.png",
                 "request_token": "TOKEN",
                 "refresh_token": "REFRESH_TOKEN",
                 "blacklist": ["fifo3"]
@@ -480,7 +479,7 @@ class RemoveUsersDialog(UsersDialog):
         self.list_widget_left.sortItems(Qt.SortOrder.AscendingOrder)
         return True
 
-class TextEditDialog(QDialog):
+class ChatDetailsEditDialog(QDialog):
     def __init__(self, brain: Brain):
         super().__init__()
 
@@ -553,3 +552,59 @@ class TextEditDialog(QDialog):
 
     def set_label_text(self, text: str):
         self.description_label.setText(text)
+
+class UserDetailsEditDialog(QDialog):
+    def __init__(self, brain: Brain):
+        super().__init__()
+
+        self.brain = brain
+
+        self.setWindowTitle("Edit User Description")
+
+        dialog_layout = QVBoxLayout()
+        dialog_layout.setContentsMargins(5, 5, 5, 5)
+        dialog_layout.setSpacing(5)
+        self.setLayout(dialog_layout)
+
+        self.description_label = QLabel()
+        self.description_label.setText("Description:")
+        self.description_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+
+        self.text_edit = QTextEdit()
+        self.text_edit.setMinimumSize(QSize(200, 50))
+        self.text_edit.setPlaceholderText("Type your description...")
+
+        button_container = QWidget()
+        button_container_layout = QHBoxLayout()
+        button_container_layout.setContentsMargins(0, 0, 0, 0)
+        button_container_layout.setSpacing(5)
+        button_container.setLayout(button_container_layout)
+
+        apply_button = QPushButton()
+        apply_button.setText("Apply")
+        apply_button.setFixedSize(125, 25)
+        apply_button.clicked.connect(self.apply)
+        apply_button.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        cancel_button = QPushButton()
+        cancel_button.setText("Cancel")
+        cancel_button.setFixedSize(125, 25)
+        cancel_button.clicked.connect(self.reject)
+        cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        button_container_layout.addWidget(cancel_button)
+        button_container_layout.addWidget(apply_button)
+
+        dialog_layout.addWidget(self.description_label)
+        dialog_layout.addWidget(self.text_edit)
+        dialog_layout.addWidget(button_container)
+
+    def set_text(self, text: str):
+        self.text_edit.setPlainText(text)
+
+    def apply(self):
+        # PROCESS REQUEST USING BRAIN
+        text = self.text_edit.toPlainText()
+        self.brain.set_current_user_description(text)
+
+        self.accept()

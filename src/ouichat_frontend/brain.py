@@ -1,9 +1,6 @@
 from PyQt6.QtCore import QObject, pyqtSignal
 
 import time
-import os
-import shutil
-import random
 
 from socket_manager import SocketManager
 
@@ -12,6 +9,7 @@ class Brain(QObject):
     chat_removed = pyqtSignal(dict)
 
     current_user_changed = pyqtSignal(str, str)
+    user_updated = pyqtSignal(str, str)
     chat_selected = pyqtSignal(str, str)
     select_chat = pyqtSignal(str, str)
     change_textbox_visibility = pyqtSignal(bool)
@@ -70,6 +68,51 @@ class Brain(QObject):
         self.chat_selected.connect(self.set_current_chat)
         self.socket_manager.chat_updated.connect(self.update_chat)
         self.add_new_messages.connect(self.update_timestamps)
+
+    def user_is_in_chat(self, chat_id: str, domain: str, username):
+        chat = self.find_chat(chat_id, domain)
+        if not chat: return False
+
+        users = chat['users']
+        for user in users:
+            if user['username'] == username:
+                return True
+
+        return False
+
+    def get_logged_users(self):
+        return [
+            {
+                "username": logged_user['username'],
+                "domain": logged_user['domain'],
+            } for logged_user in self.users_list
+        ]
+
+    def get_current_user_description(self):
+        current_user_username = self.get_current_user_username()
+        current_user_domain = self.get_current_user_domain()
+
+        return self.get_user_description(current_user_username, current_user_domain)
+
+    def set_current_user_description(self, description: str):
+        current_user_username = self.get_current_user_username()
+        current_user_domain = self.get_current_user_domain()
+
+        user = self.get_user_details(current_user_username, current_user_domain)
+        if not user: return
+
+        user['description'] = description
+        self.user_updated.emit(current_user_username, current_user_domain)
+
+    def set_current_user_icon_path(self, icon_path: str):
+        current_user_username = self.get_current_user_username()
+        current_user_domain = self.get_current_user_domain()
+
+        user = self.get_user_details(current_user_username, current_user_domain)
+        if not user: return
+
+        user['icon_path'] = icon_path
+        self.user_updated.emit(current_user_username, current_user_domain)
 
     def upload_files(self, file_list: list):
         files = self.socket_manager.request_upload_files(file_list)
@@ -207,6 +250,11 @@ class Brain(QObject):
         user_data = self.get_user_details(username, domain)
         if not user_data: return './Icons/default_user_icon.png'
         return user_data['icon_path']
+
+    def get_user_description (self, username: str, domain: str):
+        user_data = self.get_user_details(username, domain)
+        if not user_data: return ""
+        return user_data['description']
 
     def get_user_details(self, username: str, domain: str):
         domain_users = self.domain_users_list.get(domain, None)
@@ -350,12 +398,8 @@ class Brain(QObject):
         return self.current_user
 
     def set_current_user(self, username: str, domain: str):
-        user = self.find_users({
-            "username": username,
-            "domain": domain
-        })
+        user = self.find_user(username, domain)
         if user:
-            user = user[0]
             self.current_user = user
             self.current_user_changed.emit(user['username'], user['domain'])
 
@@ -366,7 +410,10 @@ class Brain(QObject):
         return self.current_user["domain"]
 
     def get_current_user_icon(self):
-        return self.current_user["icon_path"]
+        current_user_username = self.get_current_user_username()
+        current_user_domain = self.get_current_user_domain()
+
+        return self.get_user_icon_path(current_user_username, current_user_domain)
 
     def get_current_user_blacklist(self):
         return self.current_user["blacklist"]
@@ -386,23 +433,15 @@ class Brain(QObject):
     def remove_user(self, user_data: dict):
         self.users_list.remove(user_data)
 
-    def find_users(self, key_val_pairs: dict):
-        found_users = []
+    def find_user(self, username: str, domain: str):
         for user in self.users_list:
-            for key in key_val_pairs.keys():
-                if user[key] != key_val_pairs[key]:
-                    break
-            else:
-                found_users.append(user)
-        return found_users
+            if user['username'] == username and user['domain'] == domain:
+                return user
+        return None
 
     def remove_user_by_username_and_domain(self, username: str, domain: str):
-        user = self.find_users({
-            "username": username,
-            "domain": domain
-        })
+        user = self.find_user(username, domain)
         if user:
-            user = user[0]
             self.remove_user(user)
 
     def set_current_chat(self, chat_id: str, domain: str):
@@ -474,8 +513,8 @@ class Brain(QObject):
             current_username = self.get_current_user_username()
             usernames = [usr['username'] for usr in chat['users']]
             other_username = usernames[0] if usernames[0] != current_username else usernames[1]
-            other_user_data = self.get_user_details(other_username, domain)
-            return other_user_data['description'] if other_user_data else ""
+            other_user_description = self.get_user_description(other_username, domain)
+            return other_user_description
 
     def get_chat_icon_path(self, chat_id: str, domain: str):
         chat = self.find_chat(chat_id, domain)

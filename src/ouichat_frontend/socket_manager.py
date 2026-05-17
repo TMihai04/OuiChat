@@ -15,19 +15,17 @@ def get_file_path(file_id: int):
 
     return None
 
-def message_args_to_dict(chat_id: str, domain: str, message_id: str, sender: str, sender_icon_path: str,
-                         was_edited: bool, is_reply: bool, reply_sender: str, reply_sender_icon_path: str,
+def message_args_to_dict(chat_id: str, domain: str, message_id: str, sender: str,
+                         was_edited: bool, is_reply: bool, reply_sender: str,
                          reply_snip: str, timestamp: float, text: str, files: list):
     return {
         "chat_id": chat_id,
         "domain": domain,
         "message_id": message_id,
         "sender": sender,
-        "sender_icon_path": sender_icon_path,
         "was_edited": was_edited,
         "is_reply": is_reply,
         "reply_sender": reply_sender,
-        "reply_sender_icon_path": reply_sender_icon_path,
         "reply_snip": reply_snip,
         "timestamp": timestamp,
         "text": text,
@@ -91,11 +89,9 @@ class SocketManager(QObject):
                 domain = domain,
                 message_id = str(int(random.random() * 10000)),
                 sender = f"TEST_SENDER_{idx}",
-                sender_icon_path = "./Icons/default_user_icon.png",
                 was_edited = was_edited,
                 is_reply = is_reply,
                 reply_sender = f"TEST_REPLY_{idx}",
-                reply_sender_icon_path = "./Icons/default_user_icon.png",
                 reply_snip = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
                 timestamp = time.time(),
                 text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
