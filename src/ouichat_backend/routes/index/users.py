@@ -1,6 +1,6 @@
 # User related endpoints
 
-from ouichat_backend.logger import logger
+from ouichat_backend.utils.logger import logger
 from ouichat_backend.utils import (
     UserPreferencesDocument,
     GenericItemsResponse,
@@ -96,18 +96,24 @@ async def get_target_user_profile(
 async def list_all_user_profiles(
     username: str = Depends(decode_sub_access_token)
 ) -> GenericItemsResponse:
-    logger.debug(f"Getting all user profile cards - username: {username}")
+    logger.debug(f"Getting user profile cards - username: {username}")
 
     user_docs = await db.get_all_users(
         projection={
             "_id": 0,
             "username": 1,
             "profile": 1,
-            "last_login": 1
+            "last_login": 1,
+            "preferences": 1,
         }
     )
 
-    logger.info(f"Got all user profile cards - username: {username}")
+    # Removes all users that have the calling user blacklisted
+    for i in range(len(user_docs) - 1, -1, -1):
+        if username in user_docs[i].get("preferences", {}).get("blacklist", []):
+            user_docs.pop(i)
+
+    logger.info(f"Got user profile cards - username: {username}")
 
     return GenericItemsResponse(
         items=user_docs
@@ -136,9 +142,7 @@ async def add_to_calling_blacklist(
     message = "Success"
     update = await db.update_user(
         username,
-        update={
-            "$addToSet": {"preferences.blacklist": body.who}
-        }
+        bl_add=body.who,
     )
     if update.modified_count == 0:
         message = "Target already in blacklist"
@@ -171,9 +175,7 @@ async def remove_from_calling_blacklist(
 
     update = await db.update_user(
         username,
-        update={
-            "$pull": {"preferences.blacklist": {"$eq": body.who}}
-        }
+        bl_del=body.who,
     )
     if update.modified_count == 0:
         raise HTTPException(
@@ -185,7 +187,7 @@ async def remove_from_calling_blacklist(
 
 @router.post(
     "/preferences/status",
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_200_OK
 )
 async def change_calling_status(
     body: _bodies.StatusBody,
@@ -193,26 +195,41 @@ async def change_calling_status(
 ) -> GenericMessageResponse:
     logger.debug(f"Changing current user's status - username: {username} - status: {body.status}")
 
+    message = "Success"
     update = await db.update_user(
         username,
-        update={
-            "$set": {"profile.status": body.status}
-        }
+        status=body.status,
     )
+    if update.modified_count == 0:
+        message = "Unchanged"
 
     logger.info(f"Chaned current user's status - username: {username}")
 
-    return GenericMessageResponse()
+    return GenericMessageResponse(
+        message=message
+    )
 
 
 @router.post(
     "/preferences/picture",
-    status_code=status.HTTP_501_NOT_IMPLEMENTED
+    status_code=status.HTTP_200_OK
 )
 async def change_calling_profile_picture(
-    file: UploadFile,
+    attachement_id: str, # Maybe allow for `None` value? as a way to remove the picture
     username: str = Depends(decode_sub_access_token)
 ) -> GenericMessageResponse:
+    logger.debug(f"Changing current user's profile pciture - username: {username}")
+
+    message = "Success"
+    update = db.update_user(
+        username,
+        pic_id=attachement_id,
+    )
+    if update.modified_count == 0:
+        message = "Unchanged"
+
+    logger.info(f"Changed current user's profile pciture - username: {username}")
+
     return GenericMessageResponse(
-        message="Not implemented"
+        message=message
     )

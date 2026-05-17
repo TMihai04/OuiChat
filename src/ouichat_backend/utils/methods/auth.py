@@ -1,6 +1,6 @@
 # Authentication utilitary methods
 
-from ouichat_backend.logger import logger
+from ouichat_backend.utils.logger import logger
 from ouichat_backend.utils.constants import startup
 from ouichat_backend.utils.constants import (
     password_hash,
@@ -10,10 +10,13 @@ from ouichat_backend.utils.constants import (
     REFRESH_TOKEN_EXPIRE_HRS,
     OAUTH2_SCHEME,
     CREDENTIALS_EXCEPTION,
+    WS_CREDENTIALS_EXCEPTION,
 )
 
+from .utils import timestamp_now
+
 from datetime import datetime, timedelta, timezone
-from fastapi import Depends
+from fastapi import Depends, Query
 from fastapi.security import HTTPAuthorizationCredentials
 
 import re
@@ -90,6 +93,23 @@ def decode_sub_access_token(
         return payload.get("sub")
     else:
         raise CREDENTIALS_EXCEPTION
+
+
+def ws_decode_access_token(
+    token: str | None = Query(default=None),
+) -> dict:
+    if not token:
+        raise WS_CREDENTIALS_EXCEPTION
+    
+    try:
+        payload = decode_token(token)
+    except Exception:
+        raise WS_CREDENTIALS_EXCEPTION
+    
+    if payload.get("type") == "access":
+        return payload
+    else:
+        raise WS_CREDENTIALS_EXCEPTION
 
 
 def validate_username(username: str) -> tuple[bool, str]:

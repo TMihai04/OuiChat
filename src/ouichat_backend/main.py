@@ -1,7 +1,7 @@
 # Main file
 
 from ouichat_backend import _init
-from ouichat_backend.logger import logger
+from ouichat_backend.utils.logger import logger
 from ouichat_backend.routes import *
 
 from fastapi import FastAPI

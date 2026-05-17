@@ -1,6 +1,6 @@
 # Utility methods
 
-from ouichat_backend.logger import logger
+from ouichat_backend.utils.logger import logger
 
 from dotenv import load_dotenv
 from datetime import datetime, timezone
@@ -46,3 +46,7 @@ def get_env_bool(env_name: str) -> bool:
 
 def timestamp_now() -> int:
     return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+
+def datetime_from_timestamp(timestamp: int | float) -> datetime:
+    return datetime.fromtimestamp(timestamp, timezone.utc)

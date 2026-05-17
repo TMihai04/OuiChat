@@ -1,6 +1,6 @@
 # App initialization methods
 
-from ouichat_backend.logger import logger
+from ouichat_backend.utils.logger import logger
 from ouichat_backend.utils.constants import startup
 from ouichat_backend.utils.methods import (
     get_env_bool,

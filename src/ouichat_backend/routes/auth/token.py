@@ -1,6 +1,6 @@
 # Authentification endpoints
 
-from ouichat_backend.logger import logger
+from ouichat_backend.utils.logger import logger
 from ouichat_backend.utils.methods import (
     get_password_hash,
     get_dummy_hash,
@@ -72,9 +72,7 @@ async def login_for_tokens(
 
     await db.update_user(
         form_data.username,
-        update={
-            "$set": {"last_updated": timestamp_now()}
-        }
+        login=timestamp_now(),
     )
 
     logger.debug(f"access: {access_token}\n\trefresh: {refresh_token}")

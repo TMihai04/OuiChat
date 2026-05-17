@@ -1,6 +1,6 @@
 # User account signing paths
 
-from ouichat_backend.logger import logger
+from ouichat_backend.utils.logger import logger
 from ouichat_backend.utils.constants import startup
 from ouichat_backend.utils.methods import (
     get_password_hash,

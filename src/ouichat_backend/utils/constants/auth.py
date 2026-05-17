@@ -2,7 +2,7 @@
 
 from pwdlib import PasswordHash
 from fastapi.security import OAuth2PasswordBearer, HTTPBearer
-from fastapi import HTTPException, status
+from fastapi import HTTPException, WebSocketException, status
 
 
 password_hash = PasswordHash.recommended()
@@ -23,6 +23,10 @@ REFRESH_SCHEME = HTTPBearer(
 
 CREDENTIALS_EXCEPTION = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="Incorrect username or password",
+    detail="Incorrect login credentials",
     headers={"WWW-Authenticate": "Bearer"},
+)
+WS_CREDENTIALS_EXCEPTION = WebSocketException(
+    code=status.WS_1008_POLICY_VIOLATION,
+    reason="Invalid access token"
 )

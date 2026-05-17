@@ -12,6 +12,7 @@ __all__ = [
     "OAUTH2_SCHEME",
     "REFRESH_SCHEME",
     "CREDENTIALS_EXCEPTION",
+    "WS_CREDENTIALS_EXCEPTION",
     # tags.py
     "EndpointTags",
     "EndpointPrefixes"

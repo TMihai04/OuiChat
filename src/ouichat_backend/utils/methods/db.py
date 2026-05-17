@@ -1,10 +1,12 @@
 # Database methods
 
-from ouichat_backend.logger import logger
+from ouichat_backend.utils.logger import logger
+from ouichat_backend.utils.manager import ws_manager
 from ouichat_backend.utils.constants import startup
 from ouichat_backend.utils.schemas import (
     UserDocument,
     UserPreferencesDocument,
+    WebsocketUpdate,
 )
 from ouichat_backend.utils.methods import (
     timestamp_now,
@@ -124,6 +126,14 @@ async def add_user(new_user: UserDocument):
     )
 
     # Notify websocket of update
+    await ws_manager.notify_all(
+        payload=WebsocketUpdate(
+            type="create",
+            scope="user",
+            data=new_user.model_dump(include={"username", "profile"})
+        ),
+        mode="binary"
+    )
 
 
 async def get_user(
@@ -156,9 +166,19 @@ async def delete_user(username: str):
     )
 
     # Notify websocket of update
+    await ws_manager.notify_all(
+        payload=WebsocketUpdate(
+            type="delete",
+            scope="user",
+            data={
+                "username": username
+            }
+        ),
+        mode="binary"
+    )
 
 
-async def update_user(
+async def _update_user(
     username: str,
     *,
     update: dict,
@@ -185,5 +205,137 @@ async def update_user(
         }
     )
 
-    # Notify websocket of update
     return ret or ret2
+
+
+async def update_user(
+    username: str,
+    *,
+    bl_add: str | None = None,
+    bl_del: str | None = None,
+    status: str | None = None,
+    pic_id: str | None = None,
+    login: int | None = None,
+):
+    upd = None
+    if bl_add is not None:
+        upd = await _update_user(
+            username,
+            update={
+                "$addToSet": {"preferences.blacklist": bl_add}
+            }
+        )
+        if upd.modified_count == 0:
+            return upd
+        
+        # Notify websocket of update
+        await ws_manager.notify_user(
+            username=bl_add,
+            payload=WebsocketUpdate(
+                type="update",
+                scope="user.blacklist",
+                data={
+                    "username": username,
+                    "is_blacklisted": True
+                }
+            ),
+            mode="binary"
+        )
+    
+    if bl_del is not None:
+        upd = await _update_user(
+            username,
+            update={
+                "$pull": {"preferences.blacklist": {"$eq": bl_del}}
+            }
+        )
+        if upd.modified_count == 0:
+            return upd
+        
+        # Notify websocket of update
+        await ws_manager.notify_user(
+            username=bl_del,
+            payload=WebsocketUpdate(
+                type="update",
+                scope="user.blacklist",
+                data={
+                    "username": username,
+                    "is_blacklisted": False
+                }
+            ),
+            mode="binary"
+        )
+    
+    if status is not None:
+        upd = await _update_user(
+            username,
+            update={
+                "$set": {"profile.status": status}
+            }
+        )
+        if upd.modified_count == 0:
+            return upd
+        
+        # Notify websocket of update
+        await ws_manager.notify_all(
+            payload=WebsocketUpdate(
+                type="update",
+                scope="user.status",
+                data={
+                    "username": username,
+                    "status": status
+                }
+            ),
+            mode="binary"
+        )
+    
+    if pic_id is not None:
+        upd = await _update_user(
+            username,
+            update={
+                "$set": {"profile.picture_id": pic_id}
+            }
+        )
+        if upd.modified_count == 0:
+            return upd
+        
+        # Notify websocket of update
+        await ws_manager.notify_all(
+            payload=WebsocketUpdate(
+                type="update",
+                scope="user.picture",
+                data={
+                    "username": username,
+                    "picture_id": pic_id
+                }
+            ),
+            mode="binary"
+        )
+    
+    if pic_id is not None:
+        upd = await _update_user(
+            username,
+            update={
+                "$set": {"last_login": login}
+            }
+        )
+        if upd.modified_count == 0:
+            return upd
+        
+        # Notify websocket of update
+        await ws_manager.notify_all(
+            payload=WebsocketUpdate(
+                type="update",
+                scope="user.login",
+                data={
+                    "username": username,
+                    "last_login": login
+                }
+            ),
+            mode="binary"
+        )
+    
+    return upd
+
+
+
