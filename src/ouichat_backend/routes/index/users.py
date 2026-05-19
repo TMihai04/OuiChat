@@ -34,17 +34,11 @@ async def get_calling_user_info(
 ) -> GenericItemResponse:
     logger.debug(f"Getting current user information - username: {username}")
 
-    user_doc = await db.get_user(
-        username,
-        projection={
-            "_id": 0,
-            "username": 1,
-            "profile": 1,
-            "preferences": 1,
-            "last_login": 1
-        }
-    )
-    # NOTE: Does `user_doc is None` need to be checked?
+    user_doc = await db.get_user(username)
+    if user_doc is None:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR, "Something went wrong trying to fetch connected user"
+        )
 
     logger.info(f"Got current user information - username: {username}")
 
@@ -68,15 +62,7 @@ async def get_target_user_profile(
             status.HTTP_400_BAD_REQUEST, "For self query use dedicated endpoint"
         )
 
-    user_doc = await db.get_user(
-        target_user,
-        projection={
-            "_id": 0,
-            "username": 1,
-            "profile": 1,
-            "last_login": 1
-        }
-    )
+    user_doc = await db.get_user(target_user)
     if not user_doc:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND, "Target user not existent on this server"
@@ -85,7 +71,7 @@ async def get_target_user_profile(
     logger.info(f"Got target user profile card - username: {username}")
 
     return GenericItemResponse(
-        item=user_doc
+        item=user_doc.model_dump(exclude={"preferences"})
     )
 
 
@@ -99,24 +85,28 @@ async def list_all_user_profiles(
     logger.debug(f"Getting user profile cards - username: {username}")
 
     user_docs = await db.get_all_users(
-        projection={
-            "_id": 0,
-            "username": 1,
-            "profile": 1,
-            "last_login": 1,
-            "preferences": 1,
+        filter={},
+        sort={
+            "updated_at": -1,
         }
     )
 
+    ret = []
+
     # Removes all users that have the calling user blacklisted
     for i in range(len(user_docs) - 1, -1, -1):
-        if username in user_docs[i].get("preferences", {}).get("blacklist", []):
+        if username in user_docs[i].preferences.blacklist:
             user_docs.pop(i)
+        else:
+            ret.append(
+                user_docs[i].model_dump(exclude={"preferences"})
+            )
 
     logger.info(f"Got user profile cards - username: {username}")
 
+    # TODO: Remove blacklist from response
     return GenericItemsResponse(
-        items=user_docs
+        items=ret
     )
 
 
@@ -186,7 +176,7 @@ async def remove_from_calling_blacklist(
 
 
 @router.post(
-    "/preferences/status",
+    "/profile/status",
     status_code=status.HTTP_200_OK
 )
 async def change_calling_status(
@@ -211,7 +201,7 @@ async def change_calling_status(
 
 
 @router.post(
-    "/preferences/picture",
+    "/profile/picture",
     status_code=status.HTTP_200_OK
 )
 async def change_calling_profile_picture(

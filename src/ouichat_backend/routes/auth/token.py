@@ -51,17 +51,11 @@ async def login_for_tokens(
     logger.debug(f"Logging in user - username: {form_data.username}")
 
     # Check if user exists
-    one_doc = await db.get_user(
-        form_data.username,
-        projection={
-            "_id": 0,
-            "pwd_hash": 1,
-        },
-    )
+    one_doc = await db.get_user(form_data.username)
     if not one_doc:
         verify_password(form_data.password, get_dummy_hash())
         raise CREDENTIALS_EXCEPTION
-    if not verify_password(form_data.password, one_doc.get("pwd_hash", "")):
+    if not verify_password(form_data.password, one_doc.pwd_hash):
         raise CREDENTIALS_EXCEPTION
     
     # Generate new token pair

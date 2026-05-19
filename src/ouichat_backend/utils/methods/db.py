@@ -5,7 +5,7 @@ from ouichat_backend.utils.manager import ws_manager
 from ouichat_backend.utils.constants import startup
 from ouichat_backend.utils.schemas import (
     UserDocument,
-    UserPreferencesDocument,
+    ConversationDocument,
     WebsocketUpdate,
 )
 from ouichat_backend.utils.methods import (
@@ -138,25 +138,43 @@ async def add_user(new_user: UserDocument):
 
 async def get_user(
     username: str,
-    **kwargs,
-):
+) -> UserDocument | None:
     collection = get_users_collection()
-    return await collection.find_one(
+
+    user_doc = await collection.find_one(
         filter={
             "username": username
         },
-        **kwargs
     )
 
+    if user_doc is None:
+        return None
+    
+    return UserDocument(**user_doc)
 
-async def get_all_users(**kwargs) -> list:
+
+async def get_all_users(
+    filter: dict,
+    sort: dict = {},
+) -> list:
     collection = get_users_collection()
-    return await collection.find(
-        **kwargs,
-    ).to_list(length=None)
+    
+    cursor = collection.find(
+        filter=filter,
+        sort=sort
+    )
+
+    ret = []
+    async for entry in cursor:
+        ret.append(
+            UserDocument(**entry)
+        )
+    return ret
 
 
-async def delete_user(username: str):
+async def delete_user(
+    username: str
+):
     collection = get_users_collection()
 
     await collection.delete_one(
@@ -316,7 +334,7 @@ async def update_user(
         upd = await _update_user(
             username,
             update={
-                "$set": {"last_login": login}
+                "$set": {"profile.picture_id": pic_id}
             }
         )
         if upd.modified_count == 0:
@@ -326,10 +344,10 @@ async def update_user(
         await ws_manager.notify_all(
             payload=WebsocketUpdate(
                 type="update",
-                scope="user.login",
+                scope="user.picture",
                 data={
                     "username": username,
-                    "last_login": login
+                    "picture_id": pic_id
                 }
             ),
             mode="binary"
@@ -338,4 +356,66 @@ async def update_user(
     return upd
 
 
+# Conversation entries
+async def add_chat(
+    new_chat: ConversationDocument
+):
+    collection = get_chats_collection()
 
+    await collection.insert_one(
+        new_chat.model_dump()
+    )
+
+    # Notify websocket update
+
+
+async def get_chat(
+    chat_id: str,
+) -> ConversationDocument | None:
+    collection = get_chats_collection()
+    
+    chat_doc = await collection.find_one(
+        filter={
+            "conversation_id": chat_id
+        }
+    )
+
+    if chat_doc is None:
+        return None
+    
+    return ConversationDocument(**chat_doc)
+
+
+async def get_all_chats(
+    filter: dict,
+    sort: dict = {}
+) -> list:
+    collection = get_chats_collection()
+
+    cursor = collection.find(
+        filter=filter,
+        sort=sort
+    )
+
+    ret = []
+    async for entry in cursor:        
+        ret.append(
+            ConversationDocument(**entry)
+        )
+    return ret
+
+
+async def delete_chat(
+    chat_id: str
+):
+    collection = get_chats_collection()
+
+    await collection.delete_one(
+        filter={
+            "conversation_id": chat_id
+        }
+    )
+
+    # Notify websocket of update
+
+# TODO: Add update wrapper methods

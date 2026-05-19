@@ -5,7 +5,8 @@ from pydantic import (
     Field,
     model_validator,
 )
-from typing import Literal, Self
+from typing import Literal
+from typing_extensions import Self
 
 
 class UserProfileDocument(BaseModel):
@@ -38,6 +39,7 @@ class UserDocument(BaseModel):
     pwd_hash: str = Field(
         ...,
         description="Hash of the password",
+        exclude=True,
         min_length=1,
     )
     profile: UserProfileDocument = Field(
@@ -71,8 +73,8 @@ class ConversationParticipantDocument(BaseModel):
     default=False,
     description="Flag that determines wether participant is an admin of the conversation"
   )
-  last_seen: int = Field(
-    ...,
+  last_seen: int | None = Field(
+    default=None,
     description="Timestamp of when the participant last interacted with the conversation"
   )
 
@@ -93,7 +95,7 @@ class ConversationPreferencesDocument(BaseModel):
   def check_at_least_one_admin(self) -> Self:
     for entry in self.participants:
       if entry.is_admin:
-        return Self
+        return self
     raise ValueError("At least one admin is required in a conversation")
 
 
@@ -141,15 +143,15 @@ class ConversationDocument(BaseModel):
   @model_validator(mode="after")
   def validate_profile_by_conv_type(self) -> Self:
     if self.type == "direct":
-      if profile.name is not None:
+      if self.profile.name is not None:
         raise ValueError("Direct conversation name cannot be set")
-      if profile.description is not None:
+      if self.profile.description is not None:
         raise ValueError("Direct conversation description cannot be set")
-      if profile.picture_id is not None:
+      if self.profile.picture_id is not None:
         raise ValueError("Direct conversation picture_id cannot be set")
     elif self.type == "group":
-      if profile.name is None:
+      if self.profile.name is None:
         raise ValueError("Group conversation name must be set")
-      if profile.description is None:
+      if self.profile.description is None:
         raise ValueError("Group conversation description must be set")
     return self
