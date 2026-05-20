@@ -6,8 +6,8 @@ from PIL import Image
 import os
 import time
 
-from ouichat_frontend.brain import Brain
-from ouichat_frontend.dialogs import UserDetailsEditDialog
+from brain import Brain
+from dialogs import UserDetailsEditDialog
 
 class UserSettingsScreen(QWidget):
     """

@@ -12,9 +12,9 @@ import time
 import os
 from PIL import Image
 
-from ouichat_frontend.dialogs import AddUsersDialog, RemoveUsersDialog, ChatDetailsEditDialog
-from ouichat_frontend.brain import Brain
-from ouichat_frontend.socket_manager import message_args_to_dict
+from dialogs import AddUsersDialog, RemoveUsersDialog, ChatDetailsEditDialog
+from brain import Brain
+from socket_manager import message_args_to_dict
 
 RIGHT_PANE_MIN_WIDTH = 310
 DOWNLOAD_WIDGET_WIDTH = 250

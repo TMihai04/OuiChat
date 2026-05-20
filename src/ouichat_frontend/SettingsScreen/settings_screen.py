@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
 
 from PyQt6.QtCore import Qt, pyqtSignal
 
-from ouichat_frontend.brain import Brain
+from brain import Brain
 
 class SettingsScreen(QWidget):
     """

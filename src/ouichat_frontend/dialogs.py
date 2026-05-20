@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
 
 from PyQt6.QtCore import Qt, QSize
 
-from ouichat_frontend.brain import Brain
+from brain import Brain
 
 MAX_USERNAME_LENGTH = 16
 MAX_PASSWORD_LENGTH = 32

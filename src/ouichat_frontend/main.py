@@ -6,7 +6,7 @@ from SettingsScreen.settings_screen import SettingsScreen
 from dialogs import LogInDialog
 from MainScreen.main_screen import MainScreen
 from UserSettingsScreen.user_settings_screen import UserSettingsScreen
-from ouichat_frontend.brain import Brain
+from brain import Brain
 
 class MainWindow(QMainWindow):
     def __init__(self, brain: Brain, login_dialog):

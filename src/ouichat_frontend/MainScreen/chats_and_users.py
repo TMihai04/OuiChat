@@ -6,8 +6,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QIcon, QStandardItemModel, QPixmap, QPainter, QMouseEvent
 
-from ouichat_frontend.dialogs import LogInDialog, AddUsersDialog
-from ouichat_frontend.brain import Brain
+from dialogs import LogInDialog, AddUsersDialog
+from brain import Brain
 
 MAX_USERS = 3
 
