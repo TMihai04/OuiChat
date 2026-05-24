@@ -69,6 +69,16 @@ class Brain(QObject):
         self.socket_manager.chat_updated.connect(self.update_chat)
         self.add_new_messages.connect(self.update_timestamps)
 
+    def get_current_user_refresh_token(self):
+        current_user = self.get_current_user()
+        if not current_user: return ""
+        return current_user['refresh_token']
+
+    def get_current_user_access_token(self):
+        current_user = self.get_current_user()
+        if not current_user: return ""
+        return current_user['access_token']
+
     def user_is_in_chat(self, chat_id: str, domain: str, username):
         chat = self.find_chat(chat_id, domain)
         if not chat: return False

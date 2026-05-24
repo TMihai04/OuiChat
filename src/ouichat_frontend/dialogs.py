@@ -1,122 +1,21 @@
-from typing import Callable, Coroutine, Any
-
 from PyQt6.QtGui import QIcon, QTextOption
 from PyQt6.QtWidgets import (
     QDialog, QPushButton, QVBoxLayout, QLineEdit, QLabel, QWidget, QFormLayout, QCheckBox, QSizePolicy, QListWidget,
     QHBoxLayout, QListWidgetItem, QTextEdit, QAbstractItemView, QGridLayout
 )
 
-from PyQt6.QtCore import Qt, QSize, QThread, QEventLoop, pyqtSignal
-
-import aiohttp
-import asyncio
+from PyQt6.QtCore import Qt, QSize
 
 from brain import Brain
-from socket_manager import handle_error, get_resp_dict, MAX_REQUESTS, REQUEST_TIMEOUT
+from socket_manager import (
+    execute_request_loop, LoginRequestWorker, RegisterRequestWorker, CurrentUserProfileWorker,
+    ChangeUserDescriptionWorker
+)
 
 MAX_USERNAME_LENGTH = 16
 MAX_PASSWORD_LENGTH = 32
 
 LIST_WIDGET_FIXED_WIDTH = 300
-
-async def register_request(domain: str, username: str, password: str):
-    register_json = {
-        "grant_type": "password",
-        "username": username,
-        "password": password,
-    }
-    async with aiohttp.ClientSession() as session:
-        for request_count in range(MAX_REQUESTS):
-            try:
-                async with session.post(url=f"http://{domain}/register", data=register_json) as resp:
-                    try:
-                        resp.raise_for_status()
-                    except aiohttp.ClientResponseError as _:
-                        return await handle_error(resp)
-
-                    resp_dict = await resp.json()
-                    return get_resp_dict(False, resp_dict)
-
-            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
-                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
-                continue
-
-        return get_resp_dict(False, 'Cannot establish a connection with the server.')
-
-async def login_request(domain: str, username: str, password: str):
-    login_json = {
-        "grant_type": "password",
-        "username": username,
-        "password": password,
-    }
-
-    async with aiohttp.ClientSession() as session:
-        for request_count in range(MAX_REQUESTS):
-            try:
-                async with session.post(url=f"http://{domain}/login", data=login_json) as resp:
-                    try:
-                        resp.raise_for_status()
-                    except aiohttp.ClientResponseError as _:
-                        return await handle_error(resp)
-
-                    resp_dict = await resp.json()
-                    return get_resp_dict(False, resp_dict)
-
-            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
-                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
-                continue
-
-        return get_resp_dict(True, 'Cannot establish a connection with the server.')
-
-class CredentialsRequestWorker(QThread):
-    finished = pyqtSignal(dict)
-
-    def __init__(self, domain: str, username: str, password: str, request: Callable[[str, str, str], Coroutine[Any, Any, dict]]):
-        super().__init__()
-
-        self.domain = domain
-        self.username = username
-        self.password = password
-        self.request = request
-
-    def run(self):
-        resp = asyncio.run(self.request(self.domain, self.username, self.password))
-        self.finished.emit(resp)
-
-async def get_current_user_profile_request(domain: str, access_token: str):
-    headers = {
-        'Authorization': f"Bearer {access_token}",
-    }
-    async with aiohttp.ClientSession() as session:
-        for request_count in range(MAX_REQUESTS):
-            try:
-                async with session.get(url=f"http://{domain}/users/me", headers=headers) as resp:
-                    try:
-                        resp.raise_for_status()
-                    except aiohttp.ClientResponseError as _:
-                        return await handle_error(resp)
-
-                    resp_dict = await resp.json()
-                    return get_resp_dict(False, resp_dict)
-
-            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
-                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
-                continue
-
-        return get_resp_dict(True, 'Cannot establish a connection with the server.')
-
-class CurrentUserProfileWorker(QThread):
-    finished = pyqtSignal(dict)
-
-    def __init__(self, domain: str, access_token: str):
-        super().__init__()
-
-        self.domain = domain
-        self.access_token = access_token
-
-    def run(self):
-        resp = asyncio.run(get_current_user_profile_request(domain=self.domain, access_token=self.access_token))
-        self.finished.emit(resp)
 
 class LogInDialog(QDialog):
     """
@@ -232,20 +131,10 @@ class LogInDialog(QDialog):
         register = self.register_checkbox.isChecked()
 
         if register:
-            self.reg_worker = CredentialsRequestWorker(domain, username, password, register_request)
-
-            register_loop = QEventLoop()
-            self.worker_response = dict()
-
-            def catch_response(resp):
-                self.worker_response = resp
-                register_loop.quit()
-
-            self.reg_worker.finished.connect(catch_response)
-            self.reg_worker.start()
-            register_loop.exec()
-
+            self.reg_worker = RegisterRequestWorker(domain, username, password)
+            self.worker_response = execute_request_loop(self.reg_worker)
             self.reg_worker.deleteLater()
+
             is_error = self.worker_response.get('is_error')
             if is_error:
                 self.set_error_message(self.worker_response.get('field'))
@@ -255,22 +144,11 @@ class LogInDialog(QDialog):
             else:
                 self.set_error_message('')
 
-        self.login_worker = CredentialsRequestWorker(domain, username, password, login_request)
-
-        login_loop = QEventLoop()
-        self.worker_response = dict()
-
-        def catch_response(resp):
-            self.worker_response = resp
-            login_loop.quit()
-
-        self.login_worker.finished.connect(catch_response)
-        self.login_worker.start()
-        login_loop.exec()
-
+        self.login_worker = LoginRequestWorker(domain, username, password)
+        self.worker_response = execute_request_loop(self.login_worker)
         self.login_worker.deleteLater()
-        is_error = self.worker_response.get('is_error')
 
+        is_error = self.worker_response.get('is_error')
         if is_error:
             self.set_error_message(self.worker_response.get('field'))
             self.__resize_text_box()
@@ -281,21 +159,10 @@ class LogInDialog(QDialog):
         refresh_token = self.worker_response.get('field').get('refresh_token', "")
 
         self.current_user_profile_worker = CurrentUserProfileWorker(domain, access_token)
-
-        current_user_profile_loop = QEventLoop()
-        self.worker_response = dict()
-
-        def catch_response(resp):
-            self.worker_response = resp
-            current_user_profile_loop.quit()
-
-        self.current_user_profile_worker.finished.connect(catch_response)
-        self.current_user_profile_worker.start()
-        current_user_profile_loop.exec()
-
+        self.worker_response = execute_request_loop(self.current_user_profile_worker)
         self.current_user_profile_worker.deleteLater()
-        is_error = self.worker_response.get('is_error')
 
+        is_error = self.worker_response.get('is_error')
         if is_error:
             self.set_error_message(self.worker_response.get('field'))
             self.__resize_text_box()
@@ -758,6 +625,7 @@ class UserDetailsEditDialog(QDialog):
         super().__init__()
 
         self.brain = brain
+        self.description_worker = None
 
         self.setWindowTitle("Edit User Description")
 
@@ -805,6 +673,20 @@ class UserDetailsEditDialog(QDialog):
     def apply(self):
         # PROCESS REQUEST USING BRAIN
         text = self.text_edit.toPlainText()
+
+        current_user_domain = self.brain.get_current_user_domain()
+        current_user_access_token = self.brain.get_current_user_access_token()
+
+        self.description_worker = ChangeUserDescriptionWorker(current_user_domain, current_user_access_token, text)
+        worker_response = execute_request_loop(self.description_worker)
+        self.description_worker.deleteLater()
+
+        is_error = worker_response.get('is_error')
+        if is_error:
+            error_message = "Could not set the description!"
+            # ERROR WINDOW POPUP
+            return
+
         self.brain.set_current_user_description(text)
 
         self.accept()
