@@ -101,7 +101,7 @@ class Brain(QObject):
         user = self.get_user_details(current_user_username, current_user_domain)
         if not user: return
 
-        user['description'] = description
+        user['profile']['status'] = description
         self.user_updated.emit(current_user_username, current_user_domain)
 
     def set_current_user_icon_path(self, icon_path: str):
@@ -111,7 +111,7 @@ class Brain(QObject):
         user = self.get_user_details(current_user_username, current_user_domain)
         if not user: return
 
-        user['icon_path'] = icon_path
+        user['profile']['picture_id'] = icon_path
         self.user_updated.emit(current_user_username, current_user_domain)
 
     def upload_files(self, file_list: list):
@@ -249,12 +249,14 @@ class Brain(QObject):
     def get_user_icon_path(self, username: str, domain: str):
         user_data = self.get_user_details(username, domain)
         if not user_data: return './Icons/default_user_icon.png'
-        return user_data['icon_path']
+        icon_path = user_data['profile']['picture_id']
+        if not icon_path: return './Icons/default_user_icon.png'
+        return icon_path
 
     def get_user_description (self, username: str, domain: str):
         user_data = self.get_user_details(username, domain)
         if not user_data: return ""
-        return user_data['description']
+        return user_data['profile']['status']
 
     def get_user_details(self, username: str, domain: str):
         domain_users = self.domain_users_list.get(domain, None)
@@ -416,7 +418,8 @@ class Brain(QObject):
         return self.get_user_icon_path(current_user_username, current_user_domain)
 
     def get_current_user_blacklist(self):
-        return self.current_user["blacklist"]
+        current_user = self.get_current_user()
+        return current_user['blacklist']
 
     def add_user(self, user_data: dict):
         self.users_list.append(user_data)
@@ -425,7 +428,7 @@ class Brain(QObject):
         chats = self.socket_manager.request_chats(user_data['username'], user_data['domain'])
         self.add_chats(chats)
 
-        users = self.socket_manager.request_users(user_data['domain'])
+        users = self.socket_manager.request_users(user_data['domain'], user_data['access_token'])
         self.add_users_to_domain(user_data['domain'], users)
 
         self.current_user_changed.emit(user_data['username'], user_data['domain'])
@@ -527,7 +530,12 @@ class Brain(QObject):
             usernames = [usr['username'] for usr in chat['users']]
             other_username = usernames[0] if usernames[0] != current_username else usernames[1]
             other_user_data = self.get_user_details(other_username, domain)
-            return other_user_data['icon_path'] if other_user_data else "./Icons/default_user_icon.png"
+            if not other_user_data: return "./Icons/default_user_icon.png"
+
+            icon_path = other_user_data['profile']['picture_id']
+            if icon_path is None:
+                return "./Icons/default_user_icon.png"
+            return icon_path
 
     def get_chat_users(self, chat_id: str, domain: str):
         chat = self.find_chat(chat_id, domain)

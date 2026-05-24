@@ -1,22 +1,122 @@
-from PyQt6.QtGui import QIcon
+from typing import Callable, Coroutine, Any
+
+from PyQt6.QtGui import QIcon, QTextOption
 from PyQt6.QtWidgets import (
     QDialog, QPushButton, QVBoxLayout, QLineEdit, QLabel, QWidget, QFormLayout, QCheckBox, QSizePolicy, QListWidget,
     QHBoxLayout, QListWidgetItem, QTextEdit, QAbstractItemView, QGridLayout
 )
 
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, QThread, QEventLoop, pyqtSignal
+
+import aiohttp
+import asyncio
 
 from brain import Brain
+from socket_manager import handle_error, get_resp_dict, MAX_REQUESTS, REQUEST_TIMEOUT
 
 MAX_USERNAME_LENGTH = 16
 MAX_PASSWORD_LENGTH = 32
 
 LIST_WIDGET_FIXED_WIDTH = 300
 
-def make_request(domain: str, user: str, password: str):
-    # TO BE IMPLEMENTED
-    # RETURNS (TRUE, JWT Token) ON VALID CREDENTIALS AND (FALSE, $ERROR_MESSAGE) OTHERWISE
-    return True, "TOKEN"
+async def register_request(domain: str, username: str, password: str):
+    register_json = {
+        "grant_type": "password",
+        "username": username,
+        "password": password,
+    }
+    async with aiohttp.ClientSession() as session:
+        for request_count in range(MAX_REQUESTS):
+            try:
+                async with session.post(url=f"http://{domain}/register", data=register_json) as resp:
+                    try:
+                        resp.raise_for_status()
+                    except aiohttp.ClientResponseError as _:
+                        return await handle_error(resp)
+
+                    resp_dict = await resp.json()
+                    return get_resp_dict(False, resp_dict)
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
+                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
+                continue
+
+        return get_resp_dict(False, 'Cannot establish a connection with the server.')
+
+async def login_request(domain: str, username: str, password: str):
+    login_json = {
+        "grant_type": "password",
+        "username": username,
+        "password": password,
+    }
+
+    async with aiohttp.ClientSession() as session:
+        for request_count in range(MAX_REQUESTS):
+            try:
+                async with session.post(url=f"http://{domain}/login", data=login_json) as resp:
+                    try:
+                        resp.raise_for_status()
+                    except aiohttp.ClientResponseError as _:
+                        return await handle_error(resp)
+
+                    resp_dict = await resp.json()
+                    return get_resp_dict(False, resp_dict)
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
+                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
+                continue
+
+        return get_resp_dict(True, 'Cannot establish a connection with the server.')
+
+class CredentialsRequestWorker(QThread):
+    finished = pyqtSignal(dict)
+
+    def __init__(self, domain: str, username: str, password: str, request: Callable[[str, str, str], Coroutine[Any, Any, dict]]):
+        super().__init__()
+
+        self.domain = domain
+        self.username = username
+        self.password = password
+        self.request = request
+
+    def run(self):
+        resp = asyncio.run(self.request(self.domain, self.username, self.password))
+        self.finished.emit(resp)
+
+async def get_current_user_profile_request(domain: str, access_token: str):
+    headers = {
+        'Authorization': f"Bearer {access_token}",
+    }
+    async with aiohttp.ClientSession() as session:
+        for request_count in range(MAX_REQUESTS):
+            try:
+                async with session.get(url=f"http://{domain}/users/me", headers=headers) as resp:
+                    try:
+                        resp.raise_for_status()
+                    except aiohttp.ClientResponseError as _:
+                        return await handle_error(resp)
+
+                    resp_dict = await resp.json()
+                    return get_resp_dict(False, resp_dict)
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
+                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
+                continue
+
+        return get_resp_dict(True, 'Cannot establish a connection with the server.')
+
+class CurrentUserProfileWorker(QThread):
+    finished = pyqtSignal(dict)
+
+    def __init__(self, domain: str, access_token: str):
+        super().__init__()
+
+        self.domain = domain
+        self.access_token = access_token
+
+    def run(self):
+        resp = asyncio.run(get_current_user_profile_request(domain=self.domain, access_token=self.access_token))
+        self.finished.emit(resp)
 
 class LogInDialog(QDialog):
     """
@@ -28,6 +128,10 @@ class LogInDialog(QDialog):
         super().__init__()
 
         self.brain = brain
+
+        self.reg_worker = None
+        self.login_worker = None
+        self.worker_response = None
 
         description_label = QLabel()
         description_label.setText("Insert domain and credentials")
@@ -76,30 +180,51 @@ class LogInDialog(QDialog):
         self.register_checkbox = QCheckBox()
         self.register_checkbox.setText("Register and Login")
 
-        log_in_button = QPushButton("Login")
-        log_in_button.setFixedSize(125, 25)
-        log_in_button.setAutoDefault(False)
-        log_in_button.clicked.connect(self.__validate_credentials)
-        log_in_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.log_in_button = QPushButton("Login")
+        self.log_in_button.setFixedSize(125, 25)
+        self.log_in_button.setAutoDefault(False)
+        self.log_in_button.clicked.connect(self.__validate_credentials)
+        self.log_in_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        self.error_message = QLabel()
-        self.error_message.setStyleSheet("color: red;")
-        self.error_message.setFixedHeight(25)
+        self.error_message = QTextEdit()
+        self.error_message.setPlainText("")
+        self.error_message.setReadOnly(True)
+        self.error_message.setFrameShape(QTextEdit.Shape.NoFrame)
+        self.error_message.setStyleSheet("background: transparent; color: red;")
+        self.error_message.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.error_message.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+        self.error_message.document().setDocumentMargin(0)
+        self.error_message.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        self.error_message.setHidden(True)
 
         layout = QVBoxLayout()
+        layout.setSizeConstraint(QVBoxLayout.SizeConstraint.SetFixedSize)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(5)
 
         layout.addWidget(description_label, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(form_widget)
         layout.addWidget(self.register_checkbox, alignment=Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(log_in_button, alignment=Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.log_in_button, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.error_message, alignment=Qt.AlignmentFlag.AlignCenter)
+        layout.addStretch()
 
         self.setLayout(layout)
-        self.setMaximumSize(535, 195)
+
+    def __resize_text_box(self):
+        text_height = int(self.error_message.document().size().height()) + 2
+        box_height = self.error_message.height()
+        if text_height != box_height:
+            self.error_message.setFixedHeight(text_height)
+            self.adjustSize()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.__resize_text_box()
 
     def __validate_credentials(self):
+        self.set_interactions_state(False)
+
         username = self.username_line_edit.text()
         password = self.password_line_edit.text()
         domain = self.domain_line_edit.text()
@@ -107,33 +232,108 @@ class LogInDialog(QDialog):
         register = self.register_checkbox.isChecked()
 
         if register:
-            # REGISTER REQUEST
-            pass
+            self.reg_worker = CredentialsRequestWorker(domain, username, password, register_request)
 
-        # LOGIN REQUEST
-        ret = make_request(domain, username, password)
+            register_loop = QEventLoop()
+            self.worker_response = dict()
 
-        if ret[0]:
-            self.username_line_edit.clear()
-            self.password_line_edit.clear()
-            self.domain_line_edit.clear()
+            def catch_response(resp):
+                self.worker_response = resp
+                register_loop.quit()
 
-            # IMPLEMENT INFO RETRIEVAL
+            self.reg_worker.finished.connect(catch_response)
+            self.reg_worker.start()
+            register_loop.exec()
 
-            user_data = {
-                "username": username,
-                "domain": domain,
-                "request_token": "TOKEN",
-                "refresh_token": "REFRESH_TOKEN",
-                "blacklist": ["fifo3"]
-            }
+            self.reg_worker.deleteLater()
+            is_error = self.worker_response.get('is_error')
+            if is_error:
+                self.set_error_message(self.worker_response.get('field'))
+                self.__resize_text_box()
+                self.set_interactions_state(True)
+                return
+            else:
+                self.set_error_message('')
 
-            self.brain.add_user(user_data) # also sets it as the current user
+        self.login_worker = CredentialsRequestWorker(domain, username, password, login_request)
 
-            self.accept()
+        login_loop = QEventLoop()
+        self.worker_response = dict()
 
+        def catch_response(resp):
+            self.worker_response = resp
+            login_loop.quit()
+
+        self.login_worker.finished.connect(catch_response)
+        self.login_worker.start()
+        login_loop.exec()
+
+        self.login_worker.deleteLater()
+        is_error = self.worker_response.get('is_error')
+
+        if is_error:
+            self.set_error_message(self.worker_response.get('field'))
+            self.__resize_text_box()
+            self.set_interactions_state(True)
+            return
+
+        access_token = self.worker_response.get('field').get('access_token', "")
+        refresh_token = self.worker_response.get('field').get('refresh_token', "")
+
+        self.current_user_profile_worker = CurrentUserProfileWorker(domain, access_token)
+
+        current_user_profile_loop = QEventLoop()
+        self.worker_response = dict()
+
+        def catch_response(resp):
+            self.worker_response = resp
+            current_user_profile_loop.quit()
+
+        self.current_user_profile_worker.finished.connect(catch_response)
+        self.current_user_profile_worker.start()
+        current_user_profile_loop.exec()
+
+        self.current_user_profile_worker.deleteLater()
+        is_error = self.worker_response.get('is_error')
+
+        if is_error:
+            self.set_error_message(self.worker_response.get('field'))
+            self.__resize_text_box()
+            self.set_interactions_state(True)
+            return
+
+        db_username = self.worker_response.get('field').get('item').get('username', "-")
+        blacklist = self.worker_response.get('field').get('item').get('preferences', dict()).get('blacklist', [])
+
+        self.username_line_edit.clear()
+        self.password_line_edit.clear()
+        self.domain_line_edit.clear()
+
+        user_data = {
+            "username": db_username,
+            "domain": domain,
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "blacklist": blacklist,
+        }
+        self.brain.add_user(user_data) # also sets it as the current user
+
+        self.set_interactions_state(True)
+        self.accept()
+
+    def set_interactions_state(self, state: bool):
+        self.domain_line_edit.setEnabled(state)
+        self.username_line_edit.setEnabled(state)
+        self.password_line_edit.setEnabled(state)
+        self.log_in_button.setEnabled(state)
+
+    def set_error_message(self, message):
+        self.error_message.setPlainText(message)
+        self.error_message.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        if message == '':
+            self.error_message.setHidden(True)
         else:
-            self.error_message.setText(ret[1])
+            self.error_message.setHidden(False)
 
 class CustomListWidgetItem(QListWidgetItem):
     def __init__(self):
