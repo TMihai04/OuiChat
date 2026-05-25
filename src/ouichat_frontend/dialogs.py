@@ -7,10 +7,6 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QSize
 
 from brain import Brain
-from socket_manager import (
-    execute_request_loop, LoginRequestWorker, RegisterRequestWorker, CurrentUserProfileWorker,
-    ChangeUserDescriptionWorker
-)
 
 MAX_USERNAME_LENGTH = 16
 MAX_PASSWORD_LENGTH = 32
@@ -30,7 +26,6 @@ class LogInDialog(QDialog):
 
         self.reg_worker = None
         self.login_worker = None
-        self.worker_response = None
 
         description_label = QLabel()
         description_label.setText("Insert domain and credentials")
@@ -131,46 +126,38 @@ class LogInDialog(QDialog):
         register = self.register_checkbox.isChecked()
 
         if register:
-            self.reg_worker = RegisterRequestWorker(domain, username, password)
-            self.worker_response = execute_request_loop(self.reg_worker)
-            self.reg_worker.deleteLater()
-
-            is_error = self.worker_response.get('is_error')
-            if is_error:
-                self.set_error_message(self.worker_response.get('field'))
+            success, error_msg = self.brain.register_login_user(domain, username, password, False)
+            if not success:
+                self.set_error_message(error_msg)
                 self.__resize_text_box()
                 self.set_interactions_state(True)
                 return
             else:
                 self.set_error_message('')
 
-        self.login_worker = LoginRequestWorker(domain, username, password)
-        self.worker_response = execute_request_loop(self.login_worker)
-        self.login_worker.deleteLater()
-
-        is_error = self.worker_response.get('is_error')
-        if is_error:
-            self.set_error_message(self.worker_response.get('field'))
+        success, resp_data = self.brain.register_login_user(domain, username, password, True)
+        if not success:
+            self.set_error_message(resp_data)
             self.__resize_text_box()
             self.set_interactions_state(True)
             return
+        else:
+            self.set_error_message('')
 
-        access_token = self.worker_response.get('field').get('access_token', "")
-        refresh_token = self.worker_response.get('field').get('refresh_token', "")
+        access_token = resp_data.get('access_token', "")
+        refresh_token = resp_data.get('refresh_token', "")
 
-        self.current_user_profile_worker = CurrentUserProfileWorker(domain, access_token)
-        self.worker_response = execute_request_loop(self.current_user_profile_worker)
-        self.current_user_profile_worker.deleteLater()
-
-        is_error = self.worker_response.get('is_error')
-        if is_error:
-            self.set_error_message(self.worker_response.get('field'))
+        success, resp_data = self.brain.get_current_user_profile(domain, access_token)
+        if not success:
+            self.set_error_message(resp_data.get('field'))
             self.__resize_text_box()
             self.set_interactions_state(True)
             return
+        else:
+            self.set_error_message('')
 
-        db_username = self.worker_response.get('field').get('item').get('username', "-")
-        blacklist = self.worker_response.get('field').get('item').get('preferences', dict()).get('blacklist', [])
+        db_username = resp_data.get('item').get('username', "-")
+        blacklist = resp_data.get('item').get('preferences', dict()).get('blacklist', [])
 
         self.username_line_edit.clear()
         self.password_line_edit.clear()
@@ -673,19 +660,6 @@ class UserDetailsEditDialog(QDialog):
     def apply(self):
         # PROCESS REQUEST USING BRAIN
         text = self.text_edit.toPlainText()
-
-        current_user_domain = self.brain.get_current_user_domain()
-        current_user_access_token = self.brain.get_current_user_access_token()
-
-        self.description_worker = ChangeUserDescriptionWorker(current_user_domain, current_user_access_token, text)
-        worker_response = execute_request_loop(self.description_worker)
-        self.description_worker.deleteLater()
-
-        is_error = worker_response.get('is_error')
-        if is_error:
-            error_message = "Could not set the description!"
-            # ERROR WINDOW POPUP
-            return
 
         self.brain.set_current_user_description(text)
 

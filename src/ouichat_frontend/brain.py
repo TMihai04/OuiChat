@@ -5,6 +5,11 @@ import time
 from socket_manager import SocketManager
 
 class Brain(QObject):
+    """
+    TO DO:
+        - on websocket update (a user blocked the current user), delete the user entry from the users list
+    """
+
     chats_added = pyqtSignal(list)
     chat_removed = pyqtSignal(dict)
 
@@ -69,6 +74,24 @@ class Brain(QObject):
         self.socket_manager.chat_updated.connect(self.update_chat)
         self.add_new_messages.connect(self.update_timestamps)
 
+    def get_current_user_profile(self, domain: str | None, access_token: str | None):
+        if not domain:
+            req_domain = self.get_current_user_domain()
+        else:
+            req_domain = domain
+
+        if not access_token:
+            req_access_token = self.get_current_user_access_token()
+        else:
+            req_access_token = access_token
+
+        response = self.socket_manager.request_get_current_user_profile(req_domain, req_access_token)
+        return response
+
+    def register_login_user(self, domain: str, username: str, password: str, login: bool):
+        response = self.socket_manager.request_register_login(domain, username, password, login)
+        return response
+
     def get_current_user_refresh_token(self):
         current_user = self.get_current_user()
         if not current_user: return ""
@@ -107,7 +130,15 @@ class Brain(QObject):
     def set_current_user_description(self, description: str):
         current_user_username = self.get_current_user_username()
         current_user_domain = self.get_current_user_domain()
+        current_user_access_token = self.get_current_user_access_token()
 
+        success, resp_data = self.socket_manager.request_change_user_description(current_user_domain, current_user_access_token, description)
+        if not success:
+            # ERROR POPUP
+            return
+
+        # REMOVE UNNEEDED BITS OF THE METHOD ONCE THE WEBSOCKET UPDATES ARE IMPLEMENTED
+        # CHANGE DESCRIPTION ONLY ON WEBSOCKET UPDATE
         user = self.get_user_details(current_user_username, current_user_domain)
         if not user: return
 
@@ -195,26 +226,40 @@ class Brain(QObject):
         return username in usernames
 
     def block_user(self, username: str):
-        self.current_user['blacklist'].append(username)
-
         current_user_username = self.get_current_user_username()
         current_user_domain = self.get_current_user_domain()
+        current_user_access_token = self.get_current_user_access_token()
+
+        success, resp_data = self.socket_manager.request_block_unblock_user(current_user_domain, current_user_access_token, username, True)
+        if not success:
+            # ERROR POPUP
+            return
+
+        # REMOVE UNNEEDED BITS OF THE METHOD ONCE THE WEBSOCKET UPDATES ARE IMPLEMENTED
+        # CHANGE BLACKLIST ONLY ON WEBSOCKET UPDATE
+        self.current_user['blacklist'].append(username)
 
         # SEND REQUEST TO SERVER TO MAKE CHAT READ-ONLY
-
         chat_id = self.p2p_chat_exists(current_user_username, username, current_user_domain)
         if chat_id:
             chat = self.find_chat(chat_id, current_user_domain)
             chat['chat_setting'] = 'ro'
 
     def unblock_user(self, username: str):
-        self.current_user['blacklist'].remove(username)
-
         current_user_username = self.get_current_user_username()
         current_user_domain = self.get_current_user_domain()
+        current_user_access_token = self.get_current_user_access_token()
+
+        success, resp_data = self.socket_manager.request_block_unblock_user(current_user_domain, current_user_access_token, username, False)
+        if not success:
+            # ERROR POPUP
+            return
+
+        # REMOVE UNNEEDED BITS OF THE METHOD ONCE THE WEBSOCKET UPDATES ARE IMPLEMENTED
+        # CHANGE BLACKLIST ONLY ON WEBSOCKET UPDATE
+        self.current_user['blacklist'].remove(username)
 
         # SEND REQUEST TO SERVET TO MAKE CHAT READ-WRITE (if other user is reachable)
-
         chat_id = self.p2p_chat_exists(current_user_username, username, current_user_domain)
         if chat_id and self.user_is_reachable(username):
             chat = self.find_chat(chat_id, current_user_domain)
@@ -438,8 +483,12 @@ class Brain(QObject):
         chats = self.socket_manager.request_chats(user_data['username'], user_data['domain'])
         self.add_chats(chats)
 
-        users = self.socket_manager.request_users(user_data['domain'], user_data['access_token'])
-        self.add_users_to_domain(user_data['domain'], users)
+        success, resp_data = self.socket_manager.request_users(user_data['domain'], user_data['access_token'])
+        if not success:
+            # ERROR POPUP
+            return
+
+        self.add_users_to_domain(user_data['domain'], resp_data)
 
         self.current_user_changed.emit(user_data['username'], user_data['domain'])
 

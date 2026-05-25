@@ -98,8 +98,6 @@ class ChatMessage(QWidget):
     """
     TO DO:
         - implement context menu with requests
-        - IT WORKS TO SEND MESSAGES WITH ONLY FILES BUT IF YOU EDIT THE TEXT OF THAT MESSAGE
-            THE MESSAGE IN THE TEXT DOESN'T SHOW
     """
     def __init__(self, brain: Brain, chat_id: str, domain: str,
                  message_id: str, sender: str, was_edited: bool, is_reply: bool,
@@ -1557,9 +1555,6 @@ class AttachmentContext(QScrollArea):
         return self.staged_files
 
 class MessageWindow(QWidget):
-    """
-    TO DO:
-    """
     def __init__(self, brain: Brain):
         super().__init__()
 

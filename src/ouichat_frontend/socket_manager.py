@@ -1,9 +1,8 @@
-import json
 import time
 import random
 import os
 import shutil
-from typing import Callable, Coroutine, Any
+from typing import Any
 import aiohttp
 import asyncio
 from PyQt6.QtCore import pyqtSignal, QObject, QThread, QEventLoop
@@ -28,16 +27,17 @@ async def handle_error(response: aiohttp.ClientResponse):
         return get_resp_dict(True, error_msg)
     return get_resp_dict(True, 'Something went wrong')
 
-async def register_request(domain: str, username: str, password: str):
+async def login_register_request(domain: str, username: str, password: str, login: bool):
     register_json = {
         "grant_type": "password",
         "username": username,
         "password": password,
     }
+    endpoint = "login" if login else "register"
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.post(url=f"http://{domain}/register", data=register_json) as resp:
+                async with session.post(url=f"http://{domain}/{endpoint}", data=register_json) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -52,53 +52,20 @@ async def register_request(domain: str, username: str, password: str):
 
         return get_resp_dict(False, 'Cannot establish a connection with the server.')
 
-async def login_request(domain: str, username: str, password: str):
-    login_json = {
-        "grant_type": "password",
-        "username": username,
-        "password": password,
-    }
-
-    async with aiohttp.ClientSession() as session:
-        for request_count in range(MAX_REQUESTS):
-            try:
-                async with session.post(url=f"http://{domain}/login", data=login_json) as resp:
-                    try:
-                        resp.raise_for_status()
-                    except aiohttp.ClientResponseError as _:
-                        return await handle_error(resp)
-
-                    resp_dict = await resp.json()
-                    return get_resp_dict(False, resp_dict)
-
-            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
-                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
-                continue
-
-        return get_resp_dict(True, 'Cannot establish a connection with the server.')
-
 class CredentialsRequestWorker(QThread):
     finished = pyqtSignal(dict)
 
-    def __init__(self, domain: str, username: str, password: str, request: Callable[[str, str, str], Coroutine[Any, Any, dict]]):
+    def __init__(self, domain: str, username: str, password: str, login: bool):
         super().__init__()
 
         self.domain = domain
         self.username = username
         self.password = password
-        self.request = request
+        self.login = login
 
     def run(self):
-        resp = asyncio.run(self.request(self.domain, self.username, self.password))
+        resp = asyncio.run(login_register_request(self.domain, self.username, self.password, self.login))
         self.finished.emit(resp)
-
-class RegisterRequestWorker(CredentialsRequestWorker):
-    def __init__(self, domain: str, username: str, password: str):
-        super().__init__(domain, username, password, register_request)
-
-class LoginRequestWorker(CredentialsRequestWorker):
-    def __init__(self, domain: str, username: str, password: str):
-        super().__init__(domain, username, password, login_request)
 
 async def get_current_user_profile_request(domain: str, access_token: str):
     headers = {
@@ -228,12 +195,46 @@ class UsersListRequestWorker(QThread):
         resp = asyncio.run(get_users_list_request(domain=self.domain, access_token=self.access_token))
         self.finished.emit(resp)
 
-def get_file_path(file_id: int):
-    for file_entry in uploaded_files:
-        if file_entry["file_id"] == file_id:
-            return file_entry["file_path"]
+async def block_unblock_user_request(domain: str, access_token: str, username: str, block: bool):
+    headers = {
+        'Authorization': f"Bearer {access_token}",
+    }
+    body = {
+        "who": username,
+    }
+    async with aiohttp.ClientSession() as session:
+        request_type = session.post if block else session.delete
+        for request_count in range(MAX_REQUESTS):
+            try:
+                async with request_type(url=f"http://{domain}/users/preferences/blacklist", headers=headers, json=body) as resp:
+                    try:
+                        resp.raise_for_status()
+                    except aiohttp.ClientResponseError as _:
+                        return await handle_error(resp)
 
-    return None
+                    resp_dict = await resp.json()
+                    return get_resp_dict(False, resp_dict)
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
+                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
+                continue
+
+        return get_resp_dict(True, 'Cannot establish a connection with the server.')
+
+class BlockUnblockUserWorker(QThread):
+    finished = pyqtSignal(dict)
+
+    def __init__(self, domain: str, access_token: str, username: str, block: bool):
+        super().__init__()
+
+        self.domain = domain
+        self.access_token = access_token
+        self.username = username
+        self.block = block
+
+    def run(self):
+        resp = asyncio.run(block_unblock_user_request(self.domain, self.access_token, self.username, self.block))
+        self.finished.emit(resp)
 
 def execute_request_loop(worker: QThread):
     loop = QEventLoop()
@@ -249,6 +250,13 @@ def execute_request_loop(worker: QThread):
     loop.exec()
 
     return worker_response
+
+def get_file_path(file_id: int):
+    for file_entry in uploaded_files:
+        if file_entry["file_id"] == file_id:
+            return file_entry["file_path"]
+
+    return None
 
 def message_args_to_dict(chat_id: str, domain: str, message_id: str, sender: str,
                          was_edited: bool, is_reply: bool, reply_sender: str,
@@ -278,9 +286,11 @@ class SocketManager(QObject):
     def __init__(self):
         super().__init__()
 
-        self.reg_worker = None
+        self.credentials_worker = None
         self.users_list_worker = None
-        self.worker_response = None
+        self.block_unblock_worker = None
+        self.current_user_profile_worker = None
+        self.change_user_description_worker = None
 
     def request_chats(self, username: str, domain: str):
 
@@ -343,33 +353,32 @@ class SocketManager(QObject):
     # TO BE DELETED LATER SINCE IT'S NOT NEEDED TO CREATE MOCK USERS ANYMORE
     def __create_users(self):
         for idx in range(10):
-            self.reg_worker = RegisterRequestWorker("localhost:8000", f"fifo{idx}", "Test.Test1")
-            self.worker_response = execute_request_loop(self.reg_worker)
-            self.reg_worker.deleteLater()
+            self.credentials_worker = CredentialsRequestWorker("localhost:8000", f"fifo{idx}", "Test.Test1", False)
+            worker_response = execute_request_loop(self.credentials_worker)
+            self.credentials_worker.deleteLater()
 
-            is_error = self.worker_response.get('is_error')
+            is_error = worker_response.get('is_error')
             if is_error:
-                print(self.worker_response.get('field'))
-                return False
+                return False, worker_response.get('field')
 
-        return True
+        return True, None
 
     def request_users(self, domain: str, access_token: str):
-        completed = self.__create_users()
-        if not completed:
+        # TO BE DELETED LATER SINCE IT'S NOT NEEDED TO CREATE MOCK USERS ANYMORE
+        success, resp_data  = self.__create_users()
+        if not success:
             print("Could not create all users.")
 
         self.users_list_worker = UsersListRequestWorker(domain, access_token)
-        self.worker_response = execute_request_loop(self.users_list_worker)
+        worker_response = execute_request_loop(self.users_list_worker)
         self.users_list_worker.deleteLater()
 
-        is_error = self.worker_response.get('is_error')
+        is_error = worker_response.get('is_error')
         if is_error:
-            print(self.worker_response.get('field'))
-            return []
+            return False, worker_response.get('field')
 
-        users_list = self.worker_response.get('field').get('items', [])
-        return users_list
+        users_list = worker_response.get('field').get('items', [])
+        return True, users_list
 
     def request_create_p2p_chat(self, username1: str, username2: str, domain: str):
 
@@ -461,3 +470,47 @@ class SocketManager(QObject):
                 shutil.copy2(file_path, save_path)
             except Exception as e:
                 print(f"Download failed: {e}")
+
+    def request_block_unblock_user(self, domain: str, access_token: str, username: str, block: bool):
+        self.block_unblock_worker = BlockUnblockUserWorker(domain, access_token, username, block)
+        worker_response = execute_request_loop(self.block_unblock_worker)
+        self.block_unblock_worker.deleteLater()
+
+        is_error = worker_response.get('is_error')
+        if is_error:
+            return False, worker_response.get('field')
+
+        return True, None
+
+    def request_register_login(self, domain: str, username: str, password: str, login: bool):
+        self.credentials_worker = CredentialsRequestWorker(domain, username, password, login)
+        worker_response = execute_request_loop(self.credentials_worker)
+        self.credentials_worker.deleteLater()
+
+        is_error = worker_response.get('is_error')
+        if is_error:
+            return False, worker_response.get('field')
+
+        return True, worker_response.get('field')
+
+    def request_get_current_user_profile(self, domain: str, access_token: str):
+        self.current_user_profile_worker = CurrentUserProfileWorker(domain, access_token)
+        worker_response = execute_request_loop(self.current_user_profile_worker)
+        self.current_user_profile_worker.deleteLater()
+
+        is_error = worker_response.get('is_error')
+        if is_error:
+            return False, worker_response.get('field')
+
+        return True, worker_response.get('field')
+
+    def request_change_user_description(self, domain: str, access_token: str, text: str):
+        self.change_user_description_worker = ChangeUserDescriptionWorker(domain, access_token, text)
+        worker_response = execute_request_loop(self.change_user_description_worker)
+        self.change_user_description_worker.deleteLater()
+
+        is_error = worker_response.get('is_error')
+        if is_error:
+            return False, worker_response.get('field')
+
+        return True, None
