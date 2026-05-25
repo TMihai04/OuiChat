@@ -279,6 +279,7 @@ class SocketManager(QObject):
     """
     TO DO:
         - implement request/websocket communication
+        - implement token timeout refresh
     """
 
     chat_updated = pyqtSignal(dict) # chat_details
