@@ -2,6 +2,8 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 import time
 
+from PyQt6.QtWidgets import QDialog
+
 from socket_manager import SocketManager
 
 class Brain(QObject):
@@ -13,6 +15,11 @@ class Brain(QObject):
     chats_added = pyqtSignal(list)
     chat_removed = pyqtSignal(dict)
 
+    remove_chats = pyqtSignal(dict)
+    remove_domain = pyqtSignal(str)
+    logout_user = pyqtSignal(str, str)
+
+    select_previous_user = pyqtSignal()
     current_user_changed = pyqtSignal(str, str)
     user_updated = pyqtSignal(str, str)
     chat_selected = pyqtSignal(str, str)
@@ -47,10 +54,12 @@ class Brain(QObject):
 
     MAX_CHAT_BUBBLES = 15
 
-    def __init__(self):
+    def __init__(self, refresh_login_dialog_class: type, error_dialog):
         super().__init__()
 
         self.socket_manager = SocketManager()
+        self.refresh_login_dialog = refresh_login_dialog_class(self)
+        self.error_dialog = error_dialog
 
         self.users_list = []
         self.chats_list = dict() # key: domain | value: list of chats
@@ -74,6 +83,65 @@ class Brain(QObject):
         self.socket_manager.chat_updated.connect(self.update_chat)
         self.add_new_messages.connect(self.update_timestamps)
 
+    def logout_current_user(self):
+        """
+        TO DO:
+            - send state to server after setting user last seen time
+        """
+        current_user_username = self.get_current_user_username()
+        current_user_domain = self.get_current_user_domain()
+        self.set_current_user_last_seen_time_current_chat()
+        self.main_window_comms_requested.emit()
+        self.logout_user.emit(current_user_username, current_user_domain)
+
+        other_logged_users_in_current_domain = []
+        for user in self.users_list:
+            if user['domain'] == current_user_domain:
+                other_logged_users_in_current_domain.append(user['username'])
+
+        if not other_logged_users_in_current_domain:
+            self.remove_domain.emit(current_user_domain)
+            del self.chats_list[current_user_domain]
+            del self.domain_users_list[current_user_domain]
+        else:
+            chats_to_remove = dict()
+            chats_to_remove['domain'] = current_user_domain
+            chats_to_remove['chat_ids'] = []
+            for idx in reversed(range(len(self.chats_list[current_user_domain]))):
+                chat = self.chats_list[current_user_domain][idx]
+                safe_to_remove = True
+                for other_user in other_logged_users_in_current_domain:
+                    if other_user in list(map(lambda chat_user: chat_user['username'], chat['users'])):
+                        safe_to_remove = False
+                        break
+                if safe_to_remove:
+                    chats_to_remove['chat_ids'].append(chat['chat_id'])
+                    del self.chats_list[current_user_domain][idx]
+
+            self.remove_chats.emit(chats_to_remove)
+
+        for idx in range(len(self.users_list)):
+            if self.users_list[idx]['username'] == current_user_username and self.users_list[idx]['domain'] == current_user_domain:
+                del self.users_list[idx]
+                break
+
+        self.select_previous_user.emit()
+
+    def refresh_tokens(self):
+        current_user_domain = self.get_current_user_domain()
+        current_user_refresh_token = self.get_current_user_refresh_token()
+
+        success, resp_data = self.socket_manager.request_refresh_tokens(current_user_domain, current_user_refresh_token)
+        if not success:
+            response = self.refresh_login_dialog.exec()
+            return response == QDialog.DialogCode.Accepted
+
+        resp_data = resp_data.get('field')
+
+        self.set_current_user_access_token(resp_data['access_token'])
+        self.set_current_user_refresh_token(resp_data['refresh_token'])
+        return True
+
     def get_current_user_profile(self, domain: str | None, access_token: str | None):
         if not domain:
             req_domain = self.get_current_user_domain()
@@ -85,12 +153,28 @@ class Brain(QObject):
         else:
             req_access_token = access_token
 
-        response = self.socket_manager.request_get_current_user_profile(req_domain, req_access_token)
-        return response
+        success, resp_data = self.socket_manager.request_get_current_user_profile(req_domain, req_access_token)
+        if not success and resp_data['code'] == 401:
+            refreshed = self.refresh_tokens()
+            if not refreshed: return False, "Could not refresh session"
+            else: return self.get_current_user_profile(req_domain, req_access_token)
+        return success, resp_data.get('field')
 
-    def register_login_user(self, domain: str, username: str, password: str, login: bool):
-        response = self.socket_manager.request_register_login(domain, username, password, login)
-        return response
+    def register_login_user(self, domain: str | None, username: str | None, password: str, login: bool):
+        req_domain = domain if domain else self.get_current_user_domain()
+        req_username = username if username else self.get_current_user_username()
+        success, resp_data = self.socket_manager.request_register_login(req_domain, req_username, password, login)
+        return success, resp_data.get('field')
+
+    def set_current_user_refresh_token(self, refresh_token: str):
+        current_user = self.get_current_user()
+        if not current_user:return
+        current_user['refresh_token'] = refresh_token
+
+    def set_current_user_access_token(self, access_token: str):
+        current_user = self.get_current_user()
+        if not current_user:return
+        current_user['access_token'] = access_token
 
     def get_current_user_refresh_token(self):
         current_user = self.get_current_user()
@@ -134,16 +218,22 @@ class Brain(QObject):
 
         success, resp_data = self.socket_manager.request_change_user_description(current_user_domain, current_user_access_token, description)
         if not success:
-            # ERROR POPUP
-            return
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed: return False, "Could not refresh session"
+                else:
+                    return self.set_current_user_description(description)
+            else:
+                return False, resp_data.get('field')
 
         # REMOVE UNNEEDED BITS OF THE METHOD ONCE THE WEBSOCKET UPDATES ARE IMPLEMENTED
         # CHANGE DESCRIPTION ONLY ON WEBSOCKET UPDATE
         user = self.get_user_details(current_user_username, current_user_domain)
-        if not user: return
+        if not user: return False, "Could not get current user details"
 
         user['profile']['status'] = description
         self.user_updated.emit(current_user_username, current_user_domain)
+        return True, None
 
     def set_current_user_icon_path(self, icon_path: str):
         current_user_username = self.get_current_user_username()
@@ -156,11 +246,22 @@ class Brain(QObject):
         self.user_updated.emit(current_user_username, current_user_domain)
 
     def upload_files(self, file_list: list):
-        files = self.socket_manager.request_upload_files(file_list)
-        return files
+        success, resp_data = self.socket_manager.request_upload_files(file_list)
+        if not success and resp_data['code'] == 401:
+            refreshed = self.refresh_tokens()
+            if not refreshed: return False, "Could not refresh session"
+            else: return self.upload_files(file_list)
+        return success, resp_data.get('field') # MATCH RETURN STATEMENT HERE WITH THE RETURNED DATA FROM socket_manager
 
     def download_files(self, ids: list):
-        self.socket_manager.request_download_files(ids)
+        success, resp_data = self.socket_manager.request_download_files(ids)
+        if not success and resp_data['code'] == 401:
+            refreshed = self.refresh_tokens()
+            if not refreshed: return False, "Could not refresh session"
+            else:
+                return self.download_files(ids)
+
+        return True, None
 
     def add_users_to_chat(self, chat_id: str, domain: str, users: list):
         chat = self.find_chat(chat_id, domain)
@@ -181,11 +282,18 @@ class Brain(QObject):
         current_user_domain = self.get_current_user_domain()
 
         users.append(current_user_username)
-        chat = self.socket_manager.request_create_chatroom(current_user_domain, current_user_username, users)
-        if not chat: return False, "Could NOT create chatroom!"
+        success, resp_data = self.socket_manager.request_create_chatroom(current_user_domain, current_user_username, users)
+        if not success and resp_data['code'] == 401:
+            refreshed = self.refresh_tokens()
+            if not refreshed: return False, "Could not refresh session!"
+            else: return self.create_chatroom(users)
 
-        self.add_chats([chat])
-        return True, chat['chat_id'], chat['domain']
+        resp_data = resp_data.get('field')
+        if not resp_data: return False, "Could NOT create chatroom!"
+
+        self.add_chats([resp_data])
+        # MATCH RETURN VALUES WITH THE VALUES FROM socket_manager
+        return True, (resp_data['chat_id'], resp_data['domain'])
 
     def set_chat_icon_path(self, chat_id: str, domain: str, icon_path: str):
         chat = self.find_chat(chat_id, domain)
@@ -232,8 +340,13 @@ class Brain(QObject):
 
         success, resp_data = self.socket_manager.request_block_unblock_user(current_user_domain, current_user_access_token, username, True)
         if not success:
-            # ERROR POPUP
-            return
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed: return False, "Could not refresh session!"
+                else:
+                    return self.block_user(username)
+            else:
+                return False, resp_data.get('field')
 
         # REMOVE UNNEEDED BITS OF THE METHOD ONCE THE WEBSOCKET UPDATES ARE IMPLEMENTED
         # CHANGE BLACKLIST ONLY ON WEBSOCKET UPDATE
@@ -245,6 +358,8 @@ class Brain(QObject):
             chat = self.find_chat(chat_id, current_user_domain)
             chat['chat_setting'] = 'ro'
 
+        return True, None
+
     def unblock_user(self, username: str):
         current_user_username = self.get_current_user_username()
         current_user_domain = self.get_current_user_domain()
@@ -252,8 +367,13 @@ class Brain(QObject):
 
         success, resp_data = self.socket_manager.request_block_unblock_user(current_user_domain, current_user_access_token, username, False)
         if not success:
-            # ERROR POPUP
-            return
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed: return False, "Could not refresh session!"
+                else:
+                    return self.unblock_user(username)
+            else:
+                return False, resp_data.get('field')
 
         # REMOVE UNNEEDED BITS OF THE METHOD ONCE THE WEBSOCKET UPDATES ARE IMPLEMENTED
         # CHANGE BLACKLIST ONLY ON WEBSOCKET UPDATE
@@ -265,6 +385,8 @@ class Brain(QObject):
             chat = self.find_chat(chat_id, current_user_domain)
             chat['chat_setting'] = 'rw'
 
+        return True, None
+
     def get_domain_users(self, domain: str):
         users = self.domain_users_list.get(domain, None)
         return users
@@ -274,11 +396,17 @@ class Brain(QObject):
         current_user_domain = self.get_current_user_domain()
         if current_user_domain != domain: return False, "User domains do NOT match!"
 
-        chat = self.socket_manager.request_create_p2p_chat(current_user_username, username, domain)
-        if not chat: return False, "Could NOT create chat!"
-        self.add_chats([chat])
+        success, resp_data = self.socket_manager.request_create_p2p_chat(current_user_username, username, domain)
+        if not success and resp_data['code'] == 401:
+            refreshed = self.refresh_tokens()
+            if not refreshed: return False, "Could not refresh session!"
+            else: return self.create_p2p_chat(username, domain)
 
-        return True, chat['chat_id']
+        resp_data = resp_data.get('field')
+        if not resp_data: return False, "Could NOT create chat!"
+        self.add_chats([resp_data])
+
+        return True, resp_data['chat_id']
 
     def get_chat_creator(self, chat_id: str, domain: str):
         chat = self.find_chat(chat_id, domain)
@@ -377,6 +505,8 @@ class Brain(QObject):
         if current_user_domain != domain: return
 
         chat_users = self.get_chat_users(chat_id, domain)
+        if chat_users is None: return
+
         for user in chat_users:
             if user['username'] == current_user_username:
                 user['last_seen_time'] = time.time()
@@ -410,7 +540,12 @@ class Brain(QObject):
             self.chat_updated.emit(chat_details['chat_id'], chat_details['domain'])
 
     def load_messages(self, chat_id: str, domain: str, oldest_message_id: str = None, message_nr: int = 50):
-        return self.socket_manager.request_messages(chat_id, domain, oldest_message_id, message_nr)
+        success, resp_data = self.socket_manager.request_messages(chat_id, domain, oldest_message_id, message_nr)
+        if not success and resp_data['code'] == 401:
+            refreshed = self.refresh_tokens()
+            if not refreshed: return False, "Could not refresh session"
+            else: return self.load_messages(chat_id, domain, oldest_message_id, message_nr)
+        return success, resp_data.get('field')
 
     def set_edit(self, is_edit: bool, message_id: str = None, sender: str = None, sender_icon_path: str = None, message_snip: str = None):
         if self.is_edit and not is_edit:
@@ -480,17 +615,33 @@ class Brain(QObject):
         self.users_list.append(user_data)
         self.current_user = user_data
 
-        chats = self.socket_manager.request_chats(user_data['username'], user_data['domain'])
-        self.add_chats(chats)
-
-        success, resp_data = self.socket_manager.request_users(user_data['domain'], user_data['access_token'])
+        success, resp_data1 = self.socket_manager.request_chats(user_data['username'], user_data['domain'])
         if not success:
-            # ERROR POPUP
-            return
+            if resp_data1['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed: return False, "Could not refresh session!"
+                else:
+                    return self.add_user(user_data)
+            else:
+                return False, resp_data1.get('field')
 
-        self.add_users_to_domain(user_data['domain'], resp_data)
+        success, resp_data2 = self.socket_manager.request_users(user_data['domain'], user_data['access_token'])
+        if not success:
+            if resp_data2['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed: return False, "Could not refresh session!"
+                else:
+                    return self.add_user(user_data)
+            else:
+                return False, resp_data2.get('field')
 
+        resp_data1 = resp_data1.get('field')
+        resp_data2 = resp_data2.get('field')
+
+        self.add_chats(resp_data1)
+        self.add_users_to_domain(user_data['domain'], resp_data2)
         self.current_user_changed.emit(user_data['username'], user_data['domain'])
+        return True, None
 
     def remove_user(self, user_data: dict):
         self.users_list.remove(user_data)

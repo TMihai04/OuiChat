@@ -3,13 +3,13 @@ from PyQt6.QtWidgets import (
 )
 
 from SettingsScreen.settings_screen import SettingsScreen
-from dialogs import LogInDialog
+from dialogs import LogInDialog, RefreshLoginDialog, ErrorDialog
 from MainScreen.main_screen import MainScreen
 from UserSettingsScreen.user_settings_screen import UserSettingsScreen
 from brain import Brain
 
 class MainWindow(QMainWindow):
-    def __init__(self, brain: Brain, login_dialog):
+    def __init__(self, app_ref: QApplication, brain: Brain, login_dialog):
         super().__init__()
 
         self.brain = brain
@@ -18,7 +18,7 @@ class MainWindow(QMainWindow):
 
         self.main_layout = QStackedLayout() # ADD ALL THE OTHER TABS HERE (SETTINGS, ETC.)
 
-        main_screen_widget = MainScreen(brain, login_dialog)
+        main_screen_widget = MainScreen(app_ref, brain, login_dialog)
         self.brain.main_window_settings_requested.connect(self.go_to_settings)
 
         settings_screen_widget = SettingsScreen(brain)
@@ -47,12 +47,13 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication([])
-    app_brain = Brain()
+    error_dialog = ErrorDialog()
+    app_brain = Brain(RefreshLoginDialog, error_dialog)
     login = LogInDialog(app_brain)
 
     if login.exec() == QDialog.DialogCode.Accepted:
-        main_window = MainWindow(app_brain, login)
+        main_window = MainWindow(app, app_brain, login)
         main_window.show()
         app.exec()
     else:
-        pass
+        print("aici?")

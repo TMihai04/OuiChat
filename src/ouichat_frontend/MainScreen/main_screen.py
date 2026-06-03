@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (
-    QWidget, QHBoxLayout
+    QWidget, QHBoxLayout, QApplication
 )
 
 from MainScreen.chats_and_users import ChatsAndUsersPanel
@@ -8,12 +8,12 @@ from dialogs import AddUsersDialog, LogInDialog
 from brain import Brain
 
 class MainScreen(QWidget):
-    def __init__(self, brain: Brain, login_dialog: LogInDialog):
+    def __init__(self, app: QApplication, brain: Brain, login_dialog: LogInDialog):
         super().__init__()
 
         add_users_dialog = AddUsersDialog(brain)
 
-        left_panel = ChatsAndUsersPanel(brain, login_dialog, add_users_dialog)
+        left_panel = ChatsAndUsersPanel(app, brain, login_dialog, add_users_dialog)
 
         right_panel = ChatEnvironment(brain, add_users_dialog)
 
