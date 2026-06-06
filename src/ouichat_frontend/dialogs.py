@@ -664,8 +664,8 @@ class RemoveUsersDialog(UsersDialog):
         if not ret_list: return False
 
         current_user_username = self.brain.get_current_user_username()
-        chat_creator = self.brain.get_chat_creator(self.chat_id, self.domain)
-        show_admins = current_user_username == chat_creator
+        chat_creators = self.brain.get_chat_creators(self.chat_id, self.domain)
+        show_admins = current_user_username in chat_creators
         users_list = [user['username'] for user in ret_list]
 
         for username in users_list:

@@ -460,7 +460,7 @@ class ChatList(QWidget):
         user_is_admin = self.brain.user_is_admin(chat_id, chat_domain, current_user_username)
 
         other_user_username = None
-        if chat_type == "p2p":
+        if chat_type == "direct":
             chat_usernames = self.brain.get_chat_user_usernames(chat_id, chat_domain)
             other_user_username = chat_usernames[0] if chat_usernames[0] != current_user_username else chat_usernames[1]
 
@@ -473,7 +473,7 @@ class ChatList(QWidget):
 
         mark_read_action = menu.addAction("Mark as Read")
 
-        if chat_type == "p2p":
+        if chat_type == "direct":
             other_user_is_blocked = self.brain.user_is_blocked(other_user_username)
             if not other_user_is_blocked:
                 menu.addSeparator()

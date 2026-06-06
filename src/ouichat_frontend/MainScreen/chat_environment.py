@@ -494,10 +494,10 @@ class ChatMembersList(QWidget):
         selected_user_username = item_data['username']
         selected_user_is_admin = item_data['is_admin']
 
-        chat_creator = self.brain.get_chat_creator(self.chat_id, self.domain)
-        if selected_user_is_admin and current_user_username != chat_creator: return
+        chat_creators = self.brain.get_chat_creators(self.chat_id, self.domain)
+        if selected_user_is_admin and current_user_username not in chat_creators: return
         if selected_user_username == current_user_username: return
-        if chat_creator == selected_user_username: return
+        if selected_user_username in chat_creators: return
 
         make_admin = object()
         remove_admin = object()
@@ -639,7 +639,7 @@ class ChatDetails(QScrollArea):
         self.chat_name.setText(chat_name)
         self.chat_name.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
 
-        if chat_type == "chatroom":
+        if chat_type == "group":
 
             self.edit_name_button = QPushButton()
             self.edit_name_button.setIcon(QIcon("./Icons/edit_icon.png"))
@@ -676,7 +676,7 @@ class ChatDetails(QScrollArea):
         chat_description_layout.addWidget(chat_description_label, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         chat_description_layout.addWidget(self.chat_description_text, alignment=Qt.AlignmentFlag.AlignTop)
 
-        if chat_type == "chatroom":
+        if chat_type == "group":
             self.change_chat_description_button = QPushButton()
             self.change_chat_description_button.setIcon(QIcon("./Icons/edit_icon.png"))
             self.change_chat_description_button.setFixedSize(20, 20)
@@ -696,7 +696,7 @@ class ChatDetails(QScrollArea):
         self.container_layout.addWidget(chat_name_container, alignment=Qt.AlignmentFlag.AlignCenter)
         self.container_layout.addWidget(chat_description)
 
-        if chat_type == 'chatroom':
+        if chat_type == 'group':
             self.chat_members_list = ChatMembersList(brain, chat_id, domain)
 
             add_members_button = QPushButton()
@@ -725,14 +725,13 @@ class ChatDetails(QScrollArea):
             self.container_layout.addWidget(self.chat_members_list)
             self.container_layout.addWidget(self.button_container)
 
-            self.brain.current_user_changed.connect(self.update_description)
-
         self.container_layout.addStretch()
 
         current_user_username = self.brain.get_current_user_username()
         current_user_domain = self.brain.get_current_user_domain()
         self.update_description(current_user_username, current_user_domain)
         self.brain.chat_updated.connect(self.handle_chat_description_change)
+        self.brain.current_user_changed.connect(self.update_description)
 
         self.setWidget(self.container)
         self.setWidgetResizable(True)
@@ -839,7 +838,7 @@ class ChatDetails(QScrollArea):
 
     def update_user(self, username: str, domain: str):
         chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
-        if chat_type == 'p2p':
+        if chat_type == 'direct':
             self.update_labels()
         else:
             self.chat_members_list.update_user(username, domain)
@@ -859,7 +858,7 @@ class ChatDetails(QScrollArea):
 
     def update_description(self, username: str, domain: str):
         chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
-        if chat_type == 'p2p':
+        if chat_type == 'direct':
             # no member management buttons
             if self.domain == domain:
                 self.update_labels()
@@ -953,7 +952,7 @@ class Chat(QWidget):
 
     def __handle_current_user_change(self, _: str, domain: str):
         chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
-        if domain == self.domain and chat_type == 'p2p':
+        if domain == self.domain and chat_type == 'direct':
             self.__reload_chat_details()
 
     def add_messages(self, messages: list):
@@ -993,7 +992,7 @@ class ChatBubble(QWidget):
 
     def update_user(self, username: str, domain: str):
         chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
-        if chat_type == 'p2p':
+        if chat_type == 'direct':
             self.chat.update_user(username, domain)
         self.chat_details_widget.update_user(username, domain)
 
@@ -1135,7 +1134,6 @@ class UsersList(QListWidget):
                 chat_id = resp_data
             else:
                 return
-
         self.brain.select_chat.emit(chat_id, domain)
 
     def handle_user_change(self, username: str, domain: str):

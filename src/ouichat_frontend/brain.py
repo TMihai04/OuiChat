@@ -6,6 +6,24 @@ from PyQt6.QtWidgets import QDialog
 
 from socket_manager import SocketManager
 
+def get_chat_dict_from_chat_details(chat_id: str, domain: str, chat_details: dict):
+    return {
+        "chat_type": chat_details.get('type'),
+        "chat_setting": "rw",
+        "domain": domain,
+        "chat_id": chat_id,
+        "display_name": chat_details.get('profile').get('name'),
+        "description": chat_details.get('profile').get('description'),
+        "icon_path": chat_details.get('profile').get('picture_id'),
+        "creators": chat_details.get('preferences').get('created_by'),
+        "last_message_timestamp": 0,
+        "users": [{
+            "username": participant.get('username'),
+            "is_admin": participant.get('is_admin'),
+            "last_seen_time": 0
+        } for participant in chat_details.get('preferences').get('participants')],
+    }
+
 class Brain(QObject):
     """
     TO DO:
@@ -280,20 +298,50 @@ class Brain(QObject):
     def create_chatroom(self, users: list):
         current_user_username = self.get_current_user_username()
         current_user_domain = self.get_current_user_domain()
+        current_user_access_token = self.get_current_user_access_token()
 
-        users.append(current_user_username)
-        success, resp_data = self.socket_manager.request_create_chatroom(current_user_domain, current_user_username, users)
-        if not success and resp_data['code'] == 401:
-            refreshed = self.refresh_tokens()
-            if not refreshed: return False, "Could not refresh session!"
-            else: return self.create_chatroom(users)
+        users_dict = dict()
+        for username in users:
+            users_dict[username] = False
+        users_dict[current_user_username] = True
+
+        name = f'{current_user_username}s Chatroom'
+        description = f'{current_user_username}s Chatroom'
+        icon_id = "./Icons/chat_room_icon.png"
+
+        success, resp_data = self.socket_manager.request_create_chat(
+            current_user_domain, current_user_access_token, is_group_chat = True,
+            name = name, description = description, icon_id = icon_id, participants = users_dict
+        )
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed: return False, "Could not refresh session!"
+                else: return self.create_chatroom(users)
+            else:
+                return False, "Could NOT create chatroom!"
 
         resp_data = resp_data.get('field')
-        if not resp_data: return False, "Could NOT create chatroom!"
+        chat_id = resp_data.get('item').get('conversation_id')
 
-        self.add_chats([resp_data])
-        # MATCH RETURN VALUES WITH THE VALUES FROM socket_manager
-        return True, (resp_data['chat_id'], resp_data['domain'])
+        success, resp_data = self.socket_manager.request_get_chat_details(
+            current_user_domain, current_user_access_token, chat_id
+        )
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed: return False, "Could not refresh session!"
+                else: return self.create_chatroom(users)
+            else:
+                return False, "Could NOT fetch chat details!"
+
+        resp_data = resp_data.get('field')
+        chat_details = resp_data.get('item')
+
+        chat_dict = get_chat_dict_from_chat_details(chat_id, current_user_domain, chat_details)
+
+        self.add_chats([chat_dict])
+        return True, (chat_id, current_user_domain)
 
     def set_chat_icon_path(self, chat_id: str, domain: str, icon_path: str):
         chat = self.find_chat(chat_id, domain)
@@ -394,24 +442,53 @@ class Brain(QObject):
     def create_p2p_chat(self, username: str, domain: str):
         current_user_username = self.get_current_user_username()
         current_user_domain = self.get_current_user_domain()
+        current_user_access_token = self.get_current_user_access_token()
         if current_user_domain != domain: return False, "User domains do NOT match!"
 
-        success, resp_data = self.socket_manager.request_create_p2p_chat(current_user_username, username, domain)
-        if not success and resp_data['code'] == 401:
-            refreshed = self.refresh_tokens()
-            if not refreshed: return False, "Could not refresh session!"
-            else: return self.create_p2p_chat(username, domain)
+        users = dict()
+        users[current_user_username] = True
+        users[username] = True
+
+        success, resp_data = self.socket_manager.request_create_chat(
+            current_user_domain, current_user_access_token, is_group_chat = False,
+            name = "dummy", description = "dummy", icon_id = "dummy", participants = users
+        )
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed: return False, "Could not refresh session!"
+                else: return self.create_p2p_chat(username, domain)
+            else:
+                return False, "Could NOT create chat!"
 
         resp_data = resp_data.get('field')
-        if not resp_data: return False, "Could NOT create chat!"
-        self.add_chats([resp_data])
+        chat_id = resp_data.get('item').get('conversation_id')
 
-        return True, resp_data['chat_id']
+        success, resp_data = self.socket_manager.request_get_chat_details(
+            current_user_domain, current_user_access_token, chat_id
+        )
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed:
+                    return False, "Could not refresh session!"
+                else:
+                    return self.create_p2p_chat(username, domain)
+            else:
+                return False, "Could NOT fetch chat details!"
 
-    def get_chat_creator(self, chat_id: str, domain: str):
+        resp_data = resp_data.get('field')
+        chat_details = resp_data.get('item')
+
+        chat_dict = get_chat_dict_from_chat_details(chat_id, current_user_domain, chat_details)
+
+        self.add_chats([chat_dict])
+        return True, chat_id
+
+    def get_chat_creators(self, chat_id: str, domain: str):
         chat = self.find_chat(chat_id, domain)
         if not chat: return None
-        return chat['creator']
+        return chat['creators']
 
     def change_admin_status(self, chat_id: str, domain: str, username: str, is_admin: bool):
         chat = self.find_chat(chat_id, domain)
@@ -708,7 +785,7 @@ class Brain(QObject):
         chat = self.find_chat(chat_id, domain)
         if not chat: return None
 
-        if chat['chat_type'] == "chatroom":
+        if chat['chat_type'] == "group":
             return chat['display_name']
         else:
             current_username = self.get_current_user_username()
@@ -720,7 +797,7 @@ class Brain(QObject):
         chat = self.find_chat(chat_id, domain)
         if not chat: return None
 
-        if chat['chat_type'] == "chatroom":
+        if chat['chat_type'] == "group":
             return chat['description']
         else:
             current_username = self.get_current_user_username()
@@ -733,7 +810,7 @@ class Brain(QObject):
         chat = self.find_chat(chat_id, domain)
         if not chat: return None
 
-        if chat['chat_type'] == "chatroom":
+        if chat['chat_type'] == "group":
             return chat['icon_path']
         else:
             current_username = self.get_current_user_username()
@@ -789,7 +866,7 @@ class Brain(QObject):
         if not chats: return None
 
         for chat in chats:
-            if chat['chat_type'] != "p2p": continue
+            if chat['chat_type'] != "direct": continue
             users = [user['username'] for user in chat['users']]
             if username1 in users and username2 in users:
                 return chat['chat_id']
