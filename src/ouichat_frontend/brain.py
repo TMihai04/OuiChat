@@ -6,28 +6,12 @@ from PyQt6.QtWidgets import QDialog
 
 from socket_manager import SocketManager
 
-def get_chat_dict_from_chat_details(chat_id: str, domain: str, chat_details: dict):
-    return {
-        "chat_type": chat_details.get('type'),
-        "chat_setting": "rw",
-        "domain": domain,
-        "chat_id": chat_id,
-        "display_name": chat_details.get('profile').get('name'),
-        "description": chat_details.get('profile').get('description'),
-        "icon_path": chat_details.get('profile').get('picture_id'),
-        "creators": chat_details.get('preferences').get('created_by'),
-        "last_message_timestamp": 0,
-        "users": [{
-            "username": participant.get('username'),
-            "is_admin": participant.get('is_admin'),
-            "last_seen_time": 0
-        } for participant in chat_details.get('preferences').get('participants')],
-    }
-
 class Brain(QObject):
     """
     TO DO:
         - on websocket update (a user blocked the current user), delete the user entry from the users list
+        - I need both the reachable users (for block system) list and
+        all users list (for display of users that have me blocked, but we're still in common group chats)
     """
 
     chats_added = pyqtSignal(list)
@@ -82,6 +66,7 @@ class Brain(QObject):
         self.users_list = []
         self.chats_list = dict() # key: domain | value: list of chats
         self.domain_users_list = dict() # key: domain | value: list of users
+        self.reachable_users_list = []
 
         self.current_user = None
         self.current_chat = None
@@ -295,6 +280,33 @@ class Brain(QObject):
         self.added_members_to_chat.emit(chat_id, domain, users)
         return True, None
 
+    def get_chat_dict_from_chat_details(self, domain: str, chat_details: dict):
+        chat_type = chat_details.get('type')
+        chat_setting = 'rw'
+        if chat_type == 'direct':
+            blacklist = self.get_current_user_blacklist()
+            for user in chat_details.get('preferences').get('participants'):
+                if user.get('username') in blacklist:
+                    chat_setting = 'ro'
+                    break
+
+        return {
+            "chat_type": chat_details.get('type'),
+            "chat_setting": chat_setting,
+            "domain": domain,
+            "chat_id": chat_details.get('conversation_id'),
+            "display_name": chat_details.get('profile').get('name'),
+            "description": chat_details.get('profile').get('description'),
+            "icon_path": chat_details.get('profile').get('picture_id'),
+            "creators": chat_details.get('preferences').get('created_by'),
+            "last_message_timestamp": 0,
+            "users": [{
+                "username": participant.get('username'),
+                "is_admin": participant.get('is_admin'),
+                "last_seen_time": 0
+            } for participant in chat_details.get('preferences').get('participants')],
+        }
+
     def create_chatroom(self, users: list):
         current_user_username = self.get_current_user_username()
         current_user_domain = self.get_current_user_domain()
@@ -338,7 +350,7 @@ class Brain(QObject):
         resp_data = resp_data.get('field')
         chat_details = resp_data.get('item')
 
-        chat_dict = get_chat_dict_from_chat_details(chat_id, current_user_domain, chat_details)
+        chat_dict = self.get_chat_dict_from_chat_details(current_user_domain, chat_details)
 
         self.add_chats([chat_dict])
         return True, (chat_id, current_user_domain)
@@ -374,12 +386,7 @@ class Brain(QObject):
         return username in self.current_user['blacklist']
 
     def user_is_reachable(self, username: str):
-        current_user_domain = self.get_current_user_domain()
-        users = self.domain_users_list.get(current_user_domain, None)
-        if users is None: return False
-
-        usernames = [user['username'] for user in users]
-        return username in usernames
+        return username in self.reachable_users_list
 
     def block_user(self, username: str):
         current_user_username = self.get_current_user_username()
@@ -400,7 +407,6 @@ class Brain(QObject):
         # CHANGE BLACKLIST ONLY ON WEBSOCKET UPDATE
         self.current_user['blacklist'].append(username)
 
-        # SEND REQUEST TO SERVER TO MAKE CHAT READ-ONLY
         chat_id = self.p2p_chat_exists(current_user_username, username, current_user_domain)
         if chat_id:
             chat = self.find_chat(chat_id, current_user_domain)
@@ -480,7 +486,7 @@ class Brain(QObject):
         resp_data = resp_data.get('field')
         chat_details = resp_data.get('item')
 
-        chat_dict = get_chat_dict_from_chat_details(chat_id, current_user_domain, chat_details)
+        chat_dict = self.get_chat_dict_from_chat_details(current_user_domain, chat_details)
 
         self.add_chats([chat_dict])
         return True, chat_id
@@ -666,11 +672,33 @@ class Brain(QObject):
     def get_current_user(self):
         return self.current_user
 
+    def set_current_user_reachable_users(self, users: list):
+        self.reachable_users_list = list(map(lambda user: user['username'], users))
+
     def set_current_user(self, username: str, domain: str):
         user = self.find_user(username, domain)
         if user:
+            success, resp_data = self.socket_manager.request_users(user['domain'], user['access_token'])
+            if not success:
+                if resp_data['code'] == 401:
+                    refreshed = self.refresh_tokens()
+                    if not refreshed:
+                        return False, "Could not refresh session!"
+                    else:
+                        return self.set_current_user(username, domain)
+                else:
+                    return False, "Could NOT fetch users!"
+
+            resp_data = resp_data.get('field')
+
             self.current_user = user
+            self.set_current_user_reachable_users(resp_data)
+
             self.current_user_changed.emit(user['username'], user['domain'])
+
+            return True, None
+
+        return False, "Could not find user!"
 
     def get_current_user_username(self):
         return self.current_user["username"]
@@ -692,7 +720,7 @@ class Brain(QObject):
         self.users_list.append(user_data)
         self.current_user = user_data
 
-        success, resp_data1 = self.socket_manager.request_chats(user_data['username'], user_data['domain'])
+        success, resp_data1 = self.socket_manager.request_chats(user_data['domain'], user_data['access_token'])
         if not success:
             if resp_data1['code'] == 401:
                 refreshed = self.refresh_tokens()
@@ -700,7 +728,7 @@ class Brain(QObject):
                 else:
                     return self.add_user(user_data)
             else:
-                return False, resp_data1.get('field')
+                return False, "Could NOT fetch chats!"
 
         success, resp_data2 = self.socket_manager.request_users(user_data['domain'], user_data['access_token'])
         if not success:
@@ -710,13 +738,16 @@ class Brain(QObject):
                 else:
                     return self.add_user(user_data)
             else:
-                return False, resp_data2.get('field')
+                return False, "Could NOT fetch users!"
 
-        resp_data1 = resp_data1.get('field')
+        resp_data1 = resp_data1.get('field').get('items')
         resp_data2 = resp_data2.get('field')
 
-        self.add_chats(resp_data1)
+        self.add_chats(list(map(lambda chat_details: self.get_chat_dict_from_chat_details(user_data['domain'], chat_details), resp_data1)))
         self.add_users_to_domain(user_data['domain'], resp_data2)
+
+        self.set_current_user_reachable_users(resp_data2)
+
         self.current_user_changed.emit(user_data['username'], user_data['domain'])
         return True, None
 

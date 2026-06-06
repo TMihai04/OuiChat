@@ -55,5 +55,3 @@ if __name__ == "__main__":
         main_window = MainWindow(app, app_brain, login)
         main_window.show()
         app.exec()
-    else:
-        print("aici?")

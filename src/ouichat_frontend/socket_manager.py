@@ -9,7 +9,7 @@ from PyQt6.QtCore import pyqtSignal, QObject, QThread, QEventLoop
 
 UPLOAD_DIR_PATH = "./Uploads/"
 
-MAX_REQUESTS = 5
+MAX_REQUESTS = 2 # previously 5
 REQUEST_TIMEOUT = 2
 
 uploaded_files = []
@@ -51,7 +51,7 @@ async def login_register_request(domain: str, username: str, password: str, logi
                 await asyncio.sleep(REQUEST_TIMEOUT * request_count)
                 continue
 
-        return get_resp_dict(False, 408, 'Cannot establish a connection with the server.')
+        return get_resp_dict(True, 408, 'Cannot establish a connection with the server.')
 
 class CredentialsRequestWorker(QThread):
     finished = pyqtSignal(dict)
@@ -361,6 +361,40 @@ class GetChatDetailsWorker(QThread):
         resp = asyncio.run(get_chat_details_request(domain=self.domain, access_token=self.access_token, chat_id=self.chat_id))
         self.finished.emit(resp)
 
+async def get_chats_request(domain: str, access_token: str):
+    headers = {
+        'Authorization': f"Bearer {access_token}"
+    }
+    async with aiohttp.ClientSession() as session:
+        for request_count in range(MAX_REQUESTS):
+            try:
+                async with session.get(url=f"http://{domain}/chats/list", headers=headers) as resp:
+                    try:
+                        resp.raise_for_status()
+                    except aiohttp.ClientResponseError as _:
+                        return await handle_error(resp)
+
+                    resp_dict = await resp.json()
+                    return get_resp_dict(False, resp.status, resp_dict)
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
+                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
+                continue
+
+        return get_resp_dict(True, 408, 'Cannot establish a connection with the server.')
+
+class GetChatsWorker(QThread):
+    finished = pyqtSignal(dict)
+
+    def __init__(self, domain: str, access_token: str):
+        super().__init__()
+        self.domain = domain
+        self.access_token = access_token
+
+    def run(self):
+        resp = asyncio.run(get_chats_request(domain=self.domain, access_token=self.access_token))
+        self.finished.emit(resp)
+
 def execute_request_loop(worker: QThread):
     loop = QEventLoop()
     worker_response = dict()
@@ -419,41 +453,15 @@ class SocketManager(QObject):
         self.refresh_tokens_worker = None
         self.create_chat_worker = None
         self.get_chat_details_worker = None
+        self.get_chats_worker = None
 
-    def request_chats(self, username: str, domain: str):
+    def request_chats(self, domain: str, access_token: str):
+        self.get_chats_worker = GetChatsWorker(domain, access_token)
+        worker_response = execute_request_loop(self.get_chats_worker)
+        self.get_chats_worker.deleteLater()
 
-        chats = []
-        for idx in reversed(range(20)):  # adding 20 chat rooms to the list
-            chat_data = {
-                "chat_type": "group",  # {"group", "direct"}
-                "chat_setting": "rw",  # {"rw", "ro"}
-                "domain": domain,
-                "chat_id": str(idx),
-                "display_name": f"chatroom {str(idx)}",
-                "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-                "icon_path": "./Icons/chat_room_icon.png",
-                "creator": "fifo" if idx % 2 == 1 else "fifo2",
-                "last_message_timestamp": time.time(),
-                "users": [{"username": "fifo",
-                           "is_admin": True,
-                           "last_seen_time": time.time()}] if idx < 5 else
-                [{"username": "fifo",
-                  "is_admin": True,
-                  "last_seen_time": time.time()},
-                 {"username": "fifo2",
-                  "is_admin": False,
-                  "last_seen_time": time.time() - 2},
-                 {"username": "fifo3",
-                  "is_admin": False,
-                  "last_seen_time": time.time()}] if idx < 10 else
-                [{"username": "fifo2",
-                  "is_admin": True,
-                  "last_seen_time": time.time()}]
-            }
-            chats.append(chat_data)
-
-        # return False, error_dict on error
-        return True, {"field": chats}
+        is_error = worker_response.get('is_error')
+        return not is_error, worker_response
 
     def request_refresh_tokens(self, domain: str, refresh_tokens):
         self.refresh_tokens_worker = RefreshTokensWorker(domain, refresh_tokens)
@@ -517,51 +525,6 @@ class SocketManager(QObject):
 
         users_list = worker_response.get('field').get('items', [])
         return True, {"field": users_list}
-
-    # def request_create_p2p_chat(self, username1: str, username2: str, domain: str):
-    #
-    #     chat_data = {
-    #         "chat_type": "p2p",
-    #         "chat_setting": "rw",
-    #         "domain": domain,
-    #         "chat_id": str(int(random.random() * 10000)),
-    #         "display_name": None,
-    #         "description": None,
-    #         "icon_path": None,
-    #         "creator": None,
-    #         "last_message_timestamp": 0,
-    #         "users":
-    #             [{"username": username1,
-    #               "is_admin": False,
-    #               "last_seen_time": 0},
-    #              {"username": username2,
-    #               "is_admin": False,
-    #               "last_seen_time":0}]
-    #     }
-    #
-    #     # returns False, error_dict if error
-    #     return True, {"field": chat_data}
-    #
-    # def request_create_chatroom(self, domain: str, creator_username: str, users: list):
-    #     chat_data = {
-    #         "chat_type": "group",
-    #         "chat_setting": "rw",
-    #         "domain": domain,
-    #         "chat_id": str(int(random.random() * 10000)),
-    #         "display_name": f"{creator_username}s chatroom",
-    #         "description": "",
-    #         "icon_path": "./Icons/chat_room_icon.png",
-    #         "creator": creator_username,
-    #         "last_message_timestamp": 0,
-    #         "users":[{
-    #             "username": user,
-    #             "is_admin": user == creator_username,
-    #             "last_seen_time": 0
-    #         } for user in users]
-    #     }
-    #
-    #     # return False, error_dict if request fails
-    #     return True, {"field": chat_data}
 
     def request_create_chat(self, domain: str, access_token: str, is_group_chat: bool, name: str,
                             description: str, icon_id: str, participants: dict):

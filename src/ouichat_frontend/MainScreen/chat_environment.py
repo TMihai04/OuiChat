@@ -1147,7 +1147,7 @@ class UsersList(QListWidget):
             if item_data['username'] == username and item_data['domain'] == domain:
                 item.setHidden(True)
             elif item_data['domain'] == domain:
-                item.setHidden(False)
+                item.setHidden(not self.brain.user_is_reachable(item_data['username']))
             else:
                 item.setHidden(True)
 

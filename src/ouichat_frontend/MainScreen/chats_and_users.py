@@ -115,7 +115,13 @@ class LeftPanelInteractions(QWidget):
         if row != num_entries - 1:
             if row == self.previous_user_row: return
             item_data =  self.users_dropdown.itemData(row)
-            self.brain.set_current_user(item_data['username'], item_data['domain'])
+            success, error_msg = self.brain.set_current_user(item_data['username'], item_data['domain'])
+            if not success:
+                error_dialog = ErrorDialog()
+                error_dialog.set_error_message(error_msg)
+                error_dialog.exec()
+                return
+
             self.previous_user_row = row
 
         else:
