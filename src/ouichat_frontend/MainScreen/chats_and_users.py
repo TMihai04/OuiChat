@@ -1,32 +1,30 @@
 from PyQt6.QtWidgets import (
     QDialog, QPushButton, QVBoxLayout, QLineEdit,
-    QWidget, QHBoxLayout, QListWidget, QListWidgetItem, QMenu, QComboBox
+    QWidget, QHBoxLayout, QListWidget, QListWidgetItem, QMenu, QComboBox, QApplication
 )
 
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QIcon, QStandardItemModel, QPixmap, QPainter, QMouseEvent
 
-from ouichat_frontend.dialogs import LogInDialog, AddUsersDialog
-from ouichat_frontend.brain import Brain
+from dialogs import LogInDialog, AddUsersDialog, ErrorDialog
+from brain import Brain
 
 MAX_USERS = 3
 
 LEFT_PANEL_WIDTH = 270
 
 class LeftPanelInteractions(QWidget):
-    """
-    TO DO:
-        - IMPLEMENT USER LOGOUT OPTION IN THE USER SETTINGS
-        - handle case where all users logged out (and by default handle the case of the first user to login)
-            HINT:   - maybe smth to do with checking how many users are currently logged in
-    """
     user_changed = pyqtSignal(dict)
 
-    def __init__(self, brain: Brain, login_dialog):
+    def __init__(self, app: QApplication, brain: Brain, login_dialog: LogInDialog):
         super().__init__()
+
+        self.app = app
 
         self.brain = brain
         self.brain.user_updated.connect(self.handle_user_updated)
+        self.brain.logout_user.connect(self.logout_user)
+        self.brain.select_previous_user.connect(self.select_previous_user)
 
         self.login_dialog = login_dialog
         self.previous_user_row = 0
@@ -75,6 +73,24 @@ class LeftPanelInteractions(QWidget):
 
         self.setLayout(layout)
 
+    def select_previous_user(self):
+        target_row = self.previous_user_row
+        self.users_dropdown.blockSignals(True)
+        self.users_dropdown.setCurrentIndex(target_row)
+        self.users_dropdown.blockSignals(False)
+        self.previous_user_row = -1
+        self.handle_users_dropdown(target_row)
+
+    def logout_user(self, username: str, domain: str):
+        for row in range(self.users_dropdown.count() - 1):
+            item_data = self.users_dropdown.itemData(row)
+            if item_data['username'] == username and item_data['domain'] == domain:
+                self.users_dropdown.blockSignals(True)
+                self.users_dropdown.removeItem(row)
+                self.users_dropdown.blockSignals(False)
+                self.previous_user_row = row - 1 if row > 0 else 0
+                break
+
     def handle_user_updated(self, username: str, domain: str):
         logged_users = self.brain.get_logged_users()
 
@@ -99,7 +115,13 @@ class LeftPanelInteractions(QWidget):
         if row != num_entries - 1:
             if row == self.previous_user_row: return
             item_data =  self.users_dropdown.itemData(row)
-            self.brain.set_current_user(item_data['username'], item_data['domain'])
+            success, error_msg = self.brain.set_current_user(item_data['username'], item_data['domain'])
+            if not success:
+                error_dialog = ErrorDialog()
+                error_dialog.set_error_message(error_msg)
+                error_dialog.exec()
+                return
+
             self.previous_user_row = row
 
         else:
@@ -117,6 +139,10 @@ class LeftPanelInteractions(QWidget):
                 self.users_dropdown.blockSignals(False)
 
             else:
+                if self.users_dropdown.count() == 1:
+                    self.app.quit()
+                    return
+
                 self.users_dropdown.blockSignals(True)
                 self.users_dropdown.setCurrentIndex(self.previous_user_row)
                 self.users_dropdown.blockSignals(False)
@@ -172,12 +198,12 @@ class CustomListWidgetItem(QListWidgetItem):
         left_item_data = self.data(Qt.ItemDataRole.UserRole)
         left_chat_id = left_item_data['chat_id']
         left_domain = left_item_data['domain']
-        left_last_message_timestamp = self.brain.get_last_message_timestamp(left_chat_id, left_domain)
+        left_last_message_timestamp = self.brain.get_last_message_timestamp(left_chat_id, left_domain) or 0
 
         right_item_data = other.data(Qt.ItemDataRole.UserRole)
         right_chat_id = right_item_data['chat_id']
         right_domain = right_item_data['domain']
-        right_last_message_timestamp = self.brain.get_last_message_timestamp(right_chat_id, right_domain)
+        right_last_message_timestamp = self.brain.get_last_message_timestamp(right_chat_id, right_domain) or 0
 
         if left_last_message_timestamp != right_last_message_timestamp:
             return left_last_message_timestamp < right_last_message_timestamp
@@ -198,6 +224,8 @@ class ChatList(QWidget):
         self.brain.chats_added.connect(self.add_chats)
         self.brain.select_chat.connect(self.select_chat)
         self.brain.timestamps_updated.connect(self.sort_items)
+        self.brain.remove_domain.connect(self.remove_domain_chats)
+        self.brain.remove_chats.connect(self.remove_chats_by_dict)
 
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Search chat...")
@@ -236,6 +264,18 @@ class ChatList(QWidget):
 
         self.widget_layout.addWidget(self.new_chat_button)
 
+    def remove_chats_by_dict(self, chats: dict):
+        domain = chats['domain']
+        for row in reversed(range(self.list_widget.count())):
+            item = self.list_widget.item(row)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            if item_data['chat_id'] in chats['chat_ids'] and item_data['domain'] == domain:
+                is_selected = item.isSelected()
+                if is_selected:
+                    self.list_widget.setCurrentRow(-1)
+                removed_item = self.list_widget.takeItem(row)
+                if removed_item: del removed_item
+
     def update_user_chat(self, username: str, domain: str):
         current_user_username = self.brain.get_current_user_username()
         if username == current_user_username: return
@@ -255,12 +295,6 @@ class ChatList(QWidget):
             return
 
         self.add_users_dialog.reset_chat_details()
-        ret = self.add_users_dialog.load_users()
-        if not ret:
-            error_msg = "Could not load domain members!"
-            # ERROR WINDOW POPUP
-            return
-
         ret = self.add_users_dialog.exec()
         if ret == QDialog.DialogCode.Accepted:
             chat_details = self.add_users_dialog.get_chat_details()
@@ -432,7 +466,7 @@ class ChatList(QWidget):
         user_is_admin = self.brain.user_is_admin(chat_id, chat_domain, current_user_username)
 
         other_user_username = None
-        if chat_type == "p2p":
+        if chat_type == "direct":
             chat_usernames = self.brain.get_chat_user_usernames(chat_id, chat_domain)
             other_user_username = chat_usernames[0] if chat_usernames[0] != current_user_username else chat_usernames[1]
 
@@ -445,7 +479,7 @@ class ChatList(QWidget):
 
         mark_read_action = menu.addAction("Mark as Read")
 
-        if chat_type == "p2p":
+        if chat_type == "direct":
             other_user_is_blocked = self.brain.user_is_blocked(other_user_username)
             if not other_user_is_blocked:
                 menu.addSeparator()
@@ -501,9 +535,19 @@ class ChatList(QWidget):
         other_user_username = chat_usernames[0] if chat_usernames[0] != current_user_username else chat_usernames[1]
 
         if status:
-            self.brain.block_user(other_user_username)
+            success, error_msg = self.brain.block_user(other_user_username)
+            if not success:
+                error_dialog = ErrorDialog()
+                error_dialog.set_error_message(error_msg)
+                error_dialog.exec()
+                return
         else:
-            self.brain.unblock_user(other_user_username)
+            success, error_msg = self.brain.unblock_user(other_user_username)
+            if not success:
+                error_dialog = ErrorDialog()
+                error_dialog.set_error_message(error_msg)
+                error_dialog.exec()
+                return
 
         user_is_reachable = self.brain.user_is_reachable(other_user_username)
         user_is_blocked = self.brain.user_is_blocked(other_user_username)
@@ -519,7 +563,8 @@ class ChatList(QWidget):
 
     def __remove_chat_from_list(self, item: QListWidgetItem):
         row = self.list_widget.row(item)
-        self.list_widget.takeItem(row)
+        removed_item = self.list_widget.takeItem(row)
+        if removed_item: del removed_item
 
     def __exit_chat(self, item: QListWidgetItem):
         item_data = item.data(Qt.ItemDataRole.UserRole)
@@ -555,13 +600,24 @@ class ChatList(QWidget):
         self.brain.set_current_user_last_seen_time(chat_id, domain)
         self.set_unread_icon(item, chat_id, domain, False)
 
+    def remove_domain_chats(self, domain: str):
+        for row in reversed(range(self.list_widget.count())):
+            item = self.list_widget.item(row)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            if domain == item_data['domain']:
+                is_selected = item.isSelected()
+                if is_selected:
+                    self.list_widget.setCurrentRow(-1)
+                removed_item = self.list_widget.takeItem(row)
+                if removed_item: del removed_item
+
 class ChatsAndUsersPanel(QWidget):
-    def __init__(self, brain: Brain, login_dialog: LogInDialog, add_users_dialog: AddUsersDialog):
+    def __init__(self, app: QApplication, brain: Brain, login_dialog: LogInDialog, add_users_dialog: AddUsersDialog):
         super().__init__()
 
         chat_list = ChatList(brain, add_users_dialog)
 
-        interactions = LeftPanelInteractions(brain, login_dialog)
+        interactions = LeftPanelInteractions(app, brain, login_dialog)
 
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)

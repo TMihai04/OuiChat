@@ -6,15 +6,10 @@ from PIL import Image
 import os
 import time
 
-from ouichat_frontend.brain import Brain
-from ouichat_frontend.dialogs import UserDetailsEditDialog
+from brain import Brain
+from dialogs import UserDetailsEditDialog
 
 class UserSettingsScreen(QWidget):
-    """
-    TO DO:
-        - add 'Log out' button
-        - implement logout logic (with user removals, chat removals, cleanup, etc.)
-    """
     def __init__(self, brain: Brain):
         super().__init__()
 
@@ -80,11 +75,21 @@ class UserSettingsScreen(QWidget):
         user_description_layout.addWidget(self.user_description_text, alignment=Qt.AlignmentFlag.AlignTop)
         user_description_layout.addWidget(self.change_user_description_button, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
+        log_out_button = QPushButton("Log Out")
+        log_out_button.setFixedSize(100, 25)
+        log_out_button.setAutoDefault(False)
+        log_out_button.clicked.connect(self.__logout)
+        log_out_button.setCursor(Qt.CursorShape.PointingHandCursor)
+
         screen_layout.addWidget(self.back_button, alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
         screen_layout.addWidget(self.user_icon, alignment=Qt.AlignmentFlag.AlignCenter)
         screen_layout.addWidget(self.username, alignment=Qt.AlignmentFlag.AlignCenter)
         screen_layout.addWidget(user_description)
+        screen_layout.addWidget(log_out_button, alignment=Qt.AlignmentFlag.AlignLeft)
         screen_layout.addStretch()
+
+    def __logout(self):
+        self.brain.logout_current_user()
 
     def update_user_details(self, username: str, domain: str):
         current_user_username = self.brain.get_current_user_username()

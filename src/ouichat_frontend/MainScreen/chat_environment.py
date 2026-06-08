@@ -12,9 +12,9 @@ import time
 import os
 from PIL import Image
 
-from ouichat_frontend.dialogs import AddUsersDialog, RemoveUsersDialog, ChatDetailsEditDialog
-from ouichat_frontend.brain import Brain
-from ouichat_frontend.socket_manager import message_args_to_dict
+from dialogs import AddUsersDialog, RemoveUsersDialog, ChatDetailsEditDialog, ErrorDialog
+from brain import Brain
+from socket_manager import message_args_to_dict
 
 RIGHT_PANE_MIN_WIDTH = 310
 DOWNLOAD_WIDGET_WIDTH = 250
@@ -92,14 +92,17 @@ class DownloadAttachmentBubble(QWidget):
         widget_layout.addWidget(remove_button)
 
     def download_file(self):
-        self.brain.download_files([self.file_id])
+        success, resp_data = self.brain.download_files([self.file_id])
+        if not success:
+            error_dialog = ErrorDialog()
+            error_dialog.set_error_message(resp_data)
+            error_dialog.exec()
+            return
 
 class ChatMessage(QWidget):
     """
     TO DO:
         - implement context menu with requests
-        - IT WORKS TO SEND MESSAGES WITH ONLY FILES BUT IF YOU EDIT THE TEXT OF THAT MESSAGE
-            THE MESSAGE IN THE TEXT DOESN'T SHOW
     """
     def __init__(self, brain: Brain, chat_id: str, domain: str,
                  message_id: str, sender: str, was_edited: bool, is_reply: bool,
@@ -361,8 +364,13 @@ class ChatMessagesArea(QScrollArea):
             self.scroll_bar.setValue(max_value)
 
     def load_old_messages(self, oldest_message_id: str | None):
-        messages = self.brain.load_messages(self.chat_id, self.domain, oldest_message_id)
-        self.add_messages(messages, 0)
+        success, resp_data = self.brain.load_messages(self.chat_id, self.domain, oldest_message_id)
+        if not success:
+            error_dialog = ErrorDialog()
+            error_dialog.set_error_message(resp_data)
+            error_dialog.exec()
+            return
+        self.add_messages(resp_data, 0)
 
         if oldest_message_id is None:
             self.scroll_bar.setValue(self.scroll_bar.maximum())
@@ -486,10 +494,10 @@ class ChatMembersList(QWidget):
         selected_user_username = item_data['username']
         selected_user_is_admin = item_data['is_admin']
 
-        chat_creator = self.brain.get_chat_creator(self.chat_id, self.domain)
-        if selected_user_is_admin and current_user_username != chat_creator: return
+        chat_creators = self.brain.get_chat_creators(self.chat_id, self.domain)
+        if selected_user_is_admin and current_user_username not in chat_creators: return
         if selected_user_username == current_user_username: return
-        if chat_creator == selected_user_username: return
+        if selected_user_username in chat_creators: return
 
         make_admin = object()
         remove_admin = object()
@@ -567,7 +575,8 @@ class ChatMembersList(QWidget):
             item_data = item.data(Qt.ItemDataRole.UserRole)
             username = item_data['username']
             if username in usernames:
-                self.list_widget.takeItem(row)
+                removed_item = self.list_widget.takeItem(row)
+                if removed_item: del removed_item
 
     def add_entry(self, username: str, user_icon_path: str, is_admin: bool):
         item = CustomListWidgetItem()
@@ -630,7 +639,7 @@ class ChatDetails(QScrollArea):
         self.chat_name.setText(chat_name)
         self.chat_name.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
 
-        if chat_type == "chatroom":
+        if chat_type == "group":
 
             self.edit_name_button = QPushButton()
             self.edit_name_button.setIcon(QIcon("./Icons/edit_icon.png"))
@@ -667,7 +676,7 @@ class ChatDetails(QScrollArea):
         chat_description_layout.addWidget(chat_description_label, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         chat_description_layout.addWidget(self.chat_description_text, alignment=Qt.AlignmentFlag.AlignTop)
 
-        if chat_type == "chatroom":
+        if chat_type == "group":
             self.change_chat_description_button = QPushButton()
             self.change_chat_description_button.setIcon(QIcon("./Icons/edit_icon.png"))
             self.change_chat_description_button.setFixedSize(20, 20)
@@ -687,7 +696,7 @@ class ChatDetails(QScrollArea):
         self.container_layout.addWidget(chat_name_container, alignment=Qt.AlignmentFlag.AlignCenter)
         self.container_layout.addWidget(chat_description)
 
-        if chat_type == 'chatroom':
+        if chat_type == 'group':
             self.chat_members_list = ChatMembersList(brain, chat_id, domain)
 
             add_members_button = QPushButton()
@@ -716,14 +725,13 @@ class ChatDetails(QScrollArea):
             self.container_layout.addWidget(self.chat_members_list)
             self.container_layout.addWidget(self.button_container)
 
-            self.brain.current_user_changed.connect(self.update_description)
-
         self.container_layout.addStretch()
 
         current_user_username = self.brain.get_current_user_username()
         current_user_domain = self.brain.get_current_user_domain()
         self.update_description(current_user_username, current_user_domain)
         self.brain.chat_updated.connect(self.handle_chat_description_change)
+        self.brain.current_user_changed.connect(self.update_description)
 
         self.setWidget(self.container)
         self.setWidgetResizable(True)
@@ -779,12 +787,6 @@ class ChatDetails(QScrollArea):
             return
 
         self.add_users_dialog.set_chat_details(self.chat_id, self.domain)
-        ret = self.add_users_dialog.load_users()
-        if not ret:
-            error_msg = "Could not load chatroom members!"
-            # ERROR WINDOW POPUP
-            return
-
         self.add_users_dialog.exec()
 
     def remove_members(self):
@@ -794,12 +796,6 @@ class ChatDetails(QScrollArea):
             return
 
         self.remove_users_dialog.set_chat_details(self.chat_id, self.domain)
-        ret = self.remove_users_dialog.load_users()
-        if not ret:
-            error_msg = "Could not load chatroom members!"
-            # ERROR WINDOW POPUP
-            return
-
         self.remove_users_dialog.exec()
 
     def __resize_description_box(self):
@@ -842,7 +838,7 @@ class ChatDetails(QScrollArea):
 
     def update_user(self, username: str, domain: str):
         chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
-        if chat_type == 'p2p':
+        if chat_type == 'direct':
             self.update_labels()
         else:
             self.chat_members_list.update_user(username, domain)
@@ -862,7 +858,7 @@ class ChatDetails(QScrollArea):
 
     def update_description(self, username: str, domain: str):
         chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
-        if chat_type == 'p2p':
+        if chat_type == 'direct':
             # no member management buttons
             if self.domain == domain:
                 self.update_labels()
@@ -956,7 +952,7 @@ class Chat(QWidget):
 
     def __handle_current_user_change(self, _: str, domain: str):
         chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
-        if domain == self.domain and chat_type == 'p2p':
+        if domain == self.domain and chat_type == 'direct':
             self.__reload_chat_details()
 
     def add_messages(self, messages: list):
@@ -996,7 +992,7 @@ class ChatBubble(QWidget):
 
     def update_user(self, username: str, domain: str):
         chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
-        if chat_type == 'p2p':
+        if chat_type == 'direct':
             self.chat.update_user(username, domain)
         self.chat_details_widget.update_user(username, domain)
 
@@ -1031,6 +1027,7 @@ class UsersList(QListWidget):
         self.brain = brain
         self.brain.current_user_changed.connect(self.handle_user_change)
         self.brain.user_updated.connect(self.handle_user_updated)
+        self.brain.remove_domain.connect(self.remove_domain_users)
 
         self.setIconSize(QSize(32, 32))
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -1098,12 +1095,22 @@ class UsersList(QListWidget):
     def __block_user(self, item: QListWidgetItem):
         item_data = item.data(Qt.ItemDataRole.UserRole)
         username = item_data['username']
-        self.brain.block_user(username)
+        success, error_msg = self.brain.block_user(username)
+        if not success:
+            error_dialog = ErrorDialog()
+            error_dialog.set_error_message(error_msg)
+            error_dialog.exec()
+            return
 
     def __unblock_user(self, item: QListWidgetItem):
         item_data = item.data(Qt.ItemDataRole.UserRole)
         username = item_data['username']
-        self.brain.unblock_user(username)
+        success, error_msg = self.brain.unblock_user(username)
+        if not success:
+            error_dialog = ErrorDialog()
+            error_dialog.set_error_message(error_msg)
+            error_dialog.exec()
+            return
 
     def handle_item_clicked_changed(self, item: QListWidgetItem):
         current_user_username = self.brain.get_current_user_username()
@@ -1118,15 +1125,15 @@ class UsersList(QListWidget):
         if chat_id is None:
             cu_blacklist = self.brain.get_current_user_blacklist()
             if username not in cu_blacklist:
-                ret = self.brain.create_p2p_chat(username, domain)
-                if not ret[0]:
-                    error_message = ret[1]
-                    # ERROR WINDOW POPUP
+                success, resp_data = self.brain.create_p2p_chat(username, domain)
+                if not success:
+                    error_dialog = ErrorDialog()
+                    error_dialog.set_error_message(resp_data)
+                    error_dialog.exec()
                     return
-                chat_id = ret[1]
+                chat_id = resp_data
             else:
                 return
-
         self.brain.select_chat.emit(chat_id, domain)
 
     def handle_user_change(self, username: str, domain: str):
@@ -1140,16 +1147,25 @@ class UsersList(QListWidget):
             if item_data['username'] == username and item_data['domain'] == domain:
                 item.setHidden(True)
             elif item_data['domain'] == domain:
-                item.setHidden(False)
+                item.setHidden(not self.brain.user_is_reachable(item_data['username']))
             else:
                 item.setHidden(True)
+
+    def remove_domain_users(self, domain:str):
+        for idx in reversed(range(self.count())):
+            item = self.item(idx)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            if item_data['domain'] == domain:
+                removed_item = self.takeItem(idx)
+                if removed_item: del removed_item
 
     def remove_user(self, username: str, domain: str):
         for idx in range(self.count()):
             item = self.item(idx)
             item_data = item.data(Qt.ItemDataRole.UserRole)
             if item_data['username'] == username and item_data['domain'] == domain:
-                self.takeItem(idx)
+                removed_item = self.takeItem(idx)
+                if removed_item: del removed_item
                 return
 
     def __user_already_in_list(self, username: str, domain: str):
@@ -1254,6 +1270,8 @@ class ChatHistory(QWidget):
         self.brain.message_edited.connect(self.edit_message)
         self.brain.removed_members_from_chat.connect(self.remove_users)
         self.brain.added_members_to_chat.connect(self.add_users)
+        self.brain.remove_domain.connect(self.remove_domain_bubbles)
+        self.brain.remove_chats.connect(self.remove_bubbles_by_dict)
 
     def handle_user_updated(self, username: str, domain: str):
         for idx in range(self.widget_layout.count()):
@@ -1333,6 +1351,23 @@ class ChatHistory(QWidget):
         # at index 0 there is a special screen for when there are no chats selected
         self.widget_layout.insertWidget(1, new_bubble)
         self.widget_layout.setCurrentIndex(1)
+
+    def remove_bubbles_by_dict(self, chats: dict):
+        domain = chats['domain']
+        for idx in reversed(range(self.widget_layout.count())):
+            widget = self.widget_layout.widget(idx)
+            if isinstance(widget, ChatBubble):
+                if widget.domain == domain and widget.chat_id in chats['chat_ids']:
+                    self.widget_layout.removeWidget(widget)
+                    widget.deleteLater()
+
+    def remove_domain_bubbles(self, domain: str):
+        for idx in reversed(range(self.widget_layout.count())):
+            widget = self.widget_layout.widget(idx)
+            if isinstance(widget, ChatBubble):
+                if widget.domain == domain:
+                    self.widget_layout.removeWidget(widget)
+                    widget.deleteLater()
 
     def add_messages(self, messages: dict):
         for idx in range(self.widget_layout.count()):
@@ -1557,9 +1592,6 @@ class AttachmentContext(QScrollArea):
         return self.staged_files
 
 class MessageWindow(QWidget):
-    """
-    TO DO:
-    """
     def __init__(self, brain: Brain):
         super().__init__()
 
@@ -1657,7 +1689,6 @@ class MessageWindow(QWidget):
         current_chat_domain = self.brain.get_current_chat_domain()
         current_user_username = self.brain.get_current_user_username()
         current_user_domain = self.brain.get_current_user_domain()
-        current_user_icon_path = self.brain.get_current_user_icon()
 
         if current_chat_domain != current_user_domain: return
 
@@ -1678,7 +1709,14 @@ class MessageWindow(QWidget):
         # MAKE REQUEST
         # ONLY ADD AND DISPLAY MESSAGE ON SERVER UPDATE
 
-        files = self.brain.upload_files(staged_files)
+        success, resp_data = self.brain.upload_files(staged_files)
+        if not success:
+            error_dialog = ErrorDialog()
+            error_dialog.set_error_message(resp_data)
+            error_dialog.exec()
+            return
+        else:
+            files = resp_data
 
         message = message_args_to_dict(
             chat_id = current_chat_id,
