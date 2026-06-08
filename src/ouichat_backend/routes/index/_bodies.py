@@ -22,6 +22,30 @@ class StatusBody(BaseModel):
     )
 
 
+class IconBody(BaseModel):
+    icon_id: str = Field(
+        ...,
+        description="Inner id for the selected attachement file",
+        min_length=1
+    )
+
+
+class NameBody(BaseModel):
+    name: str = Field(
+        ...,
+        description="Chat display name",
+        min_length=1
+    )
+
+
+class DescriptionBody(BaseModel):
+    description: str = Field(
+        ...,
+        description="Chat display description",
+        min_length=1
+    )
+
+
 class _GroupData(BaseModel):
     name: str = Field(
         ...,
@@ -73,3 +97,19 @@ class NewChatBody(BaseModel):
         if self.type == "group" and True not in self.participants.values():
             raise ValueError("`group` type conversations must have at least one admin")
         return self
+    
+
+class AdminStateBody(BaseModel):
+    admins: dict[str, bool] = Field(
+        ...,
+        description="Dictionary of users that will have their admin state altered. Keys are `usernames` and values are wether the user will be an admin or not",
+        min_length=1
+    )
+
+
+class ParticipantInviteBody(BaseModel):
+    who: list[str] = Field(
+        ...,
+        description="A list of usernames to be added or reoved from a conversation",
+        min_length=1
+    )
