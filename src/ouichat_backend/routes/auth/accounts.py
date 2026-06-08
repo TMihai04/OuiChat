@@ -38,9 +38,16 @@ router = APIRouter(
 async def register_new_user(
     form_data: OAuth2PasswordRequestForm = Depends(),
 ) -> GenericMessageResponse:
-    """This endpoint attempts to register a new user via a username and password form. If the provided username does not exist in the database, then it is considered valid, but if it already exists, it throws an error.
+    """Use this endpoint to register a new user to the server. The authorization requires a valid username and password.
     
-    This endpoint also validates username and password strings to contain only cahracters from a given alphabet. This is an attempt at sterilization."""
+    Args:
+    * `form_data`: The form data containing username and password for the new user. See `OAuth2PasswordRequestForm` from FastAPI for more information on the required fields and transmission.
+
+    Returns:
+    * `GenericMessageResponse`: A generic success message.
+    
+    Throws:
+    * `400`: Username already registered *or* username or password do not match constraints"""
 
     logger.debug(f"Registering new user - username: {form_data.username}")
 
