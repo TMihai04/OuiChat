@@ -272,7 +272,7 @@ class Brain(QObject):
 
         current_user_access_token = self.get_current_user_access_token()
 
-        success, resp_data = self.socket_manager.request_add_users(domain, current_user_access_token, chat_id, users)
+        success, resp_data = self.socket_manager.request_modify_users(domain, current_user_access_token, chat_id, users, add=True)
         if not success:
             if resp_data['code'] == 401:
                 refreshed = self.refresh_tokens()
@@ -592,6 +592,20 @@ class Brain(QObject):
         chat = self.find_chat(chat_id, domain)
         if chat is None: return False, "Could NOT find chatroom!"
 
+        current_user_access_token = self.get_current_user_access_token()
+
+        success, resp_data = self.socket_manager.request_modify_users(domain, current_user_access_token, chat_id, users, add=False)
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed:
+                    return False, "Could not refresh session"
+                else:
+                    return self.remove_users_from_chat(chat_id, domain, users)
+            else:
+                return False, "Could NOT remove users to chatroom!"
+
+        # ONLY UPDATE USERS ON WEBSOCKET UPDATE
         chat['users'] = [user for user in chat['users'] if user['username'] not in users]
 
         self.removed_members_from_chat.emit(chat_id, domain, users)

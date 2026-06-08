@@ -442,7 +442,7 @@ class ModifyAdminWorker(QThread):
         resp = asyncio.run(modify_admin_request(domain=self.domain, access_token=self.access_token, chat_id=self.chat_id, users=self.users))
         self.finished.emit(resp)
 
-async def add_users_request(domain: str, access_token: str, chat_id: str, usernames: list):
+async def modify_users_request(domain: str, access_token: str, chat_id: str, usernames: list, add: bool):
     headers = {
         'Authorization': f"Bearer {access_token}"
     }
@@ -452,11 +452,12 @@ async def add_users_request(domain: str, access_token: str, chat_id: str, userna
     body = {
         "who": usernames
     }
+    endpoint = "add" if add else "remove"
+    req = "POST" if add else "DELETE"
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.post(url=f"http://{domain}/chats/participant/add", headers=headers, params=params,
-                                        json=body) as resp:
+                async with session.request(method=req, url=f"http://{domain}/chats/participant/{endpoint}", headers=headers, params=params, json=body) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -471,18 +472,19 @@ async def add_users_request(domain: str, access_token: str, chat_id: str, userna
 
         return get_resp_dict(True, 408, 'Cannot establish a connection with the server.')
 
-class AddUsersWorker(QThread):
+class ModifyUsersWorker(QThread):
     finished = pyqtSignal(dict)
 
-    def __init__(self, domain: str, access_token: str, chat_id: str, usernames: list):
+    def __init__(self, domain: str, access_token: str, chat_id: str, usernames: list, add: bool):
         super().__init__()
         self.domain = domain
         self.access_token = access_token
         self.chat_id = chat_id
         self.usernames = usernames
+        self.add = add
 
     def run(self):
-        resp = asyncio.run(add_users_request(domain=self.domain, access_token=self.access_token, chat_id=self.chat_id, usernames=self.usernames))
+        resp = asyncio.run(modify_users_request(domain=self.domain, access_token=self.access_token, chat_id=self.chat_id, usernames=self.usernames, add=self.add))
         self.finished.emit(resp)
 
 def execute_request_loop(worker: QThread):
@@ -735,8 +737,8 @@ class SocketManager(QObject):
             return False, worker_response
         return True, None
 
-    def request_add_users(self, domain: str, access_token: str, chat_id: str, usernames: list):
-        self.add_users_worker = AddUsersWorker(domain, access_token, chat_id, usernames)
+    def request_modify_users(self, domain: str, access_token: str, chat_id: str, usernames: list, add: bool):
+        self.add_users_worker = ModifyUsersWorker(domain, access_token, chat_id, usernames, add)
         worker_response = execute_request_loop(self.add_users_worker)
         self.add_users_worker.deleteLater()
 

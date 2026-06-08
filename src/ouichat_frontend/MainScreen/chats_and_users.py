@@ -575,7 +575,14 @@ class ChatList(QWidget):
             self.list_widget.setCurrentRow(-1)
 
         current_user_username = self.brain.get_current_user_username()
-        self.brain.remove_users_from_chat(item_data['chat_id'], item_data['domain'], [current_user_username])
+
+        success, error_msg = self.brain.remove_users_from_chat(item_data['chat_id'], item_data['domain'], [current_user_username])
+        if not success:
+            error_dialog = ErrorDialog()
+            error_dialog.set_error_message(error_msg)
+            error_dialog.exec()
+            return
+
         self.search(self.search_bar.text())
         # IMPLEMENT REQUESTS TO SERVER
 
