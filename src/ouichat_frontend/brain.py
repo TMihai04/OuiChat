@@ -368,31 +368,91 @@ class Brain(QObject):
         return True, (chat_id, current_user_domain)
 
     def set_chat_icon_path(self, chat_id: str, domain: str, icon_path: str):
+        """
+        NOT MADE FOR WEBSOCKET UPDATES
+        """
+
         chat = self.find_chat(chat_id, domain)
-        if not chat: return
+        if not chat: return False, "Could not find chat!"
+
+        current_user_access_token = self.get_current_user_access_token()
+
+        # SEND ICON_ID NOT ICON_PATH
+        success, resp_data = self.socket_manager.request_modify_chat_icon(
+            domain, current_user_access_token, chat_id, icon_path
+        )
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed: return False, "Could not refresh session!"
+                else:
+                    return self.set_chat_icon_path(chat_id, domain, icon_path)
+            else:
+                return False, "Could NOT set chat icon!"
+
         chat['icon_path'] = icon_path
 
-        current_user_domain = self.get_current_user_domain()
-        if domain == current_user_domain:
-            self.chat_updated.emit(chat_id, domain)
+        self.chat_updated.emit(chat_id, domain)
+
+        return True, None
 
     def set_chat_display_name(self, chat_id: str, domain: str, display_name: str):
+        """
+        NOT MADE FOR WEBSOCKET UPDATES
+        """
+
         chat = self.find_chat(chat_id, domain)
-        if not chat: return
+        if not chat: return False, "Could not find chat!"
+
+        current_user_access_token = self.get_current_user_access_token()
+
+        success, resp_data = self.socket_manager.request_modify_chat_name(
+            domain, current_user_access_token, chat_id, display_name
+        )
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed:
+                    return False, "Could not refresh session!"
+                else:
+                    return self.set_chat_display_name(chat_id, domain, display_name)
+            else:
+                return False, "Could NOT set chat name!"
+
         chat['display_name'] = display_name
 
-        current_user_domain = self.get_current_user_domain()
-        if domain == current_user_domain:
-            self.chat_updated.emit(chat_id, domain)
+        self.chat_updated.emit(chat_id, domain)
+
+        return True, None
 
     def set_chat_description(self, chat_id: str, domain: str, description: str):
+        """
+        NOT MADE FOR WEBSOCKET UPDATES
+        """
+
         chat = self.find_chat(chat_id, domain)
-        if not chat: return
+        if not chat: return False, "Could not find chat!"
+
+        current_user_access_token = self.get_current_user_access_token()
+
+        success, resp_data = self.socket_manager.request_modify_chat_description(
+            domain, current_user_access_token, chat_id, description
+        )
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed:
+                    return False, "Could not refresh session!"
+                else:
+                    return self.set_chat_display_name(chat_id, domain, description)
+            else:
+                return False, "Could NOT set chat description!"
+
         chat['description'] = description
 
-        current_user_domain = self.get_current_user_domain()
-        if domain == current_user_domain:
-            self.chat_updated.emit(chat_id, domain)
+        self.chat_updated.emit(chat_id, domain)
+
+        return True, None
 
     def user_is_blocked(self, username: str):
         return username in self.current_user['blacklist']

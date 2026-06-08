@@ -790,7 +790,12 @@ class ChatDetails(QScrollArea):
 
         old_file_path = self.brain.get_chat_icon_path(self.chat_id, self.domain)
 
-        self.brain.set_chat_icon_path(self.chat_id, self.domain, new_file_path)
+        success, error_msg = self.brain.set_chat_icon_path(self.chat_id, self.domain, new_file_path)
+        if not success:
+            error_dialog = ErrorDialog()
+            error_dialog.set_error_message(error_msg)
+            error_dialog.exec()
+            return
 
         if old_file_path != "./Icons/chat_room_icon.png":
             if os.path.exists(old_file_path):

@@ -779,10 +779,18 @@ class ChatDetailsEditDialog(QDialog):
         # PROCESS REQUEST USING BRAIN
         text = self.text_edit.toPlainText()
         if self.edited_field == "name":
-            self.brain.set_chat_display_name(self.chat_id, self.domain, text)
+            success, error_msg = self.brain.set_chat_display_name(self.chat_id, self.domain, text)
+            if not success:
+                self.set_error_message(error_msg)
+                self.set_interactions_state(True)
+                return
 
         elif self.edited_field == "description":
-            self.brain.set_chat_description(self.chat_id, self.domain, text)
+            success, error_msg = self.brain.set_chat_description(self.chat_id, self.domain, text)
+            if not success:
+                self.set_error_message(error_msg)
+                self.set_interactions_state(True)
+                return
 
         self.accept()
 
