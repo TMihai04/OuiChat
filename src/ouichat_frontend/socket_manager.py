@@ -487,6 +487,44 @@ class ModifyUsersWorker(QThread):
         resp = asyncio.run(modify_users_request(domain=self.domain, access_token=self.access_token, chat_id=self.chat_id, usernames=self.usernames, add=self.add))
         self.finished.emit(resp)
 
+async def leave_chat_request(domain: str, access_token: str, chat_id: str):
+    headers = {
+        'Authorization': f"Bearer {access_token}"
+    }
+    params = {
+        'chat_id': chat_id
+    }
+    async with aiohttp.ClientSession() as session:
+        for request_count in range(MAX_REQUESTS):
+            try:
+                async with session.delete(url=f"http://{domain}/chats/participant/leave", headers=headers, params=params) as resp:
+                    try:
+                        resp.raise_for_status()
+                    except aiohttp.ClientResponseError as _:
+                        return await handle_error(resp)
+
+                    resp_dict = await resp.json()
+                    return get_resp_dict(False, resp.status, resp_dict)
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
+                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
+                continue
+
+        return get_resp_dict(True, 408, 'Cannot establish a connection with the server.')
+
+class LeaveChatWorker(QThread):
+    finished = pyqtSignal(dict)
+
+    def __init__(self, domain: str, access_token: str, chat_id: str):
+        super().__init__()
+        self.domain = domain
+        self.access_token = access_token
+        self.chat_id = chat_id
+
+    def run(self):
+        resp = asyncio.run(leave_chat_request(domain=self.domain, access_token=self.access_token, chat_id=self.chat_id))
+        self.finished.emit(resp)
+
 def execute_request_loop(worker: QThread):
     loop = QEventLoop()
     worker_response = dict()
@@ -548,6 +586,7 @@ class SocketManager(QObject):
         self.get_chats_worker = None
         self.modify_admin_worker = None
         self.add_users_worker = None
+        self.leave_chat_worker = None
 
     def request_chats(self, domain: str, access_token: str):
         self.get_chats_worker = GetChatsWorker(domain, access_token)
@@ -741,6 +780,16 @@ class SocketManager(QObject):
         self.add_users_worker = ModifyUsersWorker(domain, access_token, chat_id, usernames, add)
         worker_response = execute_request_loop(self.add_users_worker)
         self.add_users_worker.deleteLater()
+
+        is_error = worker_response.get('is_error')
+        if is_error:
+            return False, worker_response
+        return True, None
+
+    def request_leave_chat(self, domain: str, access_token: str, chat_id: str):
+        self.leave_chat_worker = LeaveChatWorker(domain, access_token, chat_id)
+        worker_response = execute_request_loop(self.leave_chat_worker)
+        self.leave_chat_worker.deleteLater()
 
         is_error = worker_response.get('is_error')
         if is_error:

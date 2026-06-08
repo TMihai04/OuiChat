@@ -588,6 +588,31 @@ class Brain(QObject):
         if setting != 'rw' and setting != 'ro': return
         chat['chat_setting'] = setting
 
+    def leave_chat(self, chat_id: str, domain: str):
+        chat = self.find_chat(chat_id, domain)
+        if chat is None: return False, "Could NOT find chatroom!"
+
+        current_user_access_token = self.get_current_user_access_token()
+
+        success, resp_data = self.socket_manager.request_leave_chat(domain, current_user_access_token, chat_id)
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed:
+                    return False, "Could not refresh session"
+                else:
+                    return self.leave_chat(chat_id, domain)
+            else:
+                return False, "Could NOT leave chatroom!"
+
+        # ONLY UPDATE USERS ON WEBSOCKET UPDATE
+        current_user_username = self.get_current_user_username()
+        chat['users'] = [user for user in chat['users'] if user['username'] != current_user_username]
+
+        self.removed_members_from_chat.emit(chat_id, domain, [current_user_username])
+
+        return True, None
+
     def remove_users_from_chat(self, chat_id: str, domain: str, users: list):
         chat = self.find_chat(chat_id, domain)
         if chat is None: return False, "Could NOT find chatroom!"

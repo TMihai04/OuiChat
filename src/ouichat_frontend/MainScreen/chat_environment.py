@@ -611,6 +611,11 @@ class ChatMembersList(QWidget):
 
 
 class ChatDetails(QScrollArea):
+    """
+    TO DO:
+        - add 'Leave chat' button
+    """
+
     chat_history_requested = pyqtSignal()
 
     def __init__(self, brain: Brain, text_dialog: ChatDetailsEditDialog, add_users_dialog: AddUsersDialog,

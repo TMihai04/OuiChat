@@ -569,22 +569,19 @@ class ChatList(QWidget):
     def __exit_chat(self, item: QListWidgetItem):
         item_data = item.data(Qt.ItemDataRole.UserRole)
 
-        current_chat_id = self.brain.get_current_chat_id()
-        current_chat_domain = self.brain.get_current_chat_domain()
-        if current_chat_id == item_data['chat_id'] and current_chat_domain == item_data['domain']:
-            self.list_widget.setCurrentRow(-1)
-
-        current_user_username = self.brain.get_current_user_username()
-
-        success, error_msg = self.brain.remove_users_from_chat(item_data['chat_id'], item_data['domain'], [current_user_username])
+        success, error_msg = self.brain.leave_chat(item_data['chat_id'], item_data['domain'])
         if not success:
             error_dialog = ErrorDialog()
             error_dialog.set_error_message(error_msg)
             error_dialog.exec()
             return
 
+        current_chat_id = self.brain.get_current_chat_id()
+        current_chat_domain = self.brain.get_current_chat_domain()
+        if current_chat_id == item_data['chat_id'] and current_chat_domain == item_data['domain']:
+            self.list_widget.setCurrentRow(-1)
+
         self.search(self.search_bar.text())
-        # IMPLEMENT REQUESTS TO SERVER
 
     def __delete_chat(self, item: QListWidgetItem):
         item_data = item.data(Qt.ItemDataRole.UserRole)
