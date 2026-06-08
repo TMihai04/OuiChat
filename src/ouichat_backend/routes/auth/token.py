@@ -46,7 +46,16 @@ router = APIRouter(
 async def login_for_tokens(
     form_data: OAuth2PasswordRequestFormStrict = Depends(),
 ) -> NewTokensResponse:
-    """This endpoint logs in an existent user using a form. A login is requied every time the user's session expires, or whenever the app is first opened on the user's end."""
+    """This endpoint logs in an existent user using a form. A login is requied every time the user's session expires, or whenever the app is first opened on the user's end.
+    
+    Args:
+    * `form_data`: The form data containing username and password for the new user. See `OAuth2PasswordRequestForm` from FastAPI for more information on the required fields and transmission.
+
+    Returns:
+    * `NewTokensResponse`: A dictionary containing platform tokens
+    
+    Throws:
+    * `401`: Invalid credentials"""
 
     logger.debug(f"Logging in user - username: {form_data.username}")
 
@@ -85,6 +94,14 @@ async def login_for_tokens(
 async def refresh_for_tokens(
     credentials: HTTPAuthorizationCredentials = Depends(REFRESH_SCHEME),
 ) -> NewTokensResponse:
+    """Use this endpoint to request a new set of tokens for platform access.
+    
+    Returns:
+    * `NewTokensResponse`: A dictionary containing platform tokens
+    
+    Throws:
+    * `401`: Invalid credentials"""
+
     logger.debug(f"Refreshing tokens - oldToken: {credentials.credentials}")
 
     try:

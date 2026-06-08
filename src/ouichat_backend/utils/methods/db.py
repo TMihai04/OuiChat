@@ -6,6 +6,7 @@ from ouichat_backend.utils.constants import startup
 from ouichat_backend.utils.schemas import (
     UserDocument,
     ConversationDocument,
+    ConversationParticipantDocument,
     WebsocketUpdate,
 )
 from ouichat_backend.utils.methods import (
@@ -367,6 +368,16 @@ async def add_chat(
     )
 
     # Notify websocket update
+    for part in new_chat.preferences.participants:
+        await ws_manager.notify_user(
+            username=part.username,
+            payload=WebsocketUpdate(
+                type="create",
+                scope="conversation",
+                data=new_chat.model_dump()
+            ),
+            mode="binary"
+        )
 
 
 async def get_chat(
@@ -406,7 +417,8 @@ async def get_all_chats(
 
 
 async def delete_chat(
-    chat_id: str
+    chat_id: str,
+    notify: list,
 ):
     collection = get_chats_collection()
 
@@ -417,5 +429,244 @@ async def delete_chat(
     )
 
     # Notify websocket of update
+    for user in notify:
+        await ws_manager.notify_user(
+            username=user,
+            payload=WebsocketUpdate(
+                type="delete",
+                scope="conversation",
+                data={
+                    "conversation_id": chat_id
+                }
+            ),
+            mode="binary"
+        )
+
 
 # TODO: Add update wrapper methods
+async def _update_chat(
+    chat_id: str,
+    *,
+    update: dict,
+    **kwargs
+):
+    collection = get_chats_collection()
+
+    ret = None
+    if update:
+        ret = await collection.update_one(
+            filter={
+                "conversation_id": chat_id
+            },
+            update=update,
+            **kwargs
+        )
+    # Update time in different db operation
+    ret2 = await collection.update_one(
+        filter={
+            "conversation_id": chat_id
+        },
+        update={
+            "$set": {"updated_at": timestamp_now()}
+        }
+    )
+
+    return ret or ret2
+
+
+async def update_chat(
+    chat_id: str,
+    notify: list,
+    *,
+    admins: dict | None = None,
+    to_add: list | None = None,
+    to_remove: list | None = None,
+    name: str | None = None,
+    description: str | None = None,
+    icon_id: str | None = None,
+):
+    upd = None
+    if admins is not None:
+        make_admin = []
+        remove_admin = []
+
+        for user, state in admins.items():
+            if state:
+                make_admin.append(user)
+            else:
+                remove_admin.append(user)
+
+        upd = await _update_chat(
+            chat_id,
+            update={
+                "$set": {
+                    "preferences.participants.$[makeAdmin].is_admin": True,
+                    "preferences.participants.$[removeAdmin].is_admin": False,
+                }
+            },
+            array_filters=[
+                {"makeAdmin.username": {"$in": make_admin}},
+                {"removeAdmin.username": {"$in": remove_admin}},
+            ]
+        )
+        if upd.modified_count == 0:
+            return upd
+
+        # Notify websocket update
+        for user in notify:
+            await ws_manager.notify_user(
+                useranme=user,
+                payload=WebsocketUpdate(
+                    type="update",
+                    scope="conversation.admins",
+                    data={
+                        "conversation_id": chat_id,
+                        "make_admin": make_admin,
+                        "remove_admin": remove_admin
+                    },
+                ),
+                mode="binary"
+            )
+
+    if to_add is not None:
+        to_push = []
+        for username in to_add:
+            to_push.append(
+                ConversationParticipantDocument(
+                    username=username,
+                ).model_dump()
+            )
+        
+        upd = await _update_chat(
+            chat_id,
+            update={
+                "$push": {
+                    "preferences.participants": {"$each": to_push}
+                }
+            }
+        )
+        if upd.modified_count == 0:
+            return upd
+
+        # Notify websocket update
+        for user in notify:
+            await ws_manager.notify_user(
+                useranme=user,
+                payload=WebsocketUpdate(
+                    type="update",
+                    scope="conversation.participants",
+                    data={
+                        "conversation_id": chat_id,
+                        "operation": "added",
+                        "who": to_add
+                    },
+                ),
+                mode="binary"
+            )
+    
+    if to_remove is not None:
+        upd = await _update_chat(
+            chat_id,
+            update={
+                "$pull": {
+                    "preferences.participants": {
+                        "username": {"$in": to_remove}
+                    }
+                }
+            }
+        )
+        if upd.modified_count == 0:
+            return upd
+
+        # Notify websocket update
+        for user in notify:
+            await ws_manager.notify_user(
+                useranme=user,
+                payload=WebsocketUpdate(
+                    type="update",
+                    scope="conversation.participants",
+                    data={
+                        "conversation_id": chat_id,
+                        "operation": "removed",
+                        "who": to_remove
+                    },
+                ),
+                mode="binary"
+            )
+    
+    if name is not None:
+        upd = await _update_chat(
+            chat_id,
+            update={
+                "$set": {"profile.name": name}
+            }
+        )
+        if upd.modified_count == 0:
+            return upd
+
+        # Notify websocket update
+        for user in notify:
+            await ws_manager.notify_user(
+                useranme=user,
+                payload=WebsocketUpdate(
+                    type="update",
+                    scope="conversation.name",
+                    data={
+                        "conversation_id": chat_id,
+                        "name": name
+                    },
+                ),
+                mode="binary"
+            )        
+    
+    if description is not None:
+        upd = await _update_chat(
+            chat_id,
+            update={
+                "$set": {"profile.description": description}
+            }
+        )
+        if upd.modified_count == 0:
+            return upd
+
+        # Notify websocket update
+        for user in notify:
+            await ws_manager.notify_user(
+                useranme=user,
+                payload=WebsocketUpdate(
+                    type="update",
+                    scope="conversation.description",
+                    data={
+                        "conversation_id": chat_id,
+                        "description": description
+                    },
+                ),
+                mode="binary"
+            )
+    
+    if icon_id is not None:
+        upd = await _update_chat(
+            chat_id,
+            update={
+                "$set": {"profile.picture_id": icon_id}
+            }
+        )
+        if upd.modified_count == 0:
+            return upd
+
+        # Notify websocket update
+        for user in notify:
+            await ws_manager.notify_user(
+                useranme=user,
+                payload=WebsocketUpdate(
+                    type="update",
+                    scope="conversation.picture",
+                    data={
+                        "conversation_id": chat_id,
+                        "picture_id": icon_id
+                    },
+                ),
+                mode="binary"
+            )
+    
+    return upd

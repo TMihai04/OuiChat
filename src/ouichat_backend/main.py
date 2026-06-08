@@ -26,7 +26,14 @@ async def lifespan(app: FastAPI):
 
 fapi = FastAPI(
     title="OuiChat back-end",
-    description="Back-end API for the OuiChat messaging app.",
+    description="""Back-end API for the OuiChat messaging app.
+    
+### Websocket endpoint(s)
+    
+**Global websocket endpoint**: `/ws/global`
+    
+Args:
+* `payload`: The access token for the API""",
     lifespan=lifespan,
 )
 

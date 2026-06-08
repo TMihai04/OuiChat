@@ -32,6 +32,11 @@ router = APIRouter(
 async def get_calling_user_info(
     username: str = Depends(decode_sub_access_token)
 ) -> GenericItemResponse:
+    """Use this endpoint to receive information about the current user.
+    
+    Returns:
+    * `GenericItemResponse`: A dictionary containing the user information"""
+
     logger.debug(f"Getting current user information - username: {username}")
 
     user_doc = await db.get_user(username)
@@ -43,7 +48,7 @@ async def get_calling_user_info(
     logger.info(f"Got current user information - username: {username}")
 
     return GenericItemResponse(
-        item=user_doc
+        item=user_doc.model_dump(exclude={"pwd_hash"})
     )
 
 
@@ -55,6 +60,18 @@ async def get_target_user_profile(
     target_user: str,
     username: str = Depends(decode_sub_access_token)
 ) -> GenericItemResponse:
+    """Use this endpoint to receive information about a specific user.
+    
+    Args:
+    * `target_user`: The username of the desired user
+    
+    Returns:
+    * `GenericItemResponse`: A dictionary containing information about the target user
+    
+    Throws:
+    * `400`: Target user is the same as the current user
+    * `404`: Target user does not exist"""
+
     logger.debug(f"Getting target user profile card - username: {username} - target: {target_user}")
 
     if target_user == username:
@@ -71,7 +88,7 @@ async def get_target_user_profile(
     logger.info(f"Got target user profile card - username: {username}")
 
     return GenericItemResponse(
-        item=user_doc.model_dump(exclude={"preferences"})
+        item=user_doc.model_dump(exclude={"pwd_hash", "preferences"})
     )
 
 
@@ -81,7 +98,12 @@ async def get_target_user_profile(
 )
 async def list_all_user_profiles(
     username: str = Depends(decode_sub_access_token)
-) -> GenericItemsResponse:
+) -> GenericItemResponse:
+    """Use this endpoint for information on all users from the server. Users will be separated in two lists based on wether they are currently blacklisting the current user.
+    
+    Returns:
+    * `GenericItemResponse`: A dictionary containing lists of user information. The two keys used for the lists are 'white' and 'black'"""
+    
     logger.debug(f"Getting user profile cards - username: {username}")
 
     user_docs = await db.get_all_users(
@@ -91,22 +113,22 @@ async def list_all_user_profiles(
         }
     )
 
-    ret = []
+    ret = {
+        "white": [],
+        "black": []
+    }
 
     # Removes all users that have the calling user blacklisted
-    for i in range(len(user_docs) - 1, -1, -1):
-        if username in user_docs[i].preferences.blacklist:
-            user_docs.pop(i)
-        else:
-            ret.append(
-                user_docs[i].model_dump(exclude={"preferences"})
-            )
+    for user in user_docs:
+        field = "white"
+        if username in user.preferences.blacklist:
+            field = "black"
+        ret[field].append(user.model_dump(exclude={"preferences", "pwd_hash"}))
 
     logger.info(f"Got user profile cards - username: {username}")
 
-    # TODO: Remove blacklist from response
-    return GenericItemsResponse(
-        items=ret
+    return GenericItemResponse(
+        item=ret
     )
 
 
@@ -118,6 +140,18 @@ async def add_to_calling_blacklist(
     body: _bodies.BlacklistBody,
     username: str = Depends(decode_sub_access_token)
 ) -> GenericMessageResponse:
+    """Use this endpoint to 'block' a user. This adds the target user to the current user's blacklist
+    
+    Args:
+    * `body`: `BlacklistBody`
+    
+    Returns:
+    * `GenericMessageResponse`: Message detailing operation result
+    
+    Throws:
+    * `400`: Target user is equal to current user
+    * `404`: Target user does not exist"""
+
     logger.debug(f"Adding to current user's blacklist - username: {username} - target: {body.who}")
 
     if body.who == username:
@@ -152,6 +186,18 @@ async def remove_from_calling_blacklist(
     body: _bodies.BlacklistBody,
     username: str = Depends(decode_sub_access_token)
 ):
+    """Use this endpoint to 'unblock' a user. This removes the target user from the current user's blacklist
+    
+    Args:
+    * `body`: `BlacklistBody`
+    
+    Returns:
+    * `GenericMessageResponse`: Message detailing operation result
+    
+    Throws:
+    * `400`: Target user is equal to current user
+    * `404`: Target user does not exist on either the server or in the blacklist"""
+
     logger.debug(f"Adding to current user's blacklist - username: {username} - target: {body.who}")
 
     if body.who == username:
@@ -183,6 +229,14 @@ async def change_calling_status(
     body: _bodies.StatusBody,
     username: str = Depends(decode_sub_access_token)
 ) -> GenericMessageResponse:
+    """Use this endpoint to change the current user's profile status.
+    
+    Args:
+    * `body`: `StatusBody`
+    
+    Returns:
+    * `GenericMessageResponse`: Message detailing operation result"""
+
     logger.debug(f"Changing current user's status - username: {username} - status: {body.status}")
 
     message = "Success"
@@ -205,15 +259,23 @@ async def change_calling_status(
     status_code=status.HTTP_200_OK
 )
 async def change_calling_profile_picture(
-    attachement_id: str, # Maybe allow for `None` value? as a way to remove the picture
+    body: _bodies.IconBody,
     username: str = Depends(decode_sub_access_token)
 ) -> GenericMessageResponse:
+    """Use this endpoint to change the current user's profile icon.
+    
+    Args:
+    * `body`: `IconBody`
+    
+    Returns:
+    * `GenericMessageResponse`: Message detailing operation result"""
+
     logger.debug(f"Changing current user's profile pciture - username: {username}")
 
     message = "Success"
     update = db.update_user(
         username,
-        pic_id=attachement_id,
+        pic_id=body.icon_id,
     )
     if update.modified_count == 0:
         message = "Unchanged"

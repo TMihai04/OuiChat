@@ -1,6 +1,7 @@
 from .db import *
 from .outputs import *
 from .websockets import *
+from .ids import *
 
 
 __all__ = [
@@ -19,4 +20,6 @@ __all__ = [
     "GenericItemResponse",
     # websockets.py
     "WebsocketUpdate",
+    # ids.py
+    "ChatId",
 ]
