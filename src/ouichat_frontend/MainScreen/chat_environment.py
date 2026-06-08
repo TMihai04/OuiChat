@@ -524,14 +524,28 @@ class ChatMembersList(QWidget):
     def __make_admin(self, item: QListWidgetItem):
         item_data = item.data(Qt.ItemDataRole.UserRole)
         username = item_data['username']
+
+        success, error_msg = self.brain.change_admin_status(self.chat_id, self.domain, username, True)
+        if not success:
+            error_dialog = ErrorDialog()
+            error_dialog.set_error_message(error_msg)
+            error_dialog.exec()
+            return
+
         self.change_member_admin_status_display(username, True)
-        self.brain.change_admin_status(self.chat_id, self.domain, username, True)
 
     def __remove_admin(self, item: QListWidgetItem):
         item_data = item.data(Qt.ItemDataRole.UserRole)
         username = item_data['username']
+
+        success, error_msg = self.brain.change_admin_status(self.chat_id, self.domain, username, False)
+        if not success:
+            error_dialog = ErrorDialog()
+            error_dialog.set_error_message(error_msg)
+            error_dialog.exec()
+            return
+
         self.change_member_admin_status_display(username, False)
-        self.brain.change_admin_status(self.chat_id, self.domain, username, False)
 
     def change_member_admin_status_display(self, username: str, is_admin: bool):
         for idx in range(self.list_widget.count()):

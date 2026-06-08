@@ -270,7 +270,19 @@ class Brain(QObject):
         chat = self.find_chat(chat_id, domain)
         if not chat: return False, "Could NOT find chatroom!"
 
-        # PASS REQUEST THROUGH SERVER AND UPDATE LIST ONLY ON SERVER UPDATE
+        current_user_access_token = self.get_current_user_access_token()
+
+        success, resp_data = self.socket_manager.request_add_users(domain, current_user_access_token, chat_id, users)
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed: return False, "Could not refresh session"
+                else:
+                    return self.add_users_to_chat(chat_id, domain, users)
+            else:
+                return False, "Could NOT add users to chatroom!"
+
+        # ONLY UPDATE USERS ON WEBSOCKET UPDATE
         chat['users'].extend([{
             "username": user,
             "is_admin": False,
@@ -498,12 +510,33 @@ class Brain(QObject):
 
     def change_admin_status(self, chat_id: str, domain: str, username: str, is_admin: bool):
         chat = self.find_chat(chat_id, domain)
-        if not chat: return
+        if not chat: return False, "Could not find chat."
 
+        current_user_access_token = self.get_current_user_access_token()
+
+        user_dict = {
+            username: is_admin
+        }
+
+        success, resp_data = self.socket_manager.request_modify_admin(domain, current_user_access_token, chat_id, user_dict)
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed:
+                    return False, "Could not refresh session"
+                else:
+                    return self.change_admin_status(chat_id, domain, username, is_admin)
+            else:
+                return False, "Could NOT modify admin!"
+
+        # MODIFY ADMIN ONLY ON WEBSOCKET UPDATE
         users = chat['users']
         for user in users:
             if user['username'] == username:
                 user['is_admin'] = is_admin
+                break
+
+        return True, None
 
     def update_timestamps(self, messages: dict):
         for (chat_id, domain), messages_list in messages.items():
@@ -563,7 +596,6 @@ class Brain(QObject):
 
         self.removed_members_from_chat.emit(chat_id, domain, users)
         return True, None
-
 
     def get_last_message_timestamp(self, chat_id: str, domain: str):
         chat = self.find_chat(chat_id, domain)

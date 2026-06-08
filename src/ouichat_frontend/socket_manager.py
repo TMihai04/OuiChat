@@ -12,6 +12,8 @@ UPLOAD_DIR_PATH = "./Uploads/"
 MAX_REQUESTS = 2 # previously 5
 REQUEST_TIMEOUT = 2
 
+DEBUG = True
+
 uploaded_files = []
 
 def get_resp_dict(is_error: bool, code: int, field: Any):
@@ -23,6 +25,9 @@ def get_resp_dict(is_error: bool, code: int, field: Any):
 
 async def handle_error(response: aiohttp.ClientResponse):
     code = response.status
+    if DEBUG:
+        print(code)
+        print(await response.text())
     if code == 400 or code == 401:
         error_msg = (await response.json()).get('detail', 'Something went wrong.')
         return get_resp_dict(True, code, error_msg)
@@ -395,6 +400,91 @@ class GetChatsWorker(QThread):
         resp = asyncio.run(get_chats_request(domain=self.domain, access_token=self.access_token))
         self.finished.emit(resp)
 
+async def modify_admin_request(domain: str, access_token: str, chat_id: str, users: dict):
+    headers = {
+        'Authorization': f"Bearer {access_token}"
+    }
+    params = {
+        'chat_id': chat_id
+    }
+    body = {
+        "admins": users
+    }
+    async with aiohttp.ClientSession() as session:
+        for request_count in range(MAX_REQUESTS):
+            try:
+                async with session.post(url=f"http://{domain}/chats/participant/admin", headers=headers, params=params, json=body) as resp:
+                    try:
+                        resp.raise_for_status()
+                    except aiohttp.ClientResponseError as _:
+                        return await handle_error(resp)
+
+                    resp_dict = await resp.json()
+                    return get_resp_dict(False, resp.status, resp_dict)
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
+                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
+                continue
+
+        return get_resp_dict(True, 408, 'Cannot establish a connection with the server.')
+
+class ModifyAdminWorker(QThread):
+    finished = pyqtSignal(dict)
+
+    def __init__(self, domain: str, access_token: str, chat_id: str, users: dict):
+        super().__init__()
+        self.domain = domain
+        self.access_token = access_token
+        self.chat_id = chat_id
+        self.users = users
+
+    def run(self):
+        resp = asyncio.run(modify_admin_request(domain=self.domain, access_token=self.access_token, chat_id=self.chat_id, users=self.users))
+        self.finished.emit(resp)
+
+async def add_users_request(domain: str, access_token: str, chat_id: str, usernames: list):
+    headers = {
+        'Authorization': f"Bearer {access_token}"
+    }
+    params = {
+        'chat_id': chat_id
+    }
+    body = {
+        "who": usernames
+    }
+    async with aiohttp.ClientSession() as session:
+        for request_count in range(MAX_REQUESTS):
+            try:
+                async with session.post(url=f"http://{domain}/chats/participant/add", headers=headers, params=params,
+                                        json=body) as resp:
+                    try:
+                        resp.raise_for_status()
+                    except aiohttp.ClientResponseError as _:
+                        return await handle_error(resp)
+
+                    resp_dict = await resp.json()
+                    return get_resp_dict(False, resp.status, resp_dict)
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
+                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
+                continue
+
+        return get_resp_dict(True, 408, 'Cannot establish a connection with the server.')
+
+class AddUsersWorker(QThread):
+    finished = pyqtSignal(dict)
+
+    def __init__(self, domain: str, access_token: str, chat_id: str, usernames: list):
+        super().__init__()
+        self.domain = domain
+        self.access_token = access_token
+        self.chat_id = chat_id
+        self.usernames = usernames
+
+    def run(self):
+        resp = asyncio.run(add_users_request(domain=self.domain, access_token=self.access_token, chat_id=self.chat_id, usernames=self.usernames))
+        self.finished.emit(resp)
+
 def execute_request_loop(worker: QThread):
     loop = QEventLoop()
     worker_response = dict()
@@ -454,6 +544,8 @@ class SocketManager(QObject):
         self.create_chat_worker = None
         self.get_chat_details_worker = None
         self.get_chats_worker = None
+        self.modify_admin_worker = None
+        self.add_users_worker = None
 
     def request_chats(self, domain: str, access_token: str):
         self.get_chats_worker = GetChatsWorker(domain, access_token)
@@ -627,6 +719,26 @@ class SocketManager(QObject):
         self.change_user_description_worker = ChangeUserDescriptionWorker(domain, access_token, text)
         worker_response = execute_request_loop(self.change_user_description_worker)
         self.change_user_description_worker.deleteLater()
+
+        is_error = worker_response.get('is_error')
+        if is_error:
+            return False, worker_response
+        return True, None
+
+    def request_modify_admin(self, domain: str, access_token: str, chat_id: str, users: dict):
+        self.modify_admin_worker = ModifyAdminWorker(domain, access_token, chat_id, users)
+        worker_response = execute_request_loop(self.modify_admin_worker)
+        self.modify_admin_worker.deleteLater()
+
+        is_error = worker_response.get('is_error')
+        if is_error:
+            return False, worker_response
+        return True, None
+
+    def request_add_users(self, domain: str, access_token: str, chat_id: str, usernames: list):
+        self.add_users_worker = AddUsersWorker(domain, access_token, chat_id, usernames)
+        worker_response = execute_request_loop(self.add_users_worker)
+        self.add_users_worker.deleteLater()
 
         is_error = worker_response.get('is_error')
         if is_error:
