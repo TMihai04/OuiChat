@@ -39,7 +39,7 @@ class UserDocument(BaseModel):
     pwd_hash: str = Field(
         ...,
         description="Hash of the password",
-        exclude=True,
+        # exclude=True,
         min_length=1,
     )
     profile: UserProfileDocument = Field(
