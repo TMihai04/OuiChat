@@ -672,6 +672,14 @@ class Brain(QObject):
     def get_current_user(self):
         return self.current_user
 
+    def change_reachable_user(self, username: str, add: bool):
+        current_user_domain = self.get_current_user_domain()
+        user = self.get_user_details(username, current_user_domain)
+        if add:
+            self.reachable_users_list.append(user)
+        else:
+            self.reachable_users_list.remove(user)
+
     def set_current_user_reachable_users(self, users: list):
         self.reachable_users_list = list(map(lambda user: user['username'], users))
 
@@ -690,9 +698,10 @@ class Brain(QObject):
                     return False, "Could NOT fetch users!"
 
             resp_data = resp_data.get('field')
+            white = resp_data['white']
 
             self.current_user = user
-            self.set_current_user_reachable_users(resp_data)
+            self.set_current_user_reachable_users(white)
 
             self.current_user_changed.emit(user['username'], user['domain'])
 
@@ -744,9 +753,11 @@ class Brain(QObject):
         resp_data2 = resp_data2.get('field')
 
         self.add_chats(list(map(lambda chat_details: self.get_chat_dict_from_chat_details(user_data['domain'], chat_details), resp_data1)))
-        self.add_users_to_domain(user_data['domain'], resp_data2)
 
-        self.set_current_user_reachable_users(resp_data2)
+        white = resp_data2['white']
+        black = resp_data2['black']
+        self.add_users_to_domain(user_data['domain'], white + black)
+        self.set_current_user_reachable_users(white)
 
         self.current_user_changed.emit(user_data['username'], user_data['domain'])
         return True, None

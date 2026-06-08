@@ -523,8 +523,12 @@ class SocketManager(QObject):
         if is_error:
             return False, worker_response
 
-        users_list = worker_response.get('field').get('items', [])
-        return True, {"field": users_list}
+        white = worker_response.get('field', dict()).get('item', dict()).get('white', [])
+        black = worker_response.get('field', dict()).get('item', dict()).get('black', [])
+        return True, {"field": {
+            "white": white,
+            "black": black
+        }}
 
     def request_create_chat(self, domain: str, access_token: str, is_group_chat: bool, name: str,
                             description: str, icon_id: str, participants: dict):
