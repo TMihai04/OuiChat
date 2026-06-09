@@ -69,7 +69,7 @@ def init_db_collections():
     
     startup.CHATS_COLLECTION_NAME = get_env_str("CHATS_COLLECTION_NAME")
     logger.debug(
-        f"Chats collectio name: {startup.CHATS_COLLECTION_NAME}"
+        f"Chats collection name: {startup.CHATS_COLLECTION_NAME}"
     )
 
     if not startup.CHATS_COLLECTION_NAME:
