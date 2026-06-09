@@ -14,7 +14,7 @@ from PIL import Image
 
 from dialogs import AddUsersDialog, RemoveUsersDialog, ChatDetailsEditDialog, ErrorDialog
 from brain import Brain
-from socket_manager import message_args_to_dict
+from request_manager import message_args_to_dict
 
 RIGHT_PANE_MIN_WIDTH = 310
 DOWNLOAD_WIDGET_WIDTH = 250
@@ -524,14 +524,28 @@ class ChatMembersList(QWidget):
     def __make_admin(self, item: QListWidgetItem):
         item_data = item.data(Qt.ItemDataRole.UserRole)
         username = item_data['username']
+
+        success, error_msg = self.brain.change_admin_status(self.chat_id, self.domain, username, True)
+        if not success:
+            error_dialog = ErrorDialog()
+            error_dialog.set_error_message(error_msg)
+            error_dialog.exec()
+            return
+
         self.change_member_admin_status_display(username, True)
-        self.brain.change_admin_status(self.chat_id, self.domain, username, True)
 
     def __remove_admin(self, item: QListWidgetItem):
         item_data = item.data(Qt.ItemDataRole.UserRole)
         username = item_data['username']
+
+        success, error_msg = self.brain.change_admin_status(self.chat_id, self.domain, username, False)
+        if not success:
+            error_dialog = ErrorDialog()
+            error_dialog.set_error_message(error_msg)
+            error_dialog.exec()
+            return
+
         self.change_member_admin_status_display(username, False)
-        self.brain.change_admin_status(self.chat_id, self.domain, username, False)
 
     def change_member_admin_status_display(self, username: str, is_admin: bool):
         for idx in range(self.list_widget.count()):
@@ -597,6 +611,11 @@ class ChatMembersList(QWidget):
 
 
 class ChatDetails(QScrollArea):
+    """
+    TO DO:
+        - add 'Leave chat' button
+    """
+
     chat_history_requested = pyqtSignal()
 
     def __init__(self, brain: Brain, text_dialog: ChatDetailsEditDialog, add_users_dialog: AddUsersDialog,
@@ -771,7 +790,12 @@ class ChatDetails(QScrollArea):
 
         old_file_path = self.brain.get_chat_icon_path(self.chat_id, self.domain)
 
-        self.brain.set_chat_icon_path(self.chat_id, self.domain, new_file_path)
+        success, error_msg = self.brain.set_chat_icon_path(self.chat_id, self.domain, new_file_path)
+        if not success:
+            error_dialog = ErrorDialog()
+            error_dialog.set_error_message(error_msg)
+            error_dialog.exec()
+            return
 
         if old_file_path != "./Icons/chat_room_icon.png":
             if os.path.exists(old_file_path):
