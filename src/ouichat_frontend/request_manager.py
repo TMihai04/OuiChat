@@ -608,7 +608,7 @@ def message_args_to_dict(chat_id: str, domain: str, message_id: str, sender: str
         "uploaded_files": files,
     }
 
-class SocketManager(QObject):
+class RequestManager(QObject):
     """
     TO DO:
         - implement request/websocket communication

@@ -14,7 +14,7 @@ from PIL import Image
 
 from dialogs import AddUsersDialog, RemoveUsersDialog, ChatDetailsEditDialog, ErrorDialog
 from brain import Brain
-from socket_manager import message_args_to_dict
+from request_manager import message_args_to_dict
 
 RIGHT_PANE_MIN_WIDTH = 310
 DOWNLOAD_WIDGET_WIDTH = 250
