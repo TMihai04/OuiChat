@@ -9,6 +9,7 @@ from typing import Literal
 from typing_extensions import Self
 
 
+# User schemas
 class UserProfileDocument(BaseModel):
     status: str = Field(
         default="Hi there!",
@@ -18,7 +19,7 @@ class UserProfileDocument(BaseModel):
     )
     picture_id: str | None = Field(
         default=None,
-        description="Id of an attachement document",
+        description="Id of an attachment document",
         min_length=1,
     )
 
@@ -64,94 +65,139 @@ class UserDocument(BaseModel):
     )
 
 
+# Conversation schemas
 class ConversationParticipantDocument(BaseModel):
-  username: str = Field(
-    ...,
-    description="Participant's username"
-  )
-  is_admin: bool = Field(
-    default=False,
-    description="Flag that determines wether participant is an admin of the conversation"
-  )
-  last_seen: int | None = Field(
-    default=None,
-    description="Timestamp of when the participant last interacted with the conversation"
-  )
+	username: str = Field(
+		...,
+		description="Participant's username"
+	)
+	is_admin: bool = Field(
+		default=False,
+		description="Flag that determines wether participant is an admin of the conversation"
+	)
+	last_seen: int | None = Field(
+		default=None,
+		description="Timestamp of when the participant last interacted with the conversation"
+	)
 
 
 class ConversationPreferencesDocument(BaseModel):
-  participants: list[ConversationParticipantDocument] = Field(
-    ...,
-    description="List of users taking part in this conversation, plus details"
-  )
-  created_by: list[str] = Field(
-    ...,
-    description="Either one (groups) or two (direct) user(s) that created the conversation",
-    min_length=1,
-    max_length=2
-  )
+	participants: list[ConversationParticipantDocument] = Field(
+		...,
+		description="List of users taking part in this conversation, plus details"
+	)
+	created_by: list[str] = Field(
+		...,
+		description="Either one (groups) or two (direct) user(s) that created the conversation",
+		min_length=1,
+		max_length=2
+	)
 
-  @model_validator(mode="after")
-  def check_at_least_one_admin(self) -> Self:
-    for entry in self.participants:
-      if entry.is_admin:
-        return self
-    raise ValueError("At least one admin is required in a conversation")
+	@model_validator(mode="after")
+	def check_at_least_one_admin(self) -> Self:
+		for entry in self.participants:
+			if entry.is_admin:
+				return self
+		raise ValueError("At least one admin is required in a conversation")
 
 
 class ConversationProfileDocument(BaseModel):
-  name: str | None = Field(
-    default=None,
-    description="Display name of the conversation"
-  )
-  description: str | None = Field(
-    default=None,
-    description="Display description of the conversation"
-  )
-  picture_id: str | None = Field(
-    default=None,
-    description="Display image of the conversation"
-  )
+	name: str | None = Field(
+		default=None,
+		description="Display name of the conversation"
+	)
+	description: str | None = Field(
+		default=None,
+		description="Display description of the conversation"
+	)
+	picture_id: str | None = Field(
+		default=None,
+		description="Display image of the conversation"
+	)
 
 
 class ConversationDocument(BaseModel):
-  conversation_id: str = Field(
-    ...,
-    description="ID of the conversation. UUID4 / UUID7 ? format"
-  )
-  type: Literal["direct", "group"] = Field(
-    ...,
-    description="Type of conversation referenced by the document"
-  )
-  profile: ConversationProfileDocument = Field(
-    default=ConversationProfileDocument(),
-    description="Display information"
-  )
-  preferences: ConversationPreferencesDocument = Field(
-    ...,
-    description="Configuration information"
-  )
-  created_at: int = Field(
-    ...,
-    description="Timestamp when this entry was created"
-  )
-  updated_at: int = Field(
-    ...,
-    description="Timestamp when this entry was last modified"
-  )
+	conversation_id: str = Field(
+		...,
+		description="ID of the conversation. UUID4 / UUID7 ? format"
+	)
+	type: Literal["direct", "group"] = Field(
+		...,
+		description="Type of conversation referenced by the document"
+	)
+	profile: ConversationProfileDocument = Field(
+		default=ConversationProfileDocument(),
+		description="Display information"
+	)
+	preferences: ConversationPreferencesDocument = Field(
+		...,
+		description="Configuration information"
+	)
+	created_at: int = Field(
+		...,
+		description="Timestamp when this entry was created"
+	)
+	updated_at: int = Field(
+		...,
+		description="Timestamp when this entry was last modified"
+	)
 
-  @model_validator(mode="after")
-  def validate_profile_by_conv_type(self) -> Self:
-    if self.type == "direct":
-      if self.profile.name is not None:
-        raise ValueError("Direct conversation name cannot be set")
-      if self.profile.description is not None:
-        raise ValueError("Direct conversation description cannot be set")
-      if self.profile.picture_id is not None:
-        raise ValueError("Direct conversation picture_id cannot be set")
-    elif self.type == "group":
-      if self.profile.name is None:
-        raise ValueError("Group conversation name must be set")
-      if self.profile.description is None:
-        raise ValueError("Group conversation description must be set")
-    return self
+	@model_validator(mode="after")
+	def validate_profile_by_conv_type(self) -> Self:
+		if self.type == "direct":
+			if self.profile.name is not None:
+				raise ValueError("Direct conversation name cannot be set")
+			if self.profile.description is not None:
+				raise ValueError("Direct conversation description cannot be set")
+			if self.profile.picture_id is not None:
+				raise ValueError("Direct conversation picture_id cannot be set")
+		elif self.type == "group":
+			if self.profile.name is None:
+				raise ValueError("Group conversation name must be set")
+			if self.profile.description is None:
+				raise ValueError("Group conversation description must be set")
+		return self
+
+
+# Message schemas
+class MessageDocument(BaseModel):
+	message_id: str = Field(
+		...,
+		description="The unique identifier of the message",
+		min_length=1
+	)
+	sender: str = Field(
+		...,
+		description="Username of the user who sent this message",
+		min_length=1
+	)
+	content: str | None = Field(
+		default=None,
+		description="The literal text content of the message",
+		min_length=1,
+		max_length=512
+	)
+	attachments: list[str] = Field(
+		default=[],
+		description="List of attachment ids associated to the message",
+		max_length=5
+	)
+	replied_to: str | None = Field(
+		default=None,
+		description="Id of the message this message is a reply of",
+		min_length=1
+	)
+	created_at: int = Field(
+		...,
+		description="Unix timestamp of when the message was created"
+	)
+	updated_at: int = Field(
+		...,
+		description="Unix timestamp of when this entry was last modified"
+	)
+
+	@model_validator(mode="after")
+	def validate_content(self) -> Self:
+		if not self.content and not self.attachments:
+			raise ValueError("Either `content` or `attachements` must be provided")
+		return self
