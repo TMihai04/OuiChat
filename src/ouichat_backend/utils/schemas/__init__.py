@@ -13,6 +13,7 @@ __all__ = [
     "ConversationPreferencesDocument",
     "ConversationProfileDocument",
     "ConversationDocument",
+    "MessageDocument",
     # outputs.py
     "NewTokensResponse",
     "GenericMessageResponse",

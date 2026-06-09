@@ -113,3 +113,50 @@ class ParticipantInviteBody(BaseModel):
         description="A list of usernames to be added or reoved from a conversation",
         min_length=1
     )
+
+
+class SendMessageBody(BaseModel):
+    content: str | None = Field(
+        None,
+        description="Literal text content of the message",
+        min_length=1,
+        max_length=512
+    )
+    attachments: list[str] = Field(
+        [],
+        description="List of attachment ids associated with the message",
+        max_length=5
+    )
+    replied_to: str | None = Field(
+        None,
+        description="Id of the message this message is a reply to",
+        min_length=1
+    )
+
+    @model_validator(mode="after")
+    def validate_content(self) -> Self:
+        if not self.content and not self.attachments:
+            raise ValueError("Either `content` or `attachments` must be provided")
+        return self
+
+
+class EditMessageBody(BaseModel):
+    message_id: str = Field(
+        ...,
+        description="Id of the message to be edited",
+        min_length=1
+    )
+    new_content: str = Field(
+        ...,
+        description="Edited content for the message",
+        min_length=1,
+        max_length=512
+    )
+
+
+class DeleteMessageBody(BaseModel):
+    message_id: str = Field(
+        ...,
+        description="Id of the message to be deleted",
+        min_length=1
+    )

@@ -7,10 +7,12 @@ from ouichat_backend.utils.schemas import (
     UserDocument,
     ConversationDocument,
     ConversationParticipantDocument,
+    MessageDocument,
     WebsocketUpdate,
 )
 from ouichat_backend.utils.methods import (
     timestamp_now,
+    get_uuid4
 )
 
 from pymongo import AsyncMongoClient
@@ -97,6 +99,14 @@ def get_chats_collection():
     )
 
 
+def get_message_collection(conv: str):
+    return get_acollection(
+        startup.db_client,
+        startup.DB_NAME,
+        conv
+    )
+
+
 # ================================
 # Abstractions for checks
 # ================================
@@ -127,8 +137,10 @@ async def add_user(new_user: UserDocument):
     )
 
     # Notify websocket of update
+    event_id = get_uuid4()
     await ws_manager.notify_all(
         payload=WebsocketUpdate(
+            event_id=event_id,
             type="create",
             scope="user",
             data=new_user.model_dump(include={"username", "profile"})
@@ -185,8 +197,10 @@ async def delete_user(
     )
 
     # Notify websocket of update
+    event_id = get_uuid4()
     await ws_manager.notify_all(
         payload=WebsocketUpdate(
+            event_id=event_id,
             type="delete",
             scope="user",
             data={
@@ -248,9 +262,11 @@ async def update_user(
             return upd
         
         # Notify websocket of update
+        event_id = get_uuid4()
         await ws_manager.notify_user(
             username=bl_add,
             payload=WebsocketUpdate(
+                event_id=event_id,
                 type="update",
                 scope="user.blacklist",
                 data={
@@ -272,9 +288,11 @@ async def update_user(
             return upd
         
         # Notify websocket of update
+        event_id = get_uuid4()
         await ws_manager.notify_user(
             username=bl_del,
             payload=WebsocketUpdate(
+                event_id=event_id,
                 type="update",
                 scope="user.blacklist",
                 data={
@@ -296,8 +314,10 @@ async def update_user(
             return upd
         
         # Notify websocket of update
+        event_id = get_uuid4()
         await ws_manager.notify_all(
             payload=WebsocketUpdate(
+                event_id=event_id,
                 type="update",
                 scope="user.status",
                 data={
@@ -319,7 +339,9 @@ async def update_user(
             return upd
         
         # Notify websocket of update
+        event_id = get_uuid4()
         await ws_manager.notify_all(
+            event_id=event_id,
             payload=WebsocketUpdate(
                 type="update",
                 scope="user.picture",
@@ -331,24 +353,26 @@ async def update_user(
             mode="binary"
         )
     
-    if pic_id is not None:
+    if login is not None:
         upd = await _update_user(
             username,
             update={
-                "$set": {"profile.picture_id": pic_id}
+                "$set": {"last_login": login}
             }
         )
         if upd.modified_count == 0:
             return upd
         
         # Notify websocket of update
+        event_id = get_uuid4()
         await ws_manager.notify_all(
             payload=WebsocketUpdate(
+                event_id=event_id,
                 type="update",
-                scope="user.picture",
+                scope="user.login",
                 data={
                     "username": username,
-                    "picture_id": pic_id
+                    "last_login": login
                 }
             ),
             mode="binary"
@@ -368,10 +392,12 @@ async def add_chat(
     )
 
     # Notify websocket update
+    event_id = get_uuid4()
     for part in new_chat.preferences.participants:
         await ws_manager.notify_user(
             username=part.username,
             payload=WebsocketUpdate(
+                event_id=event_id,
                 type="create",
                 scope="conversation",
                 data=new_chat.model_dump()
@@ -428,11 +454,18 @@ async def delete_chat(
         }
     )
 
+    # Delete message collection for this conversation
+    msg_collection = get_message_collection(chat_id)
+
+    await msg_collection.drop()
+
     # Notify websocket of update
+    event_id = get_uuid4()
     for user in notify:
         await ws_manager.notify_user(
             username=user,
             payload=WebsocketUpdate(
+                event_id=event_id,
                 type="delete",
                 scope="conversation",
                 data={
@@ -443,7 +476,6 @@ async def delete_chat(
         )
 
 
-# TODO: Add update wrapper methods
 async def _update_chat(
     chat_id: str,
     *,
@@ -513,10 +545,12 @@ async def update_chat(
             return upd
 
         # Notify websocket update
+        event_id = get_uuid4()
         for user in notify:
             await ws_manager.notify_user(
-                useranme=user,
+                username=user,
                 payload=WebsocketUpdate(
+                    event_id=event_id,
                     type="update",
                     scope="conversation.admins",
                     data={
@@ -549,10 +583,12 @@ async def update_chat(
             return upd
 
         # Notify websocket update
+        event_id = get_uuid4()
         for user in notify:
             await ws_manager.notify_user(
-                useranme=user,
+                username=user,
                 payload=WebsocketUpdate(
+                    event_id=event_id,
                     type="update",
                     scope="conversation.participants",
                     data={
@@ -579,10 +615,12 @@ async def update_chat(
             return upd
 
         # Notify websocket update
+        event_id = get_uuid4()
         for user in notify:
             await ws_manager.notify_user(
-                useranme=user,
+                username=user,
                 payload=WebsocketUpdate(
+                    event_id=event_id,
                     type="update",
                     scope="conversation.participants",
                     data={
@@ -605,10 +643,12 @@ async def update_chat(
             return upd
 
         # Notify websocket update
+        event_id = get_uuid4()
         for user in notify:
             await ws_manager.notify_user(
-                useranme=user,
+                username=user,
                 payload=WebsocketUpdate(
+                    event_id=event_id,
                     type="update",
                     scope="conversation.name",
                     data={
@@ -630,10 +670,12 @@ async def update_chat(
             return upd
 
         # Notify websocket update
+        event_id = get_uuid4()
         for user in notify:
             await ws_manager.notify_user(
-                useranme=user,
+                username=user,
                 payload=WebsocketUpdate(
+                    event_id=event_id,
                     type="update",
                     scope="conversation.description",
                     data={
@@ -655,16 +697,180 @@ async def update_chat(
             return upd
 
         # Notify websocket update
+        event_id = get_uuid4()
         for user in notify:
             await ws_manager.notify_user(
-                useranme=user,
+                username=user,
                 payload=WebsocketUpdate(
+                    event_id=event_id,
                     type="update",
                     scope="conversation.picture",
                     data={
                         "conversation_id": chat_id,
                         "picture_id": icon_id
                     },
+                ),
+                mode="binary"
+            )
+    
+    return upd
+
+
+# Message entries
+async def add_message(
+    chat: ConversationDocument,
+    new_message: MessageDocument
+):
+    collection = get_message_collection(chat.conversation_id)
+
+    await collection.insert_one(
+        new_message.model_dump()
+    )
+
+    # Notify websocket update
+    event_id = get_uuid4()
+    for part in chat.preferences.participants:
+        await ws_manager.notify_user(
+            username=part.username,
+            payload=WebsocketUpdate(
+                event_id=event_id,
+                type="create",
+                scope="message",
+                data=new_message.model_dump()
+            ),
+            mode="binary"
+        )
+
+
+async def get_message(
+    chat: ConversationDocument,
+    message_id: str
+) -> MessageDocument:
+    collection = get_message_collection(chat.conversation_id)
+
+    message_doc = await collection.find_one(
+        filter={
+            "message_id": message_id
+        }
+    )
+
+    if message_doc is None:
+        return None
+    
+    return MessageDocument(**message_doc)
+
+
+async def get_all_messages(
+    chat: ConversationDocument,
+    filter: dict,
+    sort: dict = {},
+    limit: int = 30
+):
+    collection = get_message_collection(chat.conversation_id)
+
+    cursor = collection.find(
+        filter=filter,
+        sort=sort
+    ).limit(limit)
+
+    ret = []
+    async for entry in cursor:
+        ret.append(
+            MessageDocument(**entry)
+        )
+    return ret
+
+
+async def delete_message(
+    chat: ConversationDocument,
+    message_id: str,
+):
+    collection = get_message_collection(chat.conversation_id)
+
+    await collection.delete_one(
+        filter={
+            "message_id": message_id
+        }
+    )
+
+    # Notify websocket update
+    event_id = get_uuid4()
+    for part in chat.preferences.participants:
+        await ws_manager.notify_user(
+            username=part.username,
+            payload=WebsocketUpdate(
+                event_id=event_id,
+                type="delete",
+                scope="message",
+                data={
+                    "message_id": message_id
+                }
+            ),
+            mode="binary"
+        )
+
+async def _update_message(
+    chat: ConversationDocument,
+    message_id: str,
+    *,
+    update: dict,
+    **kwargs
+):
+    collection = get_message_collection(chat.conversation_id)
+
+    ret = None
+    if update:
+        ret = await collection.update_one(
+            filter={
+                "message_id": message_id
+            },
+            update=update,
+            **kwargs
+        )
+    # Update time in different db operation
+    ret2 = await collection.update_one(
+        filter={
+            "message_id": message_id
+        },
+        update={
+            "$set": {"updated_at": timestamp_now()}
+        }
+    )
+
+    return ret or ret2
+
+
+async def update_message(
+    chat: ConversationDocument,
+    message_id: str,
+    *,
+    content: str | None = None,
+):
+    upd = None
+    if content is not None:
+        upd = await _update_message(
+            chat,
+            message_id,
+            update={
+                "$set": {"content": content}
+            }
+        )
+        if upd.modified_count == 0:
+            return upd
+        
+        # Notify websocket update
+        event_id = get_uuid4()
+        for part in chat.preferences.participants:
+            await ws_manager.notify_user(
+                username=part.username,
+                payload=WebsocketUpdate(
+                    event_id=event_id,
+                    type="update",
+                    scope="message.content",
+                    data={
+                        "message_id": message_id,
+                        "content": content
+                    }
                 ),
                 mode="binary"
             )

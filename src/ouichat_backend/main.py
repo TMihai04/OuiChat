@@ -1,6 +1,6 @@
 # Main file
 
-from ouichat_backend import _init
+from ouichat_backend import _init, config
 from ouichat_backend.utils.logger import logger
 from ouichat_backend.routes import *
 
@@ -25,15 +25,8 @@ async def lifespan(app: FastAPI):
 
 
 fapi = FastAPI(
-    title="OuiChat back-end",
-    description="""Back-end API for the OuiChat messaging app.
-    
-### Websocket endpoint(s)
-    
-**Global websocket endpoint**: `/ws/global`
-    
-Args:
-* `payload`: The access token for the API""",
+    title=config.APP_TITLE,
+    description=config.APP_DESCRIPTION,
     lifespan=lifespan,
 )
 

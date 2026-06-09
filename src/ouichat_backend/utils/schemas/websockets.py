@@ -5,6 +5,11 @@ from typing import Literal
 
 
 class WebsocketUpdate(BaseModel):
+    event_id: str = Field(
+        ...,
+        description="Unique identifier for this event",
+        min_length=1
+    )
     type: Literal["create", "update", "delete", "system"] = Field(
         ...,
         description="The type of update sent through the websocket"

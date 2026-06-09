@@ -23,7 +23,6 @@ from . import _bodies, _valids
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Literal
-from pydantic import ValidationError
 
 import uuid
 
@@ -365,7 +364,7 @@ async def add_user_to_chat(
     message = "Success"
     update = await db.update_chat(
         str(chat_id),
-        notify=[*chat_participants, body.who],
+        notify=[*chat_participants, *body.who],
         to_add=body.who
     )
     if update.modified_count == 0:
@@ -544,6 +543,13 @@ async def update_chat_name(
         raise HTTPException(
             405, "Not allowed for `direct` conversations"
         )
+    
+    # Check if conversation exists in db
+    chat_doc = await db.get_chat(str(chat_id)) # Use chat_id.id and change the create method to return the str(chat_id)
+    if not chat_doc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "Chat id not found"
+        )
 
     # Check if current user is a participant and is admin
     flags = _get_participant_flags(username, chat_doc)
@@ -600,6 +606,13 @@ async def update_chat_description(
             405, "Not allowed for `direct` conversations"
         )
     
+    # Check if conversation exists in db
+    chat_doc = await db.get_chat(str(chat_id)) # Use chat_id.id and change the create method to return the str(chat_id)
+    if not chat_doc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "Chat id not found"
+        )
+    
     # Check if current user is a participant and is admin
     flags = _get_participant_flags(username, chat_doc)
     if not flags.get("participant"):
@@ -653,6 +666,13 @@ async def update_chat_icon(
     if chat_id.type == "direct":
         raise HTTPException(
             405, "Not allowed for `direct` conversations"
+        )
+    
+    # Check if conversation exists in db
+    chat_doc = await db.get_chat(str(chat_id)) # Use chat_id.id and change the create method to return the str(chat_id)
+    if not chat_doc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "Chat id not found"
         )
 
     # Check if current user is a participant and is admin
