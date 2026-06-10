@@ -16,9 +16,16 @@ class Brain(QObject):
     """
 
     chats_added = pyqtSignal(list)
-    chat_removed = pyqtSignal(dict)
+    chat_removed = pyqtSignal(str, str)
 
     run_error_dialog = pyqtSignal(str)
+
+    add_users_to_domain_signal = pyqtSignal(str, list)
+    remove_user_from_domain_signal = pyqtSignal(str, str)
+    user_reachable_status_changed = pyqtSignal(str, str, bool)
+    modify_admins_signal = pyqtSignal(str, str, list, list)
+
+    set_chat_visibility = pyqtSignal(str, str, bool)
 
     remove_chats = pyqtSignal(dict)
     remove_domain = pyqtSignal(str)
@@ -97,17 +104,275 @@ class Brain(QObject):
 
     def handle_websocket_retry_failed(self, domain: str, access_token: str):
         self.run_error_dialog.emit(f"Connection lost with {domain}. Logging out...")
-        self.logout_user(domain, access_token)
+        self.logout_user_by_details(domain, access_token)
 
-    def handle_websocket_error(self, domain: str, _, error_message: str):
-        self.run_error_dialog.emit(f"Websocket error for {domain}: {error_message}")
+    @staticmethod
+    def handle_websocket_error(domain: str, _, error_message: str):
+        print(f"Websocket error for {domain}: {error_message}")
 
     def handle_websocket_event(self, domain: str, access_token: str, event_data: dict):
         print(event_data)
-        data = {
-            "access_token": "yes"
-        }
-        self.websocket_manager.send_message(domain, access_token, data)
+
+        event_type = event_data['type']
+        event_scope = event_data['scope']
+        event_payload = event_data['data']
+
+        event_scope_tokenized = event_scope.split('.')
+        if event_scope_tokenized[0] == 'token':
+
+            username = None
+            for user in self.users_list:
+                if user['domain'] == domain and user['access_token'] == access_token:
+                    username = user['username']
+            if not username: return
+
+            success = self.refresh_tokens(domain, access_token)
+            if not success:
+                self.logout_user_by_details(domain, access_token)
+
+            user = self.find_user(username, domain)
+
+            self.websocket_manager.update_access_token(domain, access_token, user['access_token'])
+
+            return
+
+        elif event_scope_tokenized[0] == 'user':
+            if len(event_scope_tokenized) == 1:
+                if event_type == 'create':
+                    self.add_users_to_domain(domain, [event_payload])
+                    return
+
+                elif event_type == 'delete':
+                    username = event_payload['username']
+                    current_user_domain = self.get_current_user_domain()
+                    if domain == current_user_domain and self.user_is_reachable(username):
+                        self.change_reachable_user(username, add=False)
+
+                    self.remove_user_from_domain(domain, username)
+
+                    return
+
+                else: return
+            elif len(event_scope_tokenized) == 2:
+                if event_type != 'update': return
+
+                if event_scope_tokenized[1] == 'blacklist':
+                    current_user_domain = self.get_current_user_domain()
+                    if domain != current_user_domain: return
+
+                    username = event_payload['username']
+                    got_blacklisted = event_payload['is_blacklisted']
+                    self.change_reachable_user(username, add=not got_blacklisted)
+
+                    return
+
+                elif event_scope_tokenized[1] == 'status':
+                    username = event_payload['username']
+                    new_status = event_payload['status']
+
+                    success = self.set_user_description(username, domain, new_status)
+                    if not success:
+                        self.run_error_dialog.emit("Could not set user description!")
+                        return
+
+                    return
+
+                elif event_scope_tokenized[1] == 'picture':
+                    username = event_payload['username']
+                    new_picture_id = event_payload['picture_id']
+
+                    success = self.set_user_icon_path(username, domain, new_picture_id)
+                    if not success:
+                        self.run_error_dialog.emit("Could not set user icon path!")
+                        return
+
+                    return
+
+                elif event_scope_tokenized[1] == 'login':
+                    # NO IMPLEMENTATION NEEDED YET
+                    return
+
+                else: return
+            else: return
+
+        elif event_scope_tokenized[0] == 'conversation':
+            if len(event_scope_tokenized) == 1:
+                if event_type == 'create':
+                    chat_details = event_payload
+                    chat_dict = self.get_chat_dict_from_chat_details(domain, chat_details)
+
+                    self.add_chats([chat_dict])
+
+                    return
+
+                elif event_type == 'delete':
+                    chat_id = event_payload['conversation_id']
+                    success = self.remove_chat(chat_id, domain)
+                    if not success:
+                        self.run_error_dialog.emit("Could not remove chat!")
+                        return
+
+                    return
+
+                else: return
+            elif len(event_scope_tokenized) == 2:
+                if event_type != 'update': return
+
+                if event_scope_tokenized[1] == 'admins':
+                    chat_id = event_payload['conversation_id']
+                    make = event_payload['make_admin']
+                    remove = event_payload['remove_admin']
+
+                    self.modify_admins(chat_id, domain, make, remove)
+
+                    return
+
+                elif event_scope_tokenized[1] == 'participants':
+                    operation = event_payload['operation']
+                    if operation != 'removed' and operation != 'added': return
+
+                    chat_id = event_payload['conversation_id']
+                    participants = event_payload['who']
+                    if operation == 'removed':
+                        success, error_msg = self.remove_users_from_chat(chat_id, domain, participants)
+                        if not success:
+                            self.run_error_dialog.emit("Could not remove users!")
+                            return
+
+                    else:
+                        success, error_msg = self.add_users_to_chat(chat_id, domain, participants)
+                        if not success:
+                            self.run_error_dialog.emit("Could not add users!")
+                            return
+
+                    return
+
+                elif event_scope_tokenized[1] == 'name':
+                    chat_id = event_payload['conversation_id']
+                    new_name = event_payload['name']
+
+                    success, error_msg = self.set_chat_display_name(chat_id, domain, new_name)
+                    if not success:
+                        self.run_error_dialog.emit(error_msg)
+                        return
+
+                    return
+
+                elif event_scope_tokenized[1] == 'description':
+                    chat_id = event_payload['conversation_id']
+                    new_desc = event_payload['description']
+
+                    success = self.set_chat_description(chat_id, domain, new_desc)
+                    if not success:
+                        self.run_error_dialog.emit("Could not set chat description!")
+                        return
+
+                    return
+
+                elif event_scope_tokenized[1] == 'picture':
+                    chat_id = event_payload['conversation_id']
+                    icon_path = event_payload['picture_id']
+
+                    success, error_msg = self.set_chat_icon_path(chat_id, domain, icon_path)
+                    if not success:
+                        self.run_error_dialog.emit(error_msg)
+                        return
+
+                    return
+
+                else: return
+            else: return
+
+    def remove_users_from_chat(self, chat_id: str, domain: str, users: list):
+        chat = self.find_chat(chat_id, domain)
+        if chat is None: return False, "Could NOT find chatroom!"
+
+        chat['users'] = [user for user in chat['users'] if user['username'] not in users]
+
+        self.removed_members_from_chat.emit(chat_id, domain, users)
+
+        chat_users = list(map(lambda user: user['username'], self.get_chat_users(chat_id, domain)))
+        safe_to_remove = True
+        for user in self.users_list:
+            if user['username'] in chat_users:
+                safe_to_remove = False
+                break
+
+        if safe_to_remove:
+            self.remove_chat(chat_id, domain)
+
+        return True, None
+
+    def add_users_to_chat(self, chat_id: str, domain: str, users: list):
+        chat = self.find_chat(chat_id, domain)
+        if not chat:
+            current_user_access_token = self.get_current_user_access_token()
+            success, resp_data = self.request_manager.request_get_chat_details(domain, current_user_access_token, chat_id)
+
+            if not success:
+                if resp_data['code'] == 401:
+                    refreshed = self.refresh_tokens()
+                    if not refreshed:
+                        return False, "Could not refresh session"
+                    else:
+                        return self.add_users_to_chat(chat_id, domain, users)
+                else:
+                    return False, resp_data.get('field')
+
+            chat_details = resp_data.get('field').get('item')
+            chat_dict = self.get_chat_dict_from_chat_details(domain, chat_details)
+
+            self.add_chats([chat_dict])
+
+            self.added_members_to_chat.emit(chat_id, domain, users)
+            return True, None
+
+        chat['users'].extend([{
+            "username": user,
+            "is_admin": False,
+            "last_seen_time": 0
+        } for user in users])
+
+        self.added_members_to_chat.emit(chat_id, domain, users)
+        return True, None
+
+    def modify_admins(self, chat_id: str, domain: str, make: list, remove: list):
+        chat_users = self.get_chat_users(chat_id, domain)
+        for user in chat_users:
+            if user['username'] in make:
+                user['is_admin'] = True
+            elif user['username'] in remove:
+                user['is_admin'] = False
+
+        self.modify_admins_signal.emit(chat_id, domain, make, remove)
+
+    def set_user_icon_path(self, username: str, domain: str, icon_path: str | None):
+        user_data = self.get_user_details(username, domain)
+        if not user_data: return False
+        user_data['profile']['picture_id'] = icon_path if icon_path is not None else './Icons/default_user_icon.png'
+
+        self.user_updated.emit(username, domain)
+
+        return True
+
+    def set_user_description(self, username: str, domain: str, description: str):
+        user_data = self.get_user_details(username, domain)
+        if not user_data: return False
+        user_data['profile']['status'] = description
+
+        self.user_updated.emit(username, domain)
+
+        return True
+
+    def remove_user_from_domain(self, domain: str, username: str):
+        domain_users = self.get_domain_users(domain)
+        for user in domain_users:
+            if user['username'] == username:
+                domain_users.remove(user)
+
+                self.remove_user_from_domain_signal.emit(domain, username)
+
+                return
 
     def logout_user_by_details(self, domain: str, access_token: str):
         current_user_username = self.get_current_user_username()
@@ -162,19 +427,26 @@ class Brain(QObject):
         self.logout_user_by_details(current_user_domain, current_user_access_token)
         self.select_previous_user.emit()
 
-    def refresh_tokens(self):
-        current_user_domain = self.get_current_user_domain()
-        current_user_refresh_token = self.get_current_user_refresh_token()
+    def refresh_tokens(self, domain: str | None = None, access_token: str | None = None):
+        target_domain = domain if domain else self.get_current_user_domain()
+        target_access_token = access_token if access_token else self.get_current_user_access_token()
 
-        success, resp_data = self.request_manager.request_refresh_tokens(current_user_domain, current_user_refresh_token)
+        target_user = None
+        for user in self.users_list:
+            if user['domain'] == target_domain and user['access_token'] == target_access_token:
+                target_user = user
+
+        if not target_user: return False
+
+        success, resp_data = self.request_manager.request_refresh_tokens(domain, target_user['refresh_token'])
         if not success:
             response = self.refresh_login_dialog.exec()
             return response == QDialog.DialogCode.Accepted
 
         resp_data = resp_data.get('field')
 
-        self.set_current_user_access_token(resp_data['access_token'])
-        self.set_current_user_refresh_token(resp_data['refresh_token'])
+        target_user['access_token'] = resp_data['access_token']
+        target_user['refresh_token'] = resp_data['refresh_token']
         return True
 
     def get_current_user_profile(self, domain: str | None, access_token: str | None):
@@ -247,7 +519,6 @@ class Brain(QObject):
         return self.get_user_description(current_user_username, current_user_domain)
 
     def set_current_user_description(self, description: str):
-        current_user_username = self.get_current_user_username()
         current_user_domain = self.get_current_user_domain()
         current_user_access_token = self.get_current_user_access_token()
 
@@ -261,24 +532,24 @@ class Brain(QObject):
             else:
                 return False, resp_data.get('field')
 
-        # REMOVE UNNEEDED BITS OF THE METHOD ONCE THE WEBSOCKET UPDATES ARE IMPLEMENTED
-        # CHANGE DESCRIPTION ONLY ON WEBSOCKET UPDATE
-        user = self.get_user_details(current_user_username, current_user_domain)
-        if not user: return False, "Could not get current user details"
-
-        user['profile']['status'] = description
-        self.user_updated.emit(current_user_username, current_user_domain)
         return True, None
 
     def set_current_user_icon_path(self, icon_path: str):
-        current_user_username = self.get_current_user_username()
+        current_user_access_token = self.get_current_user_access_token()
         current_user_domain = self.get_current_user_domain()
 
-        user = self.get_user_details(current_user_username, current_user_domain)
-        if not user: return
+        success, resp_data = self.request_manager.request_change_user_icon(current_user_domain, current_user_access_token, icon_path)
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed:
+                    return False, "Could not refresh session"
+                else:
+                    return self.set_current_user_icon_path(icon_path)
+            else:
+                return False, resp_data.get('field')
 
-        user['profile']['picture_id'] = icon_path
-        self.user_updated.emit(current_user_username, current_user_domain)
+        return True, None
 
     def upload_files(self, file_list: list):
         success, resp_data = self.request_manager.request_upload_files(file_list)
@@ -298,10 +569,7 @@ class Brain(QObject):
 
         return True, None
 
-    def add_users_to_chat(self, chat_id: str, domain: str, users: list):
-        chat = self.find_chat(chat_id, domain)
-        if not chat: return False, "Could NOT find chatroom!"
-
+    def add_users_to_chat_request(self, chat_id: str, domain: str, users: list):
         current_user_access_token = self.get_current_user_access_token()
 
         success, resp_data = self.request_manager.request_modify_users(domain, current_user_access_token, chat_id, users, add=True)
@@ -310,18 +578,10 @@ class Brain(QObject):
                 refreshed = self.refresh_tokens()
                 if not refreshed: return False, "Could not refresh session"
                 else:
-                    return self.add_users_to_chat(chat_id, domain, users)
+                    return self.add_users_to_chat_request(chat_id, domain, users)
             else:
                 return False, "Could NOT add users to chatroom!"
 
-        # ONLY UPDATE USERS ON WEBSOCKET UPDATE
-        chat['users'].extend([{
-            "username": user,
-            "is_admin": False,
-            "last_seen_time": 0
-        } for user in users])
-
-        self.added_members_to_chat.emit(chat_id, domain, users)
         return True, None
 
     def get_chat_dict_from_chat_details(self, domain: str, chat_details: dict):
@@ -399,14 +659,19 @@ class Brain(QObject):
         self.add_chats([chat_dict])
         return True, (chat_id, current_user_domain)
 
-    def set_chat_icon_path(self, chat_id: str, domain: str, icon_path: str):
-        """
-        NOT MADE FOR WEBSOCKET UPDATES
-        """
-
+    def set_chat_icon_path(self, chat_id, domain, icon_path):
         chat = self.find_chat(chat_id, domain)
         if not chat: return False, "Could not find chat!"
 
+        chat['icon_path'] = icon_path
+
+        self.chat_updated.emit(chat_id, domain)
+        return True, None
+
+    def set_chat_icon_path_request(self, chat_id: str, domain: str, icon_path: str):
+        """
+        NOT MADE FOR WEBSOCKET UPDATES
+        """
         current_user_access_token = self.get_current_user_access_token()
 
         # SEND ICON_ID NOT ICON_PATH
@@ -418,24 +683,25 @@ class Brain(QObject):
                 refreshed = self.refresh_tokens()
                 if not refreshed: return False, "Could not refresh session!"
                 else:
-                    return self.set_chat_icon_path(chat_id, domain, icon_path)
+                    return self.set_chat_icon_path_request(chat_id, domain, icon_path)
             else:
                 return False, "Could NOT set chat icon!"
-
-        chat['icon_path'] = icon_path
-
-        self.chat_updated.emit(chat_id, domain)
 
         return True, None
 
     def set_chat_display_name(self, chat_id: str, domain: str, display_name: str):
-        """
-        NOT MADE FOR WEBSOCKET UPDATES
-        """
-
         chat = self.find_chat(chat_id, domain)
         if not chat: return False, "Could not find chat!"
 
+        chat['display_name'] = display_name
+
+        self.chat_updated.emit(chat_id, domain)
+        return True, None
+
+    def set_chat_display_name_request(self, chat_id: str, domain: str, display_name: str):
+        """
+        NOT MADE FOR WEBSOCKET UPDATES
+        """
         current_user_access_token = self.get_current_user_access_token()
 
         success, resp_data = self.request_manager.request_modify_chat_name(
@@ -447,24 +713,25 @@ class Brain(QObject):
                 if not refreshed:
                     return False, "Could not refresh session!"
                 else:
-                    return self.set_chat_display_name(chat_id, domain, display_name)
+                    return self.set_chat_display_name_request(chat_id, domain, display_name)
             else:
                 return False, "Could NOT set chat name!"
-
-        chat['display_name'] = display_name
-
-        self.chat_updated.emit(chat_id, domain)
 
         return True, None
 
     def set_chat_description(self, chat_id: str, domain: str, description: str):
-        """
-        NOT MADE FOR WEBSOCKET UPDATES
-        """
-
         chat = self.find_chat(chat_id, domain)
         if not chat: return False, "Could not find chat!"
 
+        chat['description'] = description
+
+        self.chat_updated.emit(chat_id, domain)
+        return True, None
+
+    def set_chat_description_request(self, chat_id: str, domain: str, description: str):
+        """
+        NOT MADE FOR WEBSOCKET UPDATES
+        """
         current_user_access_token = self.get_current_user_access_token()
 
         success, resp_data = self.request_manager.request_modify_chat_description(
@@ -476,13 +743,9 @@ class Brain(QObject):
                 if not refreshed:
                     return False, "Could not refresh session!"
                 else:
-                    return self.set_chat_display_name(chat_id, domain, description)
+                    return self.set_chat_display_name_request(chat_id, domain, description)
             else:
                 return False, "Could NOT set chat description!"
-
-        chat['description'] = description
-
-        self.chat_updated.emit(chat_id, domain)
 
         return True, None
 
@@ -669,6 +932,8 @@ class Brain(QObject):
                 if user['username'] not in usernames:
                     self.domain_users_list[domain].append(user)
 
+        self.add_users_to_domain_signal.emit(domain, users)
+
     def get_chat_setting(self, chat_id: str, domain: str):
         chat = self.find_chat(chat_id, domain)
         if chat is None: return None
@@ -697,18 +962,9 @@ class Brain(QObject):
             else:
                 return False, "Could NOT leave chatroom!"
 
-        # ONLY UPDATE USERS ON WEBSOCKET UPDATE
-        current_user_username = self.get_current_user_username()
-        chat['users'] = [user for user in chat['users'] if user['username'] != current_user_username]
-
-        self.removed_members_from_chat.emit(chat_id, domain, [current_user_username])
-
         return True, None
 
-    def remove_users_from_chat(self, chat_id: str, domain: str, users: list):
-        chat = self.find_chat(chat_id, domain)
-        if chat is None: return False, "Could NOT find chatroom!"
-
+    def remove_users_from_chat_request(self, chat_id: str, domain: str, users: list):
         current_user_access_token = self.get_current_user_access_token()
 
         success, resp_data = self.request_manager.request_modify_users(domain, current_user_access_token, chat_id, users, add=False)
@@ -718,14 +974,10 @@ class Brain(QObject):
                 if not refreshed:
                     return False, "Could not refresh session"
                 else:
-                    return self.remove_users_from_chat(chat_id, domain, users)
+                    return self.remove_users_from_chat_request(chat_id, domain, users)
             else:
                 return False, "Could NOT remove users to chatroom!"
 
-        # ONLY UPDATE USERS ON WEBSOCKET UPDATE
-        chat['users'] = [user for user in chat['users'] if user['username'] not in users]
-
-        self.removed_members_from_chat.emit(chat_id, domain, users)
         return True, None
 
     def get_last_message_timestamp(self, chat_id: str, domain: str):
@@ -837,11 +1089,12 @@ class Brain(QObject):
 
     def change_reachable_user(self, username: str, add: bool):
         current_user_domain = self.get_current_user_domain()
-        user = self.get_user_details(username, current_user_domain)
         if add:
-            self.reachable_users_list.append(user)
+            self.reachable_users_list.append(username)
         else:
-            self.reachable_users_list.remove(user)
+            self.reachable_users_list.remove(username)
+
+        self.user_reachable_status_changed.emit(current_user_domain, username, add)
 
     def set_current_user_reachable_users(self, users: list):
         self.reachable_users_list = list(map(lambda user: user['username'], users))
@@ -1061,12 +1314,17 @@ class Brain(QObject):
 
     def remove_chat(self, chat_id: str, domain: str):
         chats = self.chats_list.get(domain, None)
-        if not chats: return
+        if not chats: return False
 
         for chat in chats:
             if chat['chat_id'] == chat_id:
                 chats.remove(chat)
-                return
+
+                self.chat_removed.emit(domain, chat_id)
+
+                return True
+
+        return False
 
     def p2p_chat_exists(self, username1: str, username2: str, domain: str):
         chats = self.chats_list.get(domain, None)
@@ -1098,8 +1356,3 @@ class Brain(QObject):
                 return chat
 
         return None
-
-    def remove_chat_by_id_and_domain(self, chat_id: str, domain: str):
-        chat = self.find_chat(chat_id, domain)
-        if not chat: return
-        self.remove_chat(chat['chat_id'], chat['domain'])

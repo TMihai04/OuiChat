@@ -581,7 +581,7 @@ class AddUsersDialog(UsersDialog):
             users_to_be_added.append(username)
 
         if self.chat_id is not None and self.domain is not None:
-            success, resp_data = self.brain.add_users_to_chat(self.chat_id, self.domain, users_to_be_added)
+            success, resp_data = self.brain.add_users_to_chat_request(self.chat_id, self.domain, users_to_be_added)
             if not success:
                 error_dialog = ErrorDialog()
                 error_dialog.set_error_message(resp_data)
@@ -650,7 +650,7 @@ class RemoveUsersDialog(UsersDialog):
             username = item_data["username"]
             users_to_be_removed.append(username)
 
-        success, resp_data = self.brain.remove_users_from_chat(self.chat_id, self.domain, users_to_be_removed)
+        success, resp_data = self.brain.remove_users_from_chat_request(self.chat_id, self.domain, users_to_be_removed)
         if not success:
             error_dialog = ErrorDialog()
             error_dialog.set_error_message(resp_data)
@@ -779,14 +779,14 @@ class ChatDetailsEditDialog(QDialog):
         # PROCESS REQUEST USING BRAIN
         text = self.text_edit.toPlainText()
         if self.edited_field == "name":
-            success, error_msg = self.brain.set_chat_display_name(self.chat_id, self.domain, text)
+            success, error_msg = self.brain.set_chat_display_name_request(self.chat_id, self.domain, text)
             if not success:
                 self.set_error_message(error_msg)
                 self.set_interactions_state(True)
                 return
 
         elif self.edited_field == "description":
-            success, error_msg = self.brain.set_chat_description(self.chat_id, self.domain, text)
+            success, error_msg = self.brain.set_chat_description_request(self.chat_id, self.domain, text)
             if not success:
                 self.set_error_message(error_msg)
                 self.set_interactions_state(True)

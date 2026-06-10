@@ -148,22 +148,45 @@ class ChangeUserDescriptionWorker(QThread):
         resp = asyncio.run(change_user_description(domain=self.domain, access_token=self.access_token, new_description=self.new_description))
         self.finished.emit(resp)
 
-async def change_user_icon(domain: str, access_token: str, icon_path):
-    """
-    TO DO:
-        1. upload the new image to the backend
-        2. get file id from backend response
-        3. save file in cache with the name being its id
-        4. send request to backend to change icon id with the new id
-    """
-    pass
+async def change_user_icon(domain: str, access_token: str, icon_id: str):
+    headers = {
+        'Authorization': f"Bearer {access_token}",
+    }
+    body = {
+        "icon_id": icon_id,
+    }
+
+    async with aiohttp.ClientSession() as session:
+        for request_count in range(MAX_REQUESTS):
+            try:
+                async with session.post(url=f"http://{domain}/users/profile/picture", headers=headers, json=body) as resp:
+                    try:
+                        resp.raise_for_status()
+                    except aiohttp.ClientResponseError as _:
+                        return await handle_error(resp)
+
+                    resp_dict = await resp.json()
+                    return get_resp_dict(False, resp.status, resp_dict)
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
+                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
+                continue
+
+        return get_resp_dict(True, 408, 'Cannot establish a connection with the server.')
 
 class ChangeUserIconWorker(QThread):
-    """
-    TO DO:
-        - to be implemented
-    """
-    pass
+    finished = pyqtSignal(dict)
+
+    def __init__(self, domain: str, access_token: str, icon_id: str):
+        super().__init__()
+
+        self.domain = domain
+        self.access_token = access_token
+        self.icon_id = icon_id
+
+    def run(self):
+        resp = asyncio.run(change_user_icon(domain=self.domain, access_token=self.access_token, icon_id=self.icon_id))
+        self.finished.emit(resp)
 
 async def get_users_list_request(domain: str, access_token: str):
     headers = {
@@ -624,6 +647,7 @@ class RequestManager(QObject):
         self.block_unblock_worker = None
         self.current_user_profile_worker = None
         self.change_user_description_worker = None
+        self.change_user_icon_worker = None
         self.refresh_tokens_worker = None
         self.create_chat_worker = None
         self.get_chat_details_worker = None
@@ -805,6 +829,16 @@ class RequestManager(QObject):
         self.change_user_description_worker = ChangeUserDescriptionWorker(domain, access_token, text)
         worker_response = execute_request_loop(self.change_user_description_worker)
         self.change_user_description_worker.deleteLater()
+
+        is_error = worker_response.get('is_error')
+        if is_error:
+            return False, worker_response
+        return True, None
+
+    def request_change_user_icon(self, domain: str, access_token: str, icon_id: str):
+        self.change_user_icon_worker = ChangeUserIconWorker(domain, access_token, icon_id)
+        worker_response = execute_request_loop(self.change_user_icon_worker)
+        self.change_user_icon_worker.deleteLater()
 
         is_error = worker_response.get('is_error')
         if is_error:

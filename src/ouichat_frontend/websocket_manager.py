@@ -34,6 +34,12 @@ class WebSocketManager(QObject):
         self.websockets.append(new_ws)
         new_ws.start()
 
+    def update_access_token(self, domain: str, old_access_token: str, new_access_token: str):
+        for ws in self.websockets[:]:
+            if ws.domain == domain and ws.access_token == old_access_token:
+                ws.update_access_token(new_access_token)
+                return
+
     def clean_up_dead_websocket_on_logout(self, domain: str, access_token: str, user_logout: bool):
         if user_logout:
             self.clean_up_dead_websocket(domain, access_token)
@@ -62,16 +68,14 @@ class WebSocketManager(QObject):
                 return
 
     def handle_event(self, domain: str, access_token: str, event_data: dict):
-        # UNCOMMENT WHEN event_id
-
-        # event_id = event_data["event_id"]
-        # if event_id in self.handled_events_ids: return
+        event_id = event_data["event_id"]
+        if event_id in self.handled_events_ids: return
 
         self.message_received.emit(domain, access_token, event_data)
 
         if len(self.handled_events_ids) > self.MAX_EVENT_QUEUE_SIZE:
             self.handled_events_ids.pop(0)
-        # self.handled_events_ids.append(event_id)
+        self.handled_events_ids.append(event_id)
 
 class WebSocketListener(QThread):
     message_received = pyqtSignal(str, str, dict)
@@ -91,10 +95,10 @@ class WebSocketListener(QThread):
 
     def update_access_token(self, access_token: str):
         self.access_token = access_token
-        # data = {
-        #
-        # }
-        # self.send_message(data)
+        data = {
+            "access_token": access_token,
+        }
+        self.send_message(data)
 
     def run(self):
         attempts = 0
@@ -135,10 +139,8 @@ class WebSocketListener(QThread):
         self.disconnected.emit(self.domain, self.access_token, user_logout)
 
     def send_message(self, data_dict: dict):
-        # IMPLEMENT AND SEND THE DATA WITH THE CORRECT FORMAT
-        # FIELD DE "access_token": new_token (str)
         if self.ws and self.ws.sock and self.ws.sock.connected:
-            self.ws.send_bytes(json.dumps(data_dict))
+            self.ws.send(json.dumps(data_dict).encode('utf-8'), opcode=websocket.ABNF.OPCODE_BINARY)
 
     def stop(self):
         self.is_running = False
