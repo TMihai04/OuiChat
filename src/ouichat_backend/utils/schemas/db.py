@@ -213,7 +213,7 @@ class AttachmentDocument(BaseModel):
 	path: str = Field(
 		...,
 		description="Absolute path where the resource is saved on the disk",
-		pattern=r"(\/[\w]+)+"
+		# pattern=r"(\/[\w]+)+"
 	)
 	uploader: str = Field(
 		...,
