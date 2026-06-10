@@ -552,20 +552,33 @@ class Brain(QObject):
         return True, None
 
     def upload_files(self, file_list: list):
-        success, resp_data = self.request_manager.request_upload_files(file_list)
-        if not success and resp_data['code'] == 401:
-            refreshed = self.refresh_tokens()
-            if not refreshed: return False, "Could not refresh session"
-            else: return self.upload_files(file_list)
-        return success, resp_data.get('field') # MATCH RETURN STATEMENT HERE WITH THE RETURNED DATA FROM request_manager
-
-    def download_files(self, ids: list):
-        success, resp_data = self.request_manager.request_download_files(ids)
-        if not success and resp_data['code'] == 401:
-            refreshed = self.refresh_tokens()
-            if not refreshed: return False, "Could not refresh session"
+        current_user_domain = self.get_current_user_domain()
+        current_user_access_token = self.get_current_user_access_token()
+        success, resp_data, uploaded_files = self.request_manager.request_upload_files(current_user_domain, current_user_access_token, file_list)
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed:
+                    return False, "Could not refresh session", uploaded_files
+                else:
+                    return self.upload_files(file_list)
             else:
-                return self.download_files(ids)
+                return False, "Could NOT upload all files.", uploaded_files
+        return True, None, uploaded_files
+
+    def download_file(self, file_id: str):
+        current_user_domain = self.get_current_user_domain()
+        current_user_access_token = self.get_current_user_access_token()
+        success, resp_data = self.request_manager.request_download_file(current_user_domain, current_user_access_token, file_id)
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed:
+                    return False, "Could not refresh session"
+                else:
+                    return self.download_file(file_id)
+            else:
+                return False, "Could NOT download file."
 
         return True, None
 

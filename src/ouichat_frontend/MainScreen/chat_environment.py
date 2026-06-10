@@ -50,7 +50,7 @@ class ElidedLabel(QLabel):
         return QSize(text_width, super().sizeHint().height())
 
 class DownloadAttachmentBubble(QWidget):
-    def __init__(self, brain: Brain, file_id: int, file_path: str):
+    def __init__(self, brain: Brain, file_id: str, file_path: str):
         super().__init__()
 
         self.brain = brain
@@ -80,19 +80,19 @@ class DownloadAttachmentBubble(QWidget):
         path_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         path_label.setText(self.file_path)
 
-        remove_button = QPushButton()
-        remove_button.setFixedSize(32, 32)
-        remove_button.setIcon(QIcon("./Icons/download_file_icon.png"))
-        remove_button.setIconSize(QSize(32, 32))
-        remove_button.clicked.connect(self.download_file)
-        remove_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        download_button = QPushButton()
+        download_button.setFixedSize(32, 32)
+        download_button.setIcon(QIcon("./Icons/download_file_icon.png"))
+        download_button.setIconSize(QSize(32, 32))
+        download_button.clicked.connect(self.download_file)
+        download_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         widget_layout.addWidget(file_icon)
         widget_layout.addWidget(path_label, stretch=1)
-        widget_layout.addWidget(remove_button)
+        widget_layout.addWidget(download_button)
 
     def download_file(self):
-        success, resp_data = self.brain.download_files([self.file_id])
+        success, resp_data = self.brain.download_file(self.file_id)
         if not success:
             error_dialog = ErrorDialog()
             error_dialog.set_error_message(resp_data)
@@ -1754,7 +1754,8 @@ class MessageWindow(QWidget):
 
         text = self.text_box.toPlainText().strip()
         staged_files = self.upload_context_widget.get_staged_files()
-        if text == "" and len(staged_files) == 0: return
+        formatted_files = [(file_path, "attachment") for file_path in staged_files]
+        if text == "" and len(formatted_files) == 0: return
 
         current_chat_id = self.brain.get_current_chat_id()
         current_chat_domain = self.brain.get_current_chat_domain()
@@ -1777,17 +1778,14 @@ class MessageWindow(QWidget):
 
         reply_details = self.brain.get_reply_details()
 
-        # MAKE REQUEST
-        # ONLY ADD AND DISPLAY MESSAGE ON SERVER UPDATE
-
-        success, resp_data = self.brain.upload_files(staged_files)
+        success, resp_data, uploaded_files = self.brain.upload_files(formatted_files)
         if not success:
             error_dialog = ErrorDialog()
             error_dialog.set_error_message(resp_data)
             error_dialog.exec()
-            return
-        else:
-            files = resp_data
+
+            if text == "":
+                return
 
         message = message_args_to_dict(
             chat_id = current_chat_id,
@@ -1800,7 +1798,7 @@ class MessageWindow(QWidget):
             reply_snip = reply_details['reply_snip'],
             timestamp = time.time(),
             text = text,
-            files = files
+            files = uploaded_files
         )
 
         self.brain.add_new_messages.emit({

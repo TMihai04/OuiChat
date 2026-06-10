@@ -1,7 +1,6 @@
 import time
 import random
 import os
-import shutil
 from typing import Any
 import aiohttp
 import asyncio
@@ -592,6 +591,107 @@ class ModifyChatDetailsWorker(QThread):
         resp = asyncio.run(modify_chat_details(self.domain, self.access_token, self.chat_id, self.text, self.field))
         self.finished.emit(resp)
 
+async def upload_file_request(domain: str, access_token: str, absolute_file_path: str, file_type: str):
+    filename = os.path.basename(absolute_file_path)
+    headers = {
+        'Authorization': f"Bearer {access_token}",
+        'Content-Type': 'application/octet-stream',
+        'X-Original-Filename': filename
+    }
+    params = {
+        'file_type': file_type
+    }
+    async with aiohttp.ClientSession() as session:
+        for request_count in range(MAX_REQUESTS):
+            try:
+                with open(absolute_file_path, 'rb') as file:
+                    async with session.post(url=f"http://{domain}/attachments/upload", headers=headers, params=params, data=file) as resp:
+                        try:
+                            resp.raise_for_status()
+                        except aiohttp.ClientResponseError as _:
+                            return await handle_error(resp)
+
+                        resp_dict = await resp.json()
+                        return get_resp_dict(False, resp.status, resp_dict)
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
+                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
+                continue
+
+        return get_resp_dict(True, 408, 'Cannot establish a connection with the server.')
+
+class UploadFileWorker(QThread):
+    finished = pyqtSignal(dict)
+
+    def __init__(self, domain: str, access_token: str, absolute_file_path: str, file_type: str):
+        super().__init__()
+        self.domain = domain
+        self.access_token = access_token
+        self.absolute_file_path = absolute_file_path
+        self.file_type = file_type
+
+    def run(self):
+        resp = asyncio.run(upload_file_request(self.domain, self.access_token, self.absolute_file_path, self.file_type))
+        self.finished.emit(resp)
+
+async def download_file_request(domain: str, access_token: str, file_id: str):
+    headers = {
+        'Authorization': f"Bearer {access_token}"
+    }
+    params = {
+        'file_id': file_id
+    }
+    async with aiohttp.ClientSession() as session:
+        for request_count in range(MAX_REQUESTS):
+            try:
+                async with session.get(url=f"http://{domain}/attachments/download", headers=headers, params=params) as resp:
+                    try:
+                        resp.raise_for_status()
+                    except aiohttp.ClientResponseError as _:
+                        return await handle_error(resp)
+
+                    cd_header = resp.headers.get('Content-Disposition', '')
+                    filename = f"download_{file_id}"
+                    if "filename=" in cd_header:
+                        filename = cd_header.split("filename=")[-1].strip(' "\'')
+
+                    user_path = os.path.expanduser('~')
+                    downloads_path = os.path.join(user_path, 'Downloads')
+                    if not os.path.exists(downloads_path):
+                        os.makedirs(downloads_path)
+
+                    base_name, ext = os.path.splitext(filename)
+                    save_path = os.path.join(downloads_path, filename)
+                    counter = 1
+                    while os.path.exists(save_path):
+                        save_path = os.path.join(downloads_path, f"{base_name} ({counter}){ext}")
+                        counter += 1
+
+                    with open(save_path, 'wb') as file:
+                        async for chunk in resp.content.iter_chunked(8192):
+                            file.write(chunk)
+
+                    return get_resp_dict(False, resp.status, None)
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
+                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
+                continue
+
+        return get_resp_dict(True, 408, 'Cannot establish a connection with the server.')
+
+class DownloadFileWorker(QThread):
+    finished = pyqtSignal(dict)
+
+    def __init__(self, domain: str, access_token: str, file_id: str):
+        super().__init__()
+        self.domain = domain
+        self.access_token = access_token
+        self.file_id = file_id
+
+    def run(self):
+        resp = asyncio.run(download_file_request(self.domain, self.access_token, self.file_id))
+        self.finished.emit(resp)
+
 def execute_request_loop(worker: QThread):
     loop = QEventLoop()
     worker_response = dict()
@@ -656,6 +756,8 @@ class RequestManager(QObject):
         self.add_users_worker = None
         self.leave_chat_worker = None
         self.modify_chat_details_worker = None
+        self.upload_files_worker = None
+        self.download_file_worker = None
 
     def request_chats(self, domain: str, access_token: str):
         self.get_chats_worker = GetChatsWorker(domain, access_token)
@@ -749,54 +851,33 @@ class RequestManager(QObject):
         is_error = worker_response.get('is_error')
         return not is_error, worker_response
 
-    def request_upload_files(self, file_list: list):
-        files = []
-        if not os.path.isdir(UPLOAD_DIR_PATH):
-            os.mkdir(UPLOAD_DIR_PATH)
+    def request_upload_files(self, domain: str, access_token: str, file_list: list):
+        successfully_uploaded_files = []
+        for file_path, file_type in file_list:
+            self.upload_files_worker = UploadFileWorker(domain, access_token, file_path, file_type)
+            worker_response = execute_request_loop(self.upload_files_worker)
+            self.upload_files_worker.deleteLater()
 
-        for file_path in file_list:
-            file_id = str(int(random.random() * 10000))
-            file_name = os.path.basename(file_path)
-            new_file_path = f"{UPLOAD_DIR_PATH}/{file_id}_{file_name}"
-            shutil.copy2(file_path, new_file_path)
-            files.append({
-                "file_id": file_id,
-                "file_name": file_name
-            })
-            uploaded_files.append({
-                "file_id": file_id,
-                "file_path": new_file_path
+            is_error = worker_response.get('is_error')
+            if is_error:
+                return False, worker_response, successfully_uploaded_files
+
+            file_id = worker_response.get('field', dict()).get('item', dict()).get('file_id')
+            successfully_uploaded_files.append({
+                'file_id': file_id,
+                'file_name': os.path.basename(file_path),
             })
 
-        # return False, error_dict in case of requests error
-        return True, {"field": files}
+        return True, None, successfully_uploaded_files
 
-    def request_download_files(self, file_ids: list):
-        home_dir = os.path.expanduser('~')
-        downloads_folder = os.path.join(home_dir, 'Downloads')
+    def request_download_file(self, domain: str, access_token: str, file_id: str):
+        self.download_file_worker = DownloadFileWorker(domain, access_token, file_id)
+        worker_response = execute_request_loop(self.download_file_worker)
+        self.download_file_worker.deleteLater()
 
-        if not os.path.exists(downloads_folder):
-            os.makedirs(downloads_folder)
-
-        for file_id in file_ids:
-            file_path = get_file_path(file_id)
-            if not file_path: return False, "Download failed" # ERROR INEXISTENT FILE
-
-            file_name = os.path.basename(file_path).split("_", 1)[1]
-            base_name, ext = os.path.splitext(file_name)
-            save_path = os.path.join(downloads_folder, file_name)
-
-            counter = 1
-            while os.path.exists(save_path):
-                new_name = f"{base_name} ({counter}){ext}"
-                save_path = os.path.join(downloads_folder, new_name)
-                counter += 1
-
-            try:
-                shutil.copy2(file_path, save_path)
-            except Exception as e:
-                print(f"Download failed: {e}")
-
+        is_error = worker_response.get('is_error')
+        if is_error:
+            return False, worker_response
         return True, None
 
     def request_block_unblock_user(self, domain: str, access_token: str, username: str, block: bool):
