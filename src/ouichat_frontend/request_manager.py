@@ -6,8 +6,7 @@ from typing import Any
 import aiohttp
 import asyncio
 from PyQt6.QtCore import pyqtSignal, QObject, QThread, QEventLoop
-
-UPLOAD_DIR_PATH = "./Uploads/"
+from dotenv import load_dotenv
 
 MAX_REQUESTS = 2 # previously 5
 REQUEST_TIMEOUT = 2
@@ -15,6 +14,13 @@ REQUEST_TIMEOUT = 2
 DEBUG = True
 
 uploaded_files = []
+
+load_dotenv()
+environment = os.getenv('ENVIRONMENT')
+if environment == 'local':
+    protocol = 'http'
+else:
+    protocol = 'https'
 
 def get_resp_dict(is_error: bool, code: int, field: Any):
     return {
@@ -43,7 +49,7 @@ async def login_register_request(domain: str, username: str, password: str, logi
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.post(url=f"http://{domain}/{endpoint}", data=register_json) as resp:
+                async with session.post(url=f"{protocol}://{domain}/{endpoint}", data=register_json) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -80,7 +86,7 @@ async def get_current_user_profile_request(domain: str, access_token: str):
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.get(url=f"http://{domain}/users/me", headers=headers) as resp:
+                async with session.get(url=f"{protocol}://{domain}/users/me", headers=headers) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -119,7 +125,7 @@ async def change_user_description(domain: str, access_token: str, new_descriptio
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.post(url=f"http://{domain}/users/profile/status", headers=headers, json=body) as resp:
+                async with session.post(url=f"{protocol}://{domain}/users/profile/status", headers=headers, json=body) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -159,7 +165,7 @@ async def change_user_icon(domain: str, access_token: str, icon_id: str):
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.post(url=f"http://{domain}/users/profile/picture", headers=headers, json=body) as resp:
+                async with session.post(url=f"{protocol}://{domain}/users/profile/picture", headers=headers, json=body) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -195,7 +201,7 @@ async def get_users_list_request(domain: str, access_token: str):
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.get(url=f"http://{domain}/users/list", headers=headers) as resp:
+                async with session.get(url=f"{protocol}://{domain}/users/list", headers=headers) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -234,7 +240,7 @@ async def block_unblock_user_request(domain: str, access_token: str, username: s
         request_type = session.post if block else session.delete
         for request_count in range(MAX_REQUESTS):
             try:
-                async with request_type(url=f"http://{domain}/users/preferences/blacklist", headers=headers, json=body) as resp:
+                async with request_type(url=f"{protocol}://{domain}/users/preferences/blacklist", headers=headers, json=body) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -271,7 +277,7 @@ async def refresh_tokens_request(domain: str, refresh_token: str):
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.post(url=f"http://{domain}/refresh", headers=headers) as resp:
+                async with session.post(url=f"{protocol}://{domain}/refresh", headers=headers) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -315,7 +321,7 @@ async def create_chat_request(domain: str, access_token: str,
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.post(url=f"http://{domain}/chats/create", headers=headers, json=body) as resp:
+                async with session.post(url=f"{protocol}://{domain}/chats/create", headers=headers, json=body) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -361,7 +367,7 @@ async def get_chat_details_request(domain: str, access_token: str, chat_id: str)
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.get(url=f"http://{domain}/chats/chat", headers=headers, params=params) as resp:
+                async with session.get(url=f"{protocol}://{domain}/chats/chat", headers=headers, params=params) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -396,7 +402,7 @@ async def get_chats_request(domain: str, access_token: str):
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.get(url=f"http://{domain}/chats/list", headers=headers) as resp:
+                async with session.get(url=f"{protocol}://{domain}/chats/list", headers=headers) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -436,7 +442,7 @@ async def modify_admin_request(domain: str, access_token: str, chat_id: str, use
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.post(url=f"http://{domain}/chats/participant/admin", headers=headers, params=params, json=body) as resp:
+                async with session.post(url=f"{protocol}://{domain}/chats/participant/admin", headers=headers, params=params, json=body) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -480,7 +486,7 @@ async def modify_users_request(domain: str, access_token: str, chat_id: str, use
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.request(method=req, url=f"http://{domain}/chats/participant/{endpoint}", headers=headers, params=params, json=body) as resp:
+                async with session.request(method=req, url=f"{protocol}://{domain}/chats/participant/{endpoint}", headers=headers, params=params, json=body) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -520,7 +526,7 @@ async def leave_chat_request(domain: str, access_token: str, chat_id: str):
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.delete(url=f"http://{domain}/chats/participant/leave", headers=headers, params=params) as resp:
+                async with session.delete(url=f"{protocol}://{domain}/chats/participant/leave", headers=headers, params=params) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -562,7 +568,7 @@ async def modify_chat_details(domain: str, access_token: str, chat_id: str, text
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.post(url=f"http://{domain}/chats/preferences/{endpoint}", headers=headers, params=params, json=body) as resp:
+                async with session.post(url=f"{protocol}://{domain}/chats/preferences/{endpoint}", headers=headers, params=params, json=body) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -606,7 +612,7 @@ async def upload_file_request(domain: str, access_token: str, absolute_file_path
         for request_count in range(MAX_REQUESTS):
             try:
                 with open(absolute_file_path, 'rb') as file:
-                    async with session.post(url=f"http://{domain}/attachments/upload", headers=headers, params=params, data=file) as resp:
+                    async with session.post(url=f"{protocol}://{domain}/attachments/upload", headers=headers, params=params, data=file) as resp:
                         try:
                             resp.raise_for_status()
                         except aiohttp.ClientResponseError as _:
@@ -645,7 +651,7 @@ async def download_file_request(domain: str, access_token: str, file_id: str, pa
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.get(url=f"http://{domain}/attachments/download", headers=headers, params=params) as resp:
+                async with session.get(url=f"{protocol}://{domain}/attachments/download", headers=headers, params=params) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -713,7 +719,7 @@ async def send_message_request(domain: str, access_token: str, chat_id: str, tex
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.post(url=f"http://{domain}/messages/send", headers=headers, params=params, json=body) as resp:
+                async with session.post(url=f"{protocol}://{domain}/messages/send", headers=headers, params=params, json=body) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -758,7 +764,7 @@ async def edit_message_request(domain: str, access_token: str, chat_id: str, mes
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.post(url=f"http://{domain}/messages/edit", headers=headers, params=params, json=body) as resp:
+                async with session.post(url=f"{protocol}://{domain}/messages/edit", headers=headers, params=params, json=body) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
@@ -801,7 +807,7 @@ async def delete_message_request(domain: str, access_token: str, chat_id: str, m
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.delete(url=f"http://{domain}/messages/delete", headers=headers, params=params,
+                async with session.delete(url=f"{protocol}://{domain}/messages/delete", headers=headers, params=params,
                                         json=body) as resp:
                     try:
                         resp.raise_for_status()
@@ -844,7 +850,7 @@ async def get_messages_request(domain: str, access_token: str, chat_id: str, dir
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.get(url=f"http://{domain}/messages/list", headers=headers, params=params) as resp:
+                async with session.get(url=f"{protocol}://{domain}/messages/list", headers=headers, params=params) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:

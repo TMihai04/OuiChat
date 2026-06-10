@@ -2,6 +2,15 @@ import json
 import websocket
 import time
 from PyQt6.QtCore import QThread, pyqtSignal, QObject
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+environment = os.getenv('ENVIRONMENT')
+if environment == 'local':
+    protocol = 'ws'
+else:
+    protocol = 'wss'
 
 class WebSocketManager(QObject):
     """
@@ -85,7 +94,7 @@ class WebSocketListener(QThread):
 
     def __init__(self, domain: str, access_token: str):
         super().__init__()
-        self.url = f"ws://{domain}/ws/global?token={access_token}"
+        self.url = f"{protocol}://{domain}/ws/global?token={access_token}"
         self.domain = domain
         self.access_token = access_token
         self.ws = None
