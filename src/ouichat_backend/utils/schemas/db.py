@@ -201,3 +201,26 @@ class MessageDocument(BaseModel):
 		if not self.content and not self.attachments:
 			raise ValueError("Either `content` or `attachements` must be provided")
 		return self
+
+
+# Attchment schemas
+class AttachmentDocument(BaseModel):
+	attachment_id: str = Field(
+		...,
+		description="Unique identifier for this resource",
+		min_length=1
+	)
+	path: str = Field(
+		...,
+		description="Absolute path where the resource is saved on the disk",
+		pattern=r"(\/[\w]+)+"
+	)
+	uploader: str = Field(
+		...,
+		description="Username of the user that created the resource",
+		min_length=1
+	)
+	created_at: int = Field(
+		...,
+		description="Unix timestamp of when the resource was created"
+	)

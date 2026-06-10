@@ -21,6 +21,8 @@ async def lifespan(app: FastAPI):
     _init.init_db_name()
     _init.init_db_collections()
 
+    _init.init_file_dirs()
+
     yield
 
 

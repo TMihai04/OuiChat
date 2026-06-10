@@ -14,6 +14,7 @@ __all__ = [
     "ConversationProfileDocument",
     "ConversationDocument",
     "MessageDocument",
+    "AttachmentDocument",
     # outputs.py
     "NewTokensResponse",
     "GenericMessageResponse",
@@ -23,4 +24,5 @@ __all__ = [
     "WebsocketUpdate",
     # ids.py
     "ChatId",
+    "FileId",
 ]

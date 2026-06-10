@@ -3,6 +3,8 @@
 from ouichat_backend.utils import (
     ChatId,
     ConversationDocument,
+    FileId,
+    AttachmentDocument,
 )
 from ouichat_backend.utils.methods import (
     db,
@@ -59,4 +61,29 @@ def validate_paricipant(
             405, "User not a participant of this conversation"
         )
     return flags
+
+
+def validate_file_id(file_id: str) -> FileId:
+    FILE_ID_EXCEPTION = HTTPException(
+        status.HTTP_400_BAD_REQUEST, "Invalid file id"
+    )
+
+    if not is_valid_uuid(file_id):
+        raise FILE_ID_EXCEPTION
+    
+    return FileId(
+        id=file_id
+    )
+
+
+async def validate_file(
+    file_id: FileId = Depends(validate_file_id)
+) -> AttachmentDocument:
+    attachment_doc = await db.get_attachment(str(file_id))
+    if not attachment_doc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "Attachment not found"
+        )
+    
+    return attachment_doc
     

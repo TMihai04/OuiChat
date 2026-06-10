@@ -1,5 +1,6 @@
 # Database methods
 
+from pymongo.asynchronous import collection
 from ouichat_backend.utils.logger import logger
 from ouichat_backend.utils.manager import ws_manager
 from ouichat_backend.utils.constants import startup
@@ -8,6 +9,7 @@ from ouichat_backend.utils.schemas import (
     ConversationDocument,
     ConversationParticipantDocument,
     MessageDocument,
+    AttachmentDocument,
     WebsocketUpdate,
 )
 from ouichat_backend.utils.methods import (
@@ -15,7 +17,7 @@ from ouichat_backend.utils.methods import (
     get_uuid4
 )
 
-from pymongo import AsyncMongoClient
+from pymongo import AsyncMongoClient, collation
 
 import asyncio
 
@@ -57,26 +59,22 @@ async def connect_client(db_uri: str):
 
 def get_adb(client: AsyncMongoClient, db_name: str):
     """Fetches a db with the given name from the specified client. If any error occurs a log is created and `None` is returned."""
-    a_db = None
 
     try:
-        a_db = client[db_name]
+        return client[db_name]
     except Exception as e:
         logger.error(f"Failed to fetch database: {e}")
-    
-    return a_db
+        raise e
 
 
 def get_acollection(client: AsyncMongoClient, db_name: str, collection_name: str):
     """Fetches a collection with the given name from the specified client and db. If any error occurs a log is created and `None` is returned."""
-    a_collection = None
 
     try:
-        a_collection = client[db_name][collection_name]
+        return client[db_name][collection_name]
     except Exception as e:
         logger.error(f"Failed to fetch collection: {e}")
-    
-    return a_collection
+        raise e
 
 
 # ================================
@@ -104,6 +102,14 @@ def get_message_collection(conv: str):
         startup.db_client,
         startup.DB_NAME,
         conv
+    )
+
+
+def get_attachments_collection():
+    return get_acollection(
+        startup.db_client,
+        startup.DB_NAME,
+        startup.ATTACHMENTS_COLLECTION_NAME
     )
 
 
@@ -341,8 +347,8 @@ async def update_user(
         # Notify websocket of update
         event_id = get_uuid4()
         await ws_manager.notify_all(
-            event_id=event_id,
             payload=WebsocketUpdate(
+                event_id=event_id,
                 type="update",
                 scope="user.picture",
                 data={
@@ -745,7 +751,7 @@ async def add_message(
 async def get_message(
     chat: ConversationDocument,
     message_id: str
-) -> MessageDocument:
+) -> MessageDocument | None:
     collection = get_message_collection(chat.conversation_id)
 
     message_doc = await collection.find_one(
@@ -876,3 +882,43 @@ async def update_message(
             )
     
     return upd
+
+
+# Attachment entries
+async def add_attachment(
+    new_file: AttachmentDocument
+):
+    collection = get_attachments_collection()
+
+    await collection.insert_one(
+        new_file.model_dump()
+    )
+
+
+async def get_attachment(
+    attachment_id: str
+) -> AttachmentDocument | None:
+    collection = get_attachments_collection()
+
+    attachment_doc = await collection.find_one(
+        filter={
+            "attachment_id": attachment_id
+        }
+    )
+
+    if attachment_doc is None:
+        return None
+    
+    return AttachmentDocument(**attachment_doc)
+
+
+async def delete_attachment(
+    attachment_id: str
+):
+    collection = get_attachments_collection()
+
+    await collection.delete_one(
+        filter={
+            "attachment_id": attachment_id
+        }
+    )

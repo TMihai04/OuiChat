@@ -18,3 +18,4 @@ db_client: AsyncMongoClient | None = None
 DB_NAME: str | None = None
 USERS_COLLECTION_NAME: str | None = None
 CHATS_COLLECTION_NAME: str | None = None
+ATTACHMENTS_COLLECTION_NAME: str | None = None

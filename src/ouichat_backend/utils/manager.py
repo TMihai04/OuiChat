@@ -9,8 +9,6 @@ from typing import Literal
 
 
 class WebsocketManager:
-    active_connections: defaultdict(list)
-
     def __init__(self):
         self.active_connections = defaultdict(list)
 
@@ -28,7 +26,7 @@ class WebsocketManager:
     async def notify(
         self,
         weboscket: WebSocket,
-        payload: dict | type[BaseModel],
+        payload: dict | BaseModel,
         mode: Literal["text", "binary"] = "binary"
     ) -> None:
         """Sends a json payload to the given websocket instance."""
@@ -48,7 +46,7 @@ class WebsocketManager:
     async def notify_user(
         self,
         username: str,
-        payload: dict | type[BaseModel],
+        payload: dict | BaseModel,
         mode: Literal["text", "binary"] = "binary"
     ) -> None:
         """Sends a json payload to all the websockets registered under the given username if username."""        
@@ -57,7 +55,7 @@ class WebsocketManager:
     
     async def notify_all(
         self,
-        payload: dict | type[BaseModel],
+        payload: dict | BaseModel,
         mode: Literal["text", "binary"] = "binary"
     ) -> None:
         """Sends a json payload to all the websockets registered in the manager."""

@@ -2,12 +2,9 @@
 
 from ouichat_backend.utils.logger import logger
 from ouichat_backend.utils import (
-    ChatId,
     ConversationDocument,
     MessageDocument,
-    GenericItemsResponse,
     GenericMessageResponse,
-    GenericItemResponse,
     EndpointTags,
     EndpointPrefixes,
 )
@@ -46,7 +43,20 @@ async def get_message_batch(
     pflags: dict = Depends(_valids.validate_paricipant),
     username: str = Depends(decode_sub_access_token)
 ) -> StreamingResponse:
-    """use this endpoint to get a batch of messages from a target conversation."""
+    """use this endpoint to get a batch of messages from a target conversation. Endpoint retrieves a given batch size of messages relative to the given message if provided, otherwise it fetches the newest messages up to batch size.
+    
+    Args:
+    * `direction`: The direction in which messages are fetched with relation to the provided message. Not taken into account if anchor message is not provided.
+    * `message_id`: Target message used as anchor for relative fetching. Optional parameter.
+    * `batch_size`: How many messages in the fetched batch. Always includes the anchor message if provided.
+    * `chat_id`: Target chat where messages are fetched from
+    
+    Returns:
+    * `StreamingResponse`: An SSE event stream of messages in chronological order (oldest -> newest)
+    
+    Throws:
+    * `404`: Conversation not found *or* anchor message not found
+    * `405`: User not participant in the conversation"""
 
     logger.debug(f"Getting messages - username: {username} - chat_id: {chat.conversation_id} - direction: {direction} - batch_size: {batch_size}")
 
@@ -191,7 +201,18 @@ async def send_message(
     pflags: dict = Depends(_valids.validate_paricipant),
     username: str = Depends(decode_sub_access_token)
 ) -> GenericMessageResponse:
-    """Use this endpoint to send a message to the target conversation."""
+    """Use this endpoint to send a message to the target conversation. A message has to contain either one of text content, attachment list, or both.
+    
+    Args:
+    * `body`: `SendMessageBody`
+    * `chat_id`: Target conversation id
+    
+    Returns:
+    * `GenericMessageResponse`: Message detailing the result of the operation
+    
+    Throws:
+    * `404`: Conversation not found
+    * `405`: User not participant in the conversation"""
 
     content_preview = f"{body.content[:16]}{"..." if len(body.content) > 16 else ""}" if body.content else None
     logger.debug(f"Sending message - username: {username} - chat_id: {chat.conversation_id} - content: {content_preview} - attachments: {body.attachments}")
@@ -230,7 +251,18 @@ async def edit_message(
     pflags: dict = Depends(_valids.validate_paricipant),
     username: str = Depends(decode_sub_access_token)
 ) -> GenericMessageResponse:
-    """Use this endpoint to edit the text content of a sent message"""
+    """Use this endpoint to edit the text content of a sent message. Only the text content of the message can be edited.
+    
+    Args:
+    * `body`: `EditMessageBody`
+    * `chat_id`: Target conversation id
+    
+    Returns:
+    * `GenericMessageResponse`: Message detailing the result of the operation
+    
+    Throws:
+    * `404`: Conversation not found *or* message not found
+    * `405`: User not participant in the conversation *or* user attempts to edit someone else's message"""
 
     content_preview = f"{body.new_content[:16]}{"..." if len(body.new_content) > 16 else ""}"
     logger.debug(f"Editing message - username: {username} - chat_id: {chat.conversation_id} - new_content: {content_preview}")
@@ -243,7 +275,7 @@ async def edit_message(
         )
     if username != message_doc.sender:
         raise HTTPException(
-            405, "Can only edit self sent message"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "Can only edit self sent message"
         )
     
     # Update message
@@ -273,20 +305,36 @@ async def delete_message(
     pflags: dict = Depends(_valids.validate_paricipant),
     username: str = Depends(decode_sub_access_token)
 ):
-    """Use this endpoint to delete a message from a target conversation."""
+    """Use this endpoint to delete a message from a target conversation.
+    
+    The following rules are followed when deciding if the current user can perform this operation:
+    * Direct conversations:
+        - User can only delete self sent message
+    * Group conversations:
+        - Admins can delete any message regardless of sender
+        - Unprivilaged users can only delete self sent messages
+    
+    Args:
+    * `body`: `DeleteMessageBody`
+    * `chat_id`: Target conversation id
+    
+    Throws:
+    * `404`: Conversation not found *or* message not found
+    * `405`: User not participant in the conversation *or* user attempts to delete someone else's message"""
 
     logger.debug(f"Deleting message - username: {username} - chat_id: {chat.conversation_id} - message_id: {body.message_id}")
 
     # Check deletion permissions based on admin rights
-    if not pflags.get("admin"):
+    if not pflags.get("admin") or chat.type == "direct":
         message_doc = await db.get_message(chat, body.message_id)
         if not message_doc:
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND, "Message not found"
             )
         if username != message_doc.sender:
+            err_msg = "Can only delete self sent message in `direct` conversations" if chat.type == "direct" else "Only admins can delete not self sent messages"
             raise HTTPException(
-                405, "Only admins can delete not sent messages"
+                status.HTTP_405_METHOD_NOT_ALLOWED, err_msg
             )
 
     await db.delete_message(
