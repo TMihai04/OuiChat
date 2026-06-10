@@ -149,7 +149,7 @@ async def download_file(
             status.HTTP_404_NOT_FOUND, "File not found"
         )
     
-    filename_with_id = str(file_path).split("/")[-1]
+    filename_with_id = file_path.parts[-1]
     filename = "_".join(filename_with_id.split("_")[1:])
 
     logger.info(f"Downloaded file - username: {username} - file_id: {file.attachment_id}")
