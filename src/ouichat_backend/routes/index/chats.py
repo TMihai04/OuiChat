@@ -246,7 +246,7 @@ async def set_admin_status(
 
     if chat_id.type == "direct":
         raise HTTPException(
-            405, "Not allowed for `direct` conversations"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "Not allowed for `direct` conversations"
         )
     
     # Check if conversation exists in db
@@ -260,11 +260,11 @@ async def set_admin_status(
     flags = _get_participant_flags(username, chat_doc)
     if not flags.get("participant"):
         raise HTTPException(
-            405, "User is not a participant in this conversation"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "User is not a participant in this conversation"
         )
     if not flags.get("admin"):
         raise HTTPException(
-            405, "Only admins can alter conversation data"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "Only admins can alter conversation data"
         )
     
     logger.debug(f"Admins dict: {body.admins}")
@@ -324,7 +324,7 @@ async def add_user_to_chat(
 
     if chat_id.type == "direct":
         raise HTTPException(
-            405, "Not allowed for `direct` conversations"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "Not allowed for `direct` conversations"
         )
 
     # Check if conversation exists in db
@@ -338,11 +338,11 @@ async def add_user_to_chat(
     flags = _get_participant_flags(username, chat_doc)
     if not flags.get("participant"):
         raise HTTPException(
-            405, "User is not a participant in this conversation"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "User is not a participant in this conversation"
         )
     if not flags.get("admin"):
         raise HTTPException(
-            405, "Only admins can alter conversation data"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "Only admins can alter conversation data"
         )
     
     # Ensure users in list exist and are not part of the conversation
@@ -404,7 +404,7 @@ async def remove_user_from_chat(
 
     if chat_id.type == "direct":
         raise HTTPException(
-            405, "Not allowed for `direct` conversations"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "Not allowed for `direct` conversations"
         )
 
     # Check if conversation exists in db
@@ -418,11 +418,11 @@ async def remove_user_from_chat(
     flags = _get_participant_flags(username, chat_doc)
     if not flags.get("participant"):
         raise HTTPException(
-            405, "User is not a participant in this conversation"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "User is not a participant in this conversation"
         )
     if not flags.get("admin"):
         raise HTTPException(
-            405, "Only admins can alter conversation data"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "Only admins can alter conversation data"
         )
     
     # Remove yourself from targets
@@ -479,7 +479,7 @@ async def leave_chat(
 
     if chat_id.type == "direct":
         raise HTTPException(
-            405, "Not allowed for `direct` conversations"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "Not allowed for `direct` conversations"
         )
     
     # Check if conversation exists in db
@@ -493,7 +493,7 @@ async def leave_chat(
     flags = _get_participant_flags(username, chat_doc)
     if not flags.get("participant"):
         raise HTTPException(
-            405, "User is not a participant in this conversation"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "User is not a participant in this conversation"
         )
     
     chat_participants = [part.username for part in chat_doc.preferences.participants]
@@ -541,7 +541,7 @@ async def update_chat_name(
 
     if chat_id.type == "direct":
         raise HTTPException(
-            405, "Not allowed for `direct` conversations"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "Not allowed for `direct` conversations"
         )
     
     # Check if conversation exists in db
@@ -555,11 +555,11 @@ async def update_chat_name(
     flags = _get_participant_flags(username, chat_doc)
     if not flags.get("participant"):
         raise HTTPException(
-            405, "User is not a participant in this conversation"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "User is not a participant in this conversation"
         )
     if not flags.get("admin"):
         raise HTTPException(
-            405, "Only admins can alter conversation data"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "Only admins can alter conversation data"
         )
 
     message = "Success"
@@ -603,7 +603,7 @@ async def update_chat_description(
 
     if chat_id.type == "direct":
         raise HTTPException(
-            405, "Not allowed for `direct` conversations"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "Not allowed for `direct` conversations"
         )
     
     # Check if conversation exists in db
@@ -617,11 +617,11 @@ async def update_chat_description(
     flags = _get_participant_flags(username, chat_doc)
     if not flags.get("participant"):
         raise HTTPException(
-            405, "User is not a participant in this conversation"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "User is not a participant in this conversation"
         )
     if not flags.get("admin"):
         raise HTTPException(
-            405, "Only admins can alter conversation data"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "Only admins can alter conversation data"
         )
 
     message = "Success"
@@ -665,7 +665,7 @@ async def update_chat_icon(
 
     if chat_id.type == "direct":
         raise HTTPException(
-            405, "Not allowed for `direct` conversations"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "Not allowed for `direct` conversations"
         )
     
     # Check if conversation exists in db
@@ -679,11 +679,11 @@ async def update_chat_icon(
     flags = _get_participant_flags(username, chat_doc)
     if not flags.get("participant"):
         raise HTTPException(
-            405, "User is not a participant in this conversation"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "User is not a participant in this conversation"
         )
     if not flags.get("admin"):
         raise HTTPException(
-            405, "Only admins can alter conversation data"
+            status.HTTP_405_METHOD_NOT_ALLOWED, "Only admins can alter conversation data"
         )
 
     message = "Success"

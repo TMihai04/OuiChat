@@ -1,12 +1,18 @@
 # App initialization methods
 
 from ouichat_backend.utils.logger import logger
-from ouichat_backend.utils.constants import startup
+from ouichat_backend.utils.constants import (
+    startup,
+    ATTACHMENTS_DIR,
+    ICONS_DIR,
+)
 from ouichat_backend.utils.methods import (
     get_env_bool,
     get_env_str,
     db,
 )
+
+import os
 
 
 def init_logger():
@@ -75,6 +81,32 @@ def init_db_collections():
     if not startup.CHATS_COLLECTION_NAME:
         raise ValueError("Failed to fetch chats collection name")
 
+    startup.ATTACHMENTS_COLLECTION_NAME = get_env_str("ATTACHMENTS_COLLECTION_NAME")
+    logger.debug(
+        f"Attachments collection name: {startup.ATTACHMENTS_COLLECTION_NAME}"
+    )
+
+    if not startup.ATTACHMENTS_COLLECTION_NAME:
+        raise ValueError("Failed to fetch attachments collection name")
+
     logger.info(
         "Successfully fetched collection names"
+    )
+
+
+def init_file_dirs():
+    os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
+
+    logger.debug(
+        f"Created attachments dir at: {ATTACHMENTS_DIR}"
+    )
+
+    os.makedirs(ICONS_DIR, exist_ok=True)
+
+    logger.debug(
+        f"Created icons dir at: {ICONS_DIR}"
+    )
+
+    logger.info(
+        "Successfully created file directories"
     )

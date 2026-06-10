@@ -160,7 +160,7 @@ Bellow is a list of all possible events emitted by the backend.
     "scope": {str} "conversation.admins,
     "data": {
         "conversation_id": {str} $conv_id,
-        "make_admins": [
+        "make_admin": [
             {str} $username_m1,
             ...
         ],

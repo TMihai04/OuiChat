@@ -1,4 +1,5 @@
 from .auth import *
+from .files import *
 from .tags import *
 
 
@@ -13,6 +14,9 @@ __all__ = [
     "REFRESH_SCHEME",
     "CREDENTIALS_EXCEPTION",
     "WS_CREDENTIALS_EXCEPTION",
+    # files.py
+    "ATTACHMENTS_DIR",
+    "ICONS_DIR",
     # tags.py
     "EndpointTags",
     "EndpointPrefixes"

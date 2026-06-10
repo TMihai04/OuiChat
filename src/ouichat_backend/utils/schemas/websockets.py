@@ -17,7 +17,7 @@ class WebsocketUpdate(BaseModel):
     scope: str = Field(
         ...,
         description="Details about what part of the system registered a change. Formatting details system component",
-        pattern=r"^[\w]+(.[\w]+)*$"
+        pattern=r"^[\w]+(\.[\w]+)*$"
     )
     data: dict = Field(
         ...,
