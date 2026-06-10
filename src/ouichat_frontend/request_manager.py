@@ -1,3 +1,4 @@
+import json
 import time
 import random
 import os
@@ -692,6 +693,189 @@ class DownloadFileWorker(QThread):
         resp = asyncio.run(download_file_request(self.domain, self.access_token, self.file_id))
         self.finished.emit(resp)
 
+async def send_message_request(domain: str, access_token: str, chat_id: str, text: str | None, file_ids: list | None, replied_to: str | None):
+    headers = {
+        'Authorization': f"Bearer {access_token}"
+    }
+    params = {
+        'chat_id': chat_id
+    }
+    body = dict()
+    if text: body['content'] = text
+    if file_ids: body['attachments'] = file_ids
+    if replied_to: body['replied_to'] = replied_to
+    async with aiohttp.ClientSession() as session:
+        for request_count in range(MAX_REQUESTS):
+            try:
+                async with session.post(url=f"http://{domain}/messages/send", headers=headers, params=params, json=body) as resp:
+                    try:
+                        resp.raise_for_status()
+                    except aiohttp.ClientResponseError as _:
+                        return await handle_error(resp)
+
+                    resp_dict = await resp.json()
+                    return get_resp_dict(False, resp.status, resp_dict)
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
+                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
+                continue
+
+        return get_resp_dict(True, 408, 'Cannot establish a connection with the server.')
+
+class SendMessageWorker(QThread):
+    finished = pyqtSignal(dict)
+
+    def __init__(self, domain: str, access_token: str, chat_id: str, text: str | None, file_ids: list | None, replied_to: str | None):
+        super().__init__()
+        self.domain = domain
+        self.access_token = access_token
+        self.chat_id = chat_id
+        self.text = text
+        self.file_ids = file_ids
+        self.replied_to = replied_to
+
+    def run(self):
+        resp = asyncio.run(send_message_request(self.domain, self.access_token, self.chat_id, self.text, self.file_ids, self.replied_to))
+        self.finished.emit(resp)
+
+async def edit_message_request(domain: str, access_token: str, chat_id: str, message_id: str, text: str):
+    headers = {
+        'Authorization': f"Bearer {access_token}"
+    }
+    params = {
+        'chat_id': chat_id
+    }
+    body = {
+        'message_id': message_id,
+        'new_content': text
+    }
+    async with aiohttp.ClientSession() as session:
+        for request_count in range(MAX_REQUESTS):
+            try:
+                async with session.post(url=f"http://{domain}/messages/edit", headers=headers, params=params, json=body) as resp:
+                    try:
+                        resp.raise_for_status()
+                    except aiohttp.ClientResponseError as _:
+                        return await handle_error(resp)
+
+                    resp_dict = await resp.json()
+                    return get_resp_dict(False, resp.status, resp_dict)
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
+                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
+                continue
+
+        return get_resp_dict(True, 408, 'Cannot establish a connection with the server.')
+
+class EditMessageWorker(QThread):
+    finished = pyqtSignal(dict)
+
+    def __init__(self, domain: str, access_token: str, chat_id: str, message_id: str, text: str):
+        super().__init__()
+        self.domain = domain
+        self.access_token = access_token
+        self.chat_id = chat_id
+        self.message_id = message_id
+        self.text = text
+
+    def run(self):
+        resp = asyncio.run(edit_message_request(self.domain, self.access_token, self.chat_id, self.message_id, self.text))
+        self.finished.emit(resp)
+
+async def delete_message_request(domain: str, access_token: str, chat_id: str, message_id: str):
+    headers = {
+        'Authorization': f"Bearer {access_token}"
+    }
+    params = {
+        'chat_id': chat_id
+    }
+    body = {
+        'message_id': message_id,
+    }
+    async with aiohttp.ClientSession() as session:
+        for request_count in range(MAX_REQUESTS):
+            try:
+                async with session.delete(url=f"http://{domain}/messages/delete", headers=headers, params=params,
+                                        json=body) as resp:
+                    try:
+                        resp.raise_for_status()
+                    except aiohttp.ClientResponseError as _:
+                        return await handle_error(resp)
+
+                    resp_dict = await resp.json()
+                    return get_resp_dict(False, resp.status, resp_dict)
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
+                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
+                continue
+
+        return get_resp_dict(True, 408, 'Cannot establish a connection with the server.')
+
+class DeleteMessageWorker(QThread):
+    finished = pyqtSignal(dict)
+
+    def __init__(self, domain: str, access_token: str, chat_id: str, message_id: str):
+        super().__init__()
+        self.domain = domain
+        self.access_token = access_token
+        self.chat_id = chat_id
+        self.message_id = message_id
+
+    def run(self):
+        resp = asyncio.run(delete_message_request(self.domain, self.access_token, self.chat_id, self.message_id))
+        self.finished.emit(resp)
+
+async def get_messages_request(domain: str, access_token: str, chat_id: str, direction: str | None, message_id: str | None, batch_size: int | None):
+    headers = {
+        'Authorization': f"Bearer {access_token}"
+    }
+    params = {
+        'chat_id': chat_id,
+        'direction': direction if direction else "",
+    }
+    if message_id: params['message_id'] = message_id
+    if batch_size: params['batch_size'] = str(batch_size)
+    async with aiohttp.ClientSession() as session:
+        for request_count in range(MAX_REQUESTS):
+            try:
+                async with session.get(url=f"http://{domain}/messages/list", headers=headers, params=params) as resp:
+                    try:
+                        resp.raise_for_status()
+                    except aiohttp.ClientResponseError as _:
+                        return await handle_error(resp)
+
+                    messages = []
+                    async for line in resp.content:
+                        line = line.decode('utf-8').strip()
+                        if line.startswith('data:'):
+                            json_str = line[len('data:'):].strip()
+                            if json_str:
+                                messages.append(json.loads(json_str))
+
+                    return get_resp_dict(False, resp.status, messages)
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
+                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
+                continue
+
+        return get_resp_dict(True, 408, 'Cannot establish a connection with the server.')
+
+class GetMessagesWorker(QThread):
+    finished = pyqtSignal(dict)
+
+    def __init__(self, domain: str, access_token: str, chat_id: str, direction: str | None, message_id: str | None, batch_size: int | None):
+        super().__init__()
+        self.domain = domain
+        self.access_token = access_token
+        self.chat_id = chat_id
+        self.direction = direction
+        self.message_id = message_id
+        self.batch_size = batch_size
+
+    def run(self):
+        resp = asyncio.run(get_messages_request(self.domain, self.access_token, self.chat_id, self.direction, self.message_id, self.batch_size))
+        self.finished.emit(resp)
+
 def execute_request_loop(worker: QThread):
     loop = QEventLoop()
     worker_response = dict()
@@ -758,6 +942,10 @@ class RequestManager(QObject):
         self.modify_chat_details_worker = None
         self.upload_files_worker = None
         self.download_file_worker = None
+        self.send_messages_worker = None
+        self.edit_message_worker = None
+        self.delete_message_worker = None
+        self.get_messages_worker = None
 
     def request_chats(self, domain: str, access_token: str):
         self.get_chats_worker = GetChatsWorker(domain, access_token)
@@ -974,3 +1162,41 @@ class RequestManager(QObject):
 
     def request_modify_chat_icon(self, domain: str, access_token: str, chat_id: str, icon_id: str):
         return self.request_modify_chat_details(domain, access_token, chat_id, icon_id, "icon_id")
+
+    def request_send_message(self, domain: str, access_token: str, chat_id: str, text: str | None, file_ids: list | None, replied_to: str | None):
+        self.send_messages_worker = SendMessageWorker(domain, access_token, chat_id, text, file_ids, replied_to)
+        worker_response = execute_request_loop(self.send_messages_worker)
+        self.send_messages_worker.deleteLater()
+
+        is_error = worker_response.get('is_error')
+        if is_error:
+            return False, worker_response
+        return True, None
+
+    def request_edit_message(self, domain: str, access_token: str, chat_id: str, message_id: str, text: str):
+        self.edit_message_worker = EditMessageWorker(domain, access_token, chat_id, message_id, text)
+        worker_response = execute_request_loop(self.edit_message_worker)
+        self.edit_message_worker.deleteLater()
+
+        is_error = worker_response.get('is_error')
+        if is_error:
+            return False, worker_response
+        return True, None
+
+    def request_delete_message(self, domain: str, access_token: str, chat_id: str, message_id: str):
+        self.delete_message_worker = DeleteMessageWorker(domain, access_token, chat_id, message_id)
+        worker_response = execute_request_loop(self.delete_message_worker)
+        self.delete_message_worker.deleteLater()
+
+        is_error = worker_response.get('is_error')
+        if is_error:
+            return False, worker_response
+        return True, None
+
+    def request_get_messages(self, domain: str, access_token: str, chat_id: str, direction: str | None, message_id: str | None, batch_size: int | None):
+        self.get_messages_worker = GetMessagesWorker(domain, access_token, chat_id, direction, message_id, batch_size)
+        worker_response = execute_request_loop(self.get_messages_worker)
+        self.get_messages_worker.deleteLater()
+
+        is_error = worker_response.get('is_error')
+        return not is_error, worker_response

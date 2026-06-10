@@ -4,7 +4,7 @@ import time
 
 from PyQt6.QtWidgets import QDialog
 
-from request_manager import RequestManager
+from request_manager import RequestManager, message_args_to_dict
 from websocket_manager import WebSocketManager
 
 class Brain(QObject):
@@ -45,7 +45,7 @@ class Brain(QObject):
 
     last_seen_time_updated = pyqtSignal(str, str)
 
-    add_new_messages = pyqtSignal(dict)
+    add_new_messages = pyqtSignal(dict) # key = (chat_id, domain); val = list[message_dict]
     timestamps_updated = pyqtSignal()
 
     set_textbox_text = pyqtSignal(str)
@@ -86,6 +86,7 @@ class Brain(QObject):
         self.reply_user = None
         self.reply_user_icon_path = None
         self.reply_snip = None
+        self.reply_message_id = None
 
         self.is_edit = False
         self.edit_message_id = None
@@ -129,6 +130,7 @@ class Brain(QObject):
             success = self.refresh_tokens(domain, access_token)
             if not success:
                 self.logout_user_by_details(domain, access_token)
+                return
 
             user = self.find_user(username, domain)
 
@@ -282,6 +284,113 @@ class Brain(QObject):
 
                 else: return
             else: return
+
+        elif event_scope_tokenized[0] == 'message':
+            if len(event_scope_tokenized) == 1:
+                if event_type != 'create' and event_type != 'delete': return
+
+                if event_type == 'create':
+                    message_id = event_payload['message_id']
+                    sender = event_payload['sender']
+                    text = event_payload['content'] if event_payload['content'] else ""
+                    attachments = event_payload['attachments']
+                    replied_to = event_payload['replied_to'] # message_id
+                    created_at = event_payload['created_at']
+                    updated_at = event_payload['updated_at']
+                    chat_id = event_payload['chat_id']
+
+                    message_dict = message_args_to_dict(
+                        chat_id=chat_id,
+                        domain=domain,
+                        message_id=message_id,
+                        sender=sender,
+                        was_edited=created_at != updated_at,
+                        is_reply=replied_to is not None,
+                        reply_sender="ASD", # TO BE MODIFIED
+                        reply_snip="ASD", # TO BE MODIFIED
+                        timestamp=created_at,
+                        text=text,
+                        files=list(map(lambda file_id: {"file_name": file_id, "file_id": file_id}, attachments)), # FUTURE: GET FILE NAME FROM MESSAGE STATE
+                    )
+
+                    signal_dict = {
+                        (chat_id, domain): [message_dict]
+                    }
+                    self.add_new_messages.emit(signal_dict)
+                    return
+
+                else:
+                    message_id = event_payload['message_id']
+                    chat_id = event_payload['chat_id']
+
+                    signal_dict = {
+                        (chat_id, domain): [message_id]
+                    }
+                    self.remove_messages.emit(signal_dict)
+                    return
+
+            elif len(event_scope_tokenized) == 2:
+                if event_type != 'update': return
+
+                message_id = event_payload['message_id']
+                new_text = event_payload['content']
+                chat_id = event_payload['chat_id']
+                self.message_edited.emit(chat_id, domain, message_id, new_text)
+                return
+
+        else:
+            return
+
+    def delete_message_request(self, message_id: str):
+        current_user_domain = self.get_current_user_domain()
+        current_user_access_token = self.get_current_user_access_token()
+        current_chat_id = self.get_current_chat_id()
+        success, resp_data = self.request_manager.request_delete_message(current_user_domain, current_user_access_token, current_chat_id, message_id)
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed:
+                    return False, "Could not refresh session"
+                else:
+                    return self.delete_message_request(message_id)
+            else:
+                return False, "Could NOT delete message."
+
+        return True, None
+
+    def edit_message_request(self, message_id: str, text: str):
+        current_user_domain = self.get_current_user_domain()
+        current_user_access_token = self.get_current_user_access_token()
+        current_chat_id = self.get_current_chat_id()
+        success, resp_data = self.request_manager.request_edit_message(current_user_domain, current_user_access_token, current_chat_id, message_id, text)
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed:
+                    return False, "Could not refresh session"
+                else:
+                    return self.edit_message_request(message_id, text)
+            else:
+                return False, "Could NOT edit message."
+
+        return True
+
+    def send_message_request(self, text: str, file_ids: list, replied_to: str):
+        current_user_domain = self.get_current_user_domain()
+        current_user_access_token = self.get_current_user_access_token()
+        current_chat_id = self.get_current_chat_id()
+        success, resp_data = self.request_manager.request_send_message(current_user_domain, current_user_access_token, current_chat_id, text, file_ids, replied_to)
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed:
+                    return False, "Could not refresh session"
+                else:
+                    return self.send_message_request(text, file_ids, replied_to)
+            else:
+                return False, "Could NOT send message."
+
+        return True, None
 
     def remove_users_from_chat(self, chat_id: str, domain: str, users: list):
         chat = self.find_chat(chat_id, domain)
@@ -1050,13 +1159,48 @@ class Brain(QObject):
         if current_user_domain == chat_details['domain']:
             self.chat_updated.emit(chat_details['chat_id'], chat_details['domain'])
 
-    def load_messages(self, chat_id: str, domain: str, oldest_message_id: str = None, message_nr: int = 50):
-        success, resp_data = self.request_manager.request_messages(chat_id, domain, oldest_message_id, message_nr)
-        if not success and resp_data['code'] == 401:
-            refreshed = self.refresh_tokens()
-            if not refreshed: return False, "Could not refresh session"
-            else: return self.load_messages(chat_id, domain, oldest_message_id, message_nr)
-        return success, resp_data.get('field')
+    def load_messages(self, domain: str, chat_id: str, direction: str | None, message_id: str | None, batch_size: int | None):
+        current_user_access_token = self.get_current_user_access_token()
+        success, resp_data = self.request_manager.request_get_messages(
+            domain, current_user_access_token, chat_id, direction, message_id, batch_size
+        )
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed:
+                    return False, "Could not refresh session"
+                else:
+                    return self.load_messages(domain, chat_id, direction, message_id, batch_size)
+            else:
+                return False, "Could NOT load messages!"
+
+        messages = resp_data.get('field')
+        formatted_messages = []
+        for message in messages:
+            if message_id and message['message_id'] == message_id: continue
+            formatted_messages.append(message_args_to_dict(
+                chat_id=chat_id,
+                domain=domain,
+                message_id=message['message_id'],
+                sender=message['sender'],
+                was_edited=message['created_at'] != message['updated_at'],
+                is_reply=message['replied_to'] is not None,
+                reply_sender='ASD', # TO BE MODIFIED
+                reply_snip='ASD', # TO BE MODIFIED
+                timestamp=message['created_at'],
+                text=message['content'] if message['content'] else "",
+                files=list(map(lambda file_id: {"file_name": file_id, "file_id": file_id}, message['attachments'])) # FUTURE: GET FILE NAME FROM MESSAGE STATE
+            ))
+
+        return True, formatted_messages
+
+    # def load_messages(self, chat_id: str, domain: str, oldest_message_id: str = None, message_nr: int = 50):
+    #     success, resp_data = self.request_manager.request_messages(chat_id, domain, oldest_message_id, message_nr)
+    #     if not success and resp_data['code'] == 401:
+    #         refreshed = self.refresh_tokens()
+    #         if not refreshed: return False, "Could not refresh session"
+    #         else: return self.load_messages(chat_id, domain, oldest_message_id, message_nr)
+    #     return success, resp_data.get('field')
 
     def set_edit(self, is_edit: bool, message_id: str = None, sender: str = None, sender_icon_path: str = None, message_snip: str = None):
         if self.is_edit and not is_edit:
@@ -1080,11 +1224,12 @@ class Brain(QObject):
             "message_snip": self.message_snip
         }
 
-    def set_reply(self, is_reply: bool, reply_user: str = None, reply_user_icon_path: str = None, reply_snip: str = None):
+    def set_reply(self, is_reply: bool, reply_user: str = None, reply_user_icon_path: str = None, reply_snip: str = None, reply_message_id: str = None):
         self.is_reply = is_reply
         self.reply_user = reply_user
         self.reply_user_icon_path = reply_user_icon_path
         self.reply_snip = reply_snip
+        self.reply_message_id = reply_message_id
         if is_reply:
             self.set_edit(False)
             self.message_context_changed.emit()
@@ -1094,7 +1239,8 @@ class Brain(QObject):
             "is_reply": self.is_reply,
             "reply_sender": self.reply_user,
             "reply_sender_icon_path": self.reply_user_icon_path,
-            "reply_snip": self.reply_snip
+            "reply_snip": self.reply_snip,
+            "reply_message_id": self.reply_message_id
         }
 
     def get_current_user(self):

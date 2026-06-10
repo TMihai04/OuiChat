@@ -1,5 +1,3 @@
-import random
-
 from PyQt6.QtWidgets import (
     QPushButton, QVBoxLayout, QLabel, QStackedLayout, QWidget, QHBoxLayout, QFileDialog,
     QTextEdit, QSizePolicy, QScrollArea, QLineEdit, QListWidget, QAbstractItemView, QListWidgetItem, QMenu
@@ -14,7 +12,6 @@ from PIL import Image
 
 from dialogs import AddUsersDialog, RemoveUsersDialog, ChatDetailsEditDialog, ErrorDialog
 from brain import Brain
-from request_manager import message_args_to_dict
 
 RIGHT_PANE_MIN_WIDTH = 310
 DOWNLOAD_WIDGET_WIDTH = 250
@@ -262,7 +259,7 @@ class ChatMessage(QWidget):
         edit = object()
 
 
-        if user_is_admin:
+        if user_is_admin or user_is_sender:
             menu.addSeparator()
             delete = menu.addAction("Delete Message")
         if user_is_sender:
@@ -283,7 +280,7 @@ class ChatMessage(QWidget):
 
         if selected_action == reply:
             sender_icon_path = self.brain.get_user_icon_path(self.sender, self.domain)
-            self.brain.set_reply(True, self.sender, sender_icon_path, self.message_text.toPlainText())
+            self.brain.set_reply(True, self.sender, sender_icon_path, self.message_text.toPlainText(), self.message_id)
 
         elif selected_action == edit:
             sender_icon_path = self.brain.get_user_icon_path(self.sender, self.domain)
@@ -291,10 +288,17 @@ class ChatMessage(QWidget):
             self.brain.set_textbox_text.emit(self.message_text.toPlainText())
 
         elif selected_action == delete:
-            message_data = {
-                (self.chat_id, self.domain): [self.message_id],
-            }
-            self.brain.remove_messages.emit(message_data)
+            success, resp_data = self.brain.delete_message_request(self.message_id)
+            if not success:
+                error_dialog = ErrorDialog()
+                error_dialog.set_error_message(resp_data)
+                error_dialog.exec()
+                return
+
+            # message_data = {
+            #     (self.chat_id, self.domain): [self.message_id],
+            # }
+            # self.brain.remove_messages.emit(message_data)
     
     def enterEvent(self, event: QEnterEvent):
         self.setStyleSheet("#ChatMessage { background-color: #2D2D2D; border-radius: 5px; }")
@@ -364,7 +368,8 @@ class ChatMessagesArea(QScrollArea):
             self.scroll_bar.setValue(max_value)
 
     def load_old_messages(self, oldest_message_id: str | None):
-        success, resp_data = self.brain.load_messages(self.chat_id, self.domain, oldest_message_id)
+        success, resp_data = self.brain.load_messages(self.domain, self.chat_id, "old", oldest_message_id, None)
+        # success, resp_data = self.brain.load_messages(self.chat_id, self.domain, oldest_message_id)
         if not success:
             error_dialog = ErrorDialog()
             error_dialog.set_error_message(resp_data)
@@ -384,7 +389,7 @@ class ChatMessagesArea(QScrollArea):
             position = starting_position
 
         for message in messages:
-            local_time = time.localtime(message['timestamp'])
+            local_time = time.localtime(message['timestamp'] / 1000)
             formatted_time = time.strftime("%H:%M:%S %d/%m/%Y", local_time)
             message_widget = ChatMessage(
                 brain = self.brain,
@@ -1767,8 +1772,15 @@ class MessageWindow(QWidget):
         edit_details = self.brain.get_edit_details()
 
         if edit_details['is_edit']:
-            # process different requests
-            self.brain.message_edited.emit(current_chat_id, current_chat_domain, edit_details['edit_message_id'], text)
+
+            success, resp_data = self.brain.edit_message_request(edit_details['edit_message_id'], text)
+            if not success:
+                error_dialog = ErrorDialog()
+                error_dialog.set_error_message(resp_data)
+                error_dialog.exec()
+                return
+
+            # self.brain.message_edited.emit(current_chat_id, current_chat_domain, edit_details['edit_message_id'], text)
 
             self.brain.set_edit(False)
             self.brain.message_context_changed.emit()
@@ -1787,23 +1799,32 @@ class MessageWindow(QWidget):
             if text == "":
                 return
 
-        message = message_args_to_dict(
-            chat_id = current_chat_id,
-            domain = current_chat_domain,
-            message_id = str(int(random.random() * 10000)),
-            sender = current_user_username,
-            was_edited = False,
-            is_reply = reply_details['is_reply'],
-            reply_sender = reply_details['reply_sender'],
-            reply_snip = reply_details['reply_snip'],
-            timestamp = time.time(),
-            text = text,
-            files = uploaded_files
+        success, resp_data = self.brain.send_message_request(
+            text, list(map(lambda file_dict: file_dict['file_id'], uploaded_files)), reply_details['reply_message_id']
         )
+        if not success:
+            error_dialog = ErrorDialog()
+            error_dialog.set_error_message(resp_data)
+            error_dialog.exec()
+            return
 
-        self.brain.add_new_messages.emit({
-            (current_chat_id, current_chat_domain): [message]
-        })
+        # message = message_args_to_dict(
+        #     chat_id = current_chat_id,
+        #     domain = current_chat_domain,
+        #     message_id = str(int(random.random() * 10000)),
+        #     sender = current_user_username,
+        #     was_edited = False,
+        #     is_reply = reply_details['is_reply'],
+        #     reply_sender = reply_details['reply_sender'],
+        #     reply_snip = reply_details['reply_snip'],
+        #     timestamp = time.time(),
+        #     text = text,
+        #     files = uploaded_files
+        # )
+        #
+        # self.brain.add_new_messages.emit({
+        #     (current_chat_id, current_chat_domain): [message]
+        # })
         self.text_box.clear()
         self.brain.clear_message_context.emit()
 
