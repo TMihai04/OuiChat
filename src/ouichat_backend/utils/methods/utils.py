@@ -87,7 +87,7 @@ def make_sse_event(event: dict | BaseModel) -> str:
     if isinstance(event, dict):
         return "data: {}\n\n".format(json.dumps(event))
     elif isinstance(event, BaseModel):
-        return "data: {}\n\n".format(event.model_dump())
+        return "data: {}\n\n".format(event.model_dump_json()) # FIFO MODIFIED
     
 
 def get_uuid4() -> str:

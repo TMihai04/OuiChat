@@ -1,5 +1,3 @@
-import random
-
 from PyQt6.QtWidgets import (
     QPushButton, QVBoxLayout, QLabel, QStackedLayout, QWidget, QHBoxLayout, QFileDialog,
     QTextEdit, QSizePolicy, QScrollArea, QLineEdit, QListWidget, QAbstractItemView, QListWidgetItem, QMenu
@@ -14,7 +12,6 @@ from PIL import Image
 
 from dialogs import AddUsersDialog, RemoveUsersDialog, ChatDetailsEditDialog, ErrorDialog
 from brain import Brain
-from request_manager import message_args_to_dict
 
 RIGHT_PANE_MIN_WIDTH = 310
 DOWNLOAD_WIDGET_WIDTH = 250
@@ -50,7 +47,7 @@ class ElidedLabel(QLabel):
         return QSize(text_width, super().sizeHint().height())
 
 class DownloadAttachmentBubble(QWidget):
-    def __init__(self, brain: Brain, file_id: int, file_path: str):
+    def __init__(self, brain: Brain, file_id: str, file_path: str):
         super().__init__()
 
         self.brain = brain
@@ -80,19 +77,19 @@ class DownloadAttachmentBubble(QWidget):
         path_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         path_label.setText(self.file_path)
 
-        remove_button = QPushButton()
-        remove_button.setFixedSize(32, 32)
-        remove_button.setIcon(QIcon("./Icons/download_file_icon.png"))
-        remove_button.setIconSize(QSize(32, 32))
-        remove_button.clicked.connect(self.download_file)
-        remove_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        download_button = QPushButton()
+        download_button.setFixedSize(32, 32)
+        download_button.setIcon(QIcon("./Icons/download_file_icon.png"))
+        download_button.setIconSize(QSize(32, 32))
+        download_button.clicked.connect(self.download_file)
+        download_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         widget_layout.addWidget(file_icon)
         widget_layout.addWidget(path_label, stretch=1)
-        widget_layout.addWidget(remove_button)
+        widget_layout.addWidget(download_button)
 
     def download_file(self):
-        success, resp_data = self.brain.download_files([self.file_id])
+        success, resp_data = self.brain.download_file(self.file_id)
         if not success:
             error_dialog = ErrorDialog()
             error_dialog.set_error_message(resp_data)
@@ -262,7 +259,7 @@ class ChatMessage(QWidget):
         edit = object()
 
 
-        if user_is_admin:
+        if user_is_admin or user_is_sender:
             menu.addSeparator()
             delete = menu.addAction("Delete Message")
         if user_is_sender:
@@ -283,7 +280,7 @@ class ChatMessage(QWidget):
 
         if selected_action == reply:
             sender_icon_path = self.brain.get_user_icon_path(self.sender, self.domain)
-            self.brain.set_reply(True, self.sender, sender_icon_path, self.message_text.toPlainText())
+            self.brain.set_reply(True, self.sender, sender_icon_path, self.message_text.toPlainText(), self.message_id)
 
         elif selected_action == edit:
             sender_icon_path = self.brain.get_user_icon_path(self.sender, self.domain)
@@ -291,10 +288,17 @@ class ChatMessage(QWidget):
             self.brain.set_textbox_text.emit(self.message_text.toPlainText())
 
         elif selected_action == delete:
-            message_data = {
-                (self.chat_id, self.domain): [self.message_id],
-            }
-            self.brain.remove_messages.emit(message_data)
+            success, resp_data = self.brain.delete_message_request(self.message_id)
+            if not success:
+                error_dialog = ErrorDialog()
+                error_dialog.set_error_message(resp_data)
+                error_dialog.exec()
+                return
+
+            # message_data = {
+            #     (self.chat_id, self.domain): [self.message_id],
+            # }
+            # self.brain.remove_messages.emit(message_data)
     
     def enterEvent(self, event: QEnterEvent):
         self.setStyleSheet("#ChatMessage { background-color: #2D2D2D; border-radius: 5px; }")
@@ -364,7 +368,8 @@ class ChatMessagesArea(QScrollArea):
             self.scroll_bar.setValue(max_value)
 
     def load_old_messages(self, oldest_message_id: str | None):
-        success, resp_data = self.brain.load_messages(self.chat_id, self.domain, oldest_message_id)
+        success, resp_data = self.brain.load_messages(self.domain, self.chat_id, "old", oldest_message_id, None)
+        # success, resp_data = self.brain.load_messages(self.chat_id, self.domain, oldest_message_id)
         if not success:
             error_dialog = ErrorDialog()
             error_dialog.set_error_message(resp_data)
@@ -384,7 +389,7 @@ class ChatMessagesArea(QScrollArea):
             position = starting_position
 
         for message in messages:
-            local_time = time.localtime(message['timestamp'])
+            local_time = time.localtime(message['timestamp'] / 1000)
             formatted_time = time.strftime("%H:%M:%S %d/%m/%Y", local_time)
             message_widget = ChatMessage(
                 brain = self.brain,
@@ -787,35 +792,35 @@ class ChatDetails(QScrollArea):
         if not file_path:
             return
 
-        with Image.open(file_path) as original_image:
-            image_copy = original_image.copy()
+        # with Image.open(file_path) as original_image:
+        #     image_copy = original_image.copy()
+        #
+        # new_width = 64
+        # new_height = 64
+        # resized_copy = image_copy.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        #
+        # save_dir = "./Cache/ChatIcons"
+        # if not os.path.exists(save_dir):
+        #     os.makedirs(save_dir)
+        # new_file_path = f"{save_dir}/{self.chat_id}_{int(time.time())}.png"
+        #
+        # resized_copy.save(new_file_path, "PNG")
+        #
+        # old_file_path = self.brain.get_chat_icon_path(self.chat_id, self.domain)
 
-        new_width = 64
-        new_height = 64
-        resized_copy = image_copy.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
-        save_dir = "./Cache/ChatIcons"
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-        new_file_path = f"{save_dir}/{self.chat_id}_{int(time.time())}.png"
-
-        resized_copy.save(new_file_path, "PNG")
-
-        old_file_path = self.brain.get_chat_icon_path(self.chat_id, self.domain)
-
-        success, error_msg = self.brain.set_chat_icon_path_request(self.chat_id, self.domain, new_file_path)
+        success, error_msg = self.brain.set_chat_icon_path_request(self.chat_id, self.domain, file_path)
         if not success:
             error_dialog = ErrorDialog()
             error_dialog.set_error_message(error_msg)
             error_dialog.exec()
             return
 
-        if old_file_path != "./Icons/chat_room_icon.png":
-            if os.path.exists(old_file_path):
-                try:
-                    os.remove(old_file_path)
-                except OSError:
-                    pass
+        # if old_file_path != "./Icons/chat_room_icon.png":
+        #     if os.path.exists(old_file_path):
+        #         try:
+        #             os.remove(old_file_path)
+        #         except OSError:
+        #             pass
 
     def add_members(self):
         if self.add_users_dialog.isVisible():
@@ -1031,9 +1036,10 @@ class ChatBubble(QWidget):
         self.chat_details_widget.modify_admins(make, remove)
 
     def update_user(self, username: str, domain: str):
-        chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
-        if chat_type == 'direct':
-            self.chat.update_user(username, domain)
+        # chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
+        # if chat_type == 'direct':
+        #     self.chat.update_user(username, domain)
+        self.chat.update_user(username, domain)
         self.chat_details_widget.update_user(username, domain)
 
     def display_chat_details(self):
@@ -1754,7 +1760,8 @@ class MessageWindow(QWidget):
 
         text = self.text_box.toPlainText().strip()
         staged_files = self.upload_context_widget.get_staged_files()
-        if text == "" and len(staged_files) == 0: return
+        formatted_files = [(file_path, "attachment") for file_path in staged_files]
+        if text == "" and len(formatted_files) == 0: return
 
         current_chat_id = self.brain.get_current_chat_id()
         current_chat_domain = self.brain.get_current_chat_domain()
@@ -1766,8 +1773,15 @@ class MessageWindow(QWidget):
         edit_details = self.brain.get_edit_details()
 
         if edit_details['is_edit']:
-            # process different requests
-            self.brain.message_edited.emit(current_chat_id, current_chat_domain, edit_details['edit_message_id'], text)
+
+            success, resp_data = self.brain.edit_message_request(edit_details['edit_message_id'], text)
+            if not success:
+                error_dialog = ErrorDialog()
+                error_dialog.set_error_message(resp_data)
+                error_dialog.exec()
+                return
+
+            # self.brain.message_edited.emit(current_chat_id, current_chat_domain, edit_details['edit_message_id'], text)
 
             self.brain.set_edit(False)
             self.brain.message_context_changed.emit()
@@ -1777,35 +1791,41 @@ class MessageWindow(QWidget):
 
         reply_details = self.brain.get_reply_details()
 
-        # MAKE REQUEST
-        # ONLY ADD AND DISPLAY MESSAGE ON SERVER UPDATE
+        success, resp_data, uploaded_files = self.brain.upload_files(formatted_files)
+        if not success:
+            error_dialog = ErrorDialog()
+            error_dialog.set_error_message(resp_data)
+            error_dialog.exec()
 
-        success, resp_data = self.brain.upload_files(staged_files)
+            if text == "":
+                return
+
+        success, resp_data = self.brain.send_message_request(
+            text, list(map(lambda file_dict: file_dict['file_id'], uploaded_files)), reply_details['reply_message_id']
+        )
         if not success:
             error_dialog = ErrorDialog()
             error_dialog.set_error_message(resp_data)
             error_dialog.exec()
             return
-        else:
-            files = resp_data
 
-        message = message_args_to_dict(
-            chat_id = current_chat_id,
-            domain = current_chat_domain,
-            message_id = str(int(random.random() * 10000)),
-            sender = current_user_username,
-            was_edited = False,
-            is_reply = reply_details['is_reply'],
-            reply_sender = reply_details['reply_sender'],
-            reply_snip = reply_details['reply_snip'],
-            timestamp = time.time(),
-            text = text,
-            files = files
-        )
-
-        self.brain.add_new_messages.emit({
-            (current_chat_id, current_chat_domain): [message]
-        })
+        # message = message_args_to_dict(
+        #     chat_id = current_chat_id,
+        #     domain = current_chat_domain,
+        #     message_id = str(int(random.random() * 10000)),
+        #     sender = current_user_username,
+        #     was_edited = False,
+        #     is_reply = reply_details['is_reply'],
+        #     reply_sender = reply_details['reply_sender'],
+        #     reply_snip = reply_details['reply_snip'],
+        #     timestamp = time.time(),
+        #     text = text,
+        #     files = uploaded_files
+        # )
+        #
+        # self.brain.add_new_messages.emit({
+        #     (current_chat_id, current_chat_domain): [message]
+        # })
         self.text_box.clear()
         self.brain.clear_message_context.emit()
 
