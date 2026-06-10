@@ -735,6 +735,11 @@ async def add_message(
 
     # Notify websocket update
     event_id = get_uuid4()
+
+    # FIFO MODIFIED
+    ws_data = new_message.model_dump()
+    ws_data["chat_id"] = chat.conversation_id
+
     for part in chat.preferences.participants:
         await ws_manager.notify_user(
             username=part.username,
@@ -742,7 +747,7 @@ async def add_message(
                 event_id=event_id,
                 type="create",
                 scope="message",
-                data=new_message.model_dump()
+                data=ws_data
             ),
             mode="binary"
         )
@@ -809,7 +814,8 @@ async def delete_message(
                 type="delete",
                 scope="message",
                 data={
-                    "message_id": message_id
+                    "message_id": message_id,
+                    "chat_id": chat.conversation_id # FIFO MODIFIED
                 }
             ),
             mode="binary"
@@ -875,7 +881,8 @@ async def update_message(
                     scope="message.content",
                     data={
                         "message_id": message_id,
-                        "content": content
+                        "content": content,
+                        "chat_id": chat.conversation_id # FIFO MODIFIED
                     }
                 ),
                 mode="binary"
