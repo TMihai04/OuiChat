@@ -226,6 +226,9 @@ class ChatList(QWidget):
         self.brain.timestamps_updated.connect(self.sort_items)
         self.brain.remove_domain.connect(self.remove_domain_chats)
         self.brain.remove_chats.connect(self.remove_chats_by_dict)
+        self.brain.chat_removed.connect(self.remove_chat)
+        self.brain.added_members_to_chat.connect(self.handle_membership_change)
+        self.brain.removed_members_from_chat.connect(self.handle_membership_change)
 
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Search chat...")
@@ -263,6 +266,28 @@ class ChatList(QWidget):
         self.new_chat_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self.widget_layout.addWidget(self.new_chat_button)
+
+    def handle_membership_change(self, chat_id: str, domain: str, users: list):
+        current_user_username = self.brain.get_current_user_username()
+        if current_user_username in users:
+            current_chat_id = self.brain.get_current_chat_id()
+            current_chat_domain = self.brain.get_current_chat_domain()
+            if current_chat_id == chat_id and current_chat_domain == domain:
+                self.list_widget.setCurrentRow(-1)
+
+        self.search(self.search_bar.text())
+
+    def remove_chat(self, domain: str, chat_id: str):
+        for row in reversed(range(self.list_widget.count())):
+            item = self.list_widget.item(row)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            if item_data['chat_id'] == chat_id and item_data['domain'] == domain:
+                is_selected = item.isSelected()
+                if is_selected:
+                    self.list_widget.setCurrentRow(-1)
+                removed_item = self.list_widget.takeItem(row)
+                if removed_item: del removed_item
+                return
 
     def remove_chats_by_dict(self, chats: dict):
         domain = chats['domain']
@@ -584,17 +609,7 @@ class ChatList(QWidget):
         self.search(self.search_bar.text())
 
     def __delete_chat(self, item: QListWidgetItem):
-        item_data = item.data(Qt.ItemDataRole.UserRole)
-
-        current_chat_id = self.brain.get_current_chat_id()
-        current_chat_domain = self.brain.get_current_chat_domain()
-        if current_chat_id == item_data['chat_id'] and current_chat_domain == item_data['domain']:
-            self.list_widget.setCurrentRow(-1)
-
-        self.__remove_chat_from_list(item)
-        self.brain.remove_chat_by_id_and_domain(item_data['chat_id'], item_data['domain'])
-        self.search(self.search_bar.text())
-        # IMPLEMENT REQUESTS TO SERVER
+        self.__exit_chat(item)
 
     def __mark_read(self, item: QListWidgetItem):
         item_data = item.data(Qt.ItemDataRole.UserRole)

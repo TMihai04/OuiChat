@@ -547,6 +547,12 @@ class ChatMembersList(QWidget):
 
         self.change_member_admin_status_display(username, False)
 
+    def modify_admins(self, make: list, remove: list):
+        for username in make:
+            self.change_member_admin_status_display(username, True)
+        for username in remove:
+            self.change_member_admin_status_display(username, False)
+
     def change_member_admin_status_display(self, username: str, is_admin: bool):
         for idx in range(self.list_widget.count()):
             item = self.list_widget.item(idx)
@@ -755,6 +761,13 @@ class ChatDetails(QScrollArea):
         self.setWidget(self.container)
         self.setWidgetResizable(True)
 
+    def modify_admins(self, make: list, remove: list):
+        self.chat_members_list.modify_admins(make, remove)
+
+        current_user_username = self.brain.get_current_user_username()
+        if current_user_username in make or current_user_username in remove:
+            self.update_description(current_user_username, self.domain)
+
     def change_chat_icon(self):
         """
         TO DO:
@@ -790,7 +803,7 @@ class ChatDetails(QScrollArea):
 
         old_file_path = self.brain.get_chat_icon_path(self.chat_id, self.domain)
 
-        success, error_msg = self.brain.set_chat_icon_path(self.chat_id, self.domain, new_file_path)
+        success, error_msg = self.brain.set_chat_icon_path_request(self.chat_id, self.domain, new_file_path)
         if not success:
             error_dialog = ErrorDialog()
             error_dialog.set_error_message(error_msg)
@@ -1014,6 +1027,9 @@ class ChatBubble(QWidget):
         self.widget_layout.addWidget(self.chat_details_widget)
         self.widget_layout.setCurrentIndex(0)
 
+    def modify_admins(self, make: list, remove: list):
+        self.chat_details_widget.modify_admins(make, remove)
+
     def update_user(self, username: str, domain: str):
         chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
         if chat_type == 'direct':
@@ -1052,6 +1068,9 @@ class UsersList(QListWidget):
         self.brain.current_user_changed.connect(self.handle_user_change)
         self.brain.user_updated.connect(self.handle_user_updated)
         self.brain.remove_domain.connect(self.remove_domain_users)
+        self.brain.add_users_to_domain_signal.connect(self.add_users)
+        self.brain.remove_user_from_domain_signal.connect(self.remove_user)
+        self.brain.user_reachable_status_changed.connect(self.modify_user_visibility)
 
         self.setIconSize(QSize(32, 32))
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -1060,6 +1079,14 @@ class UsersList(QListWidget):
         self.itemClicked.connect(self.handle_item_clicked_changed)
 
         self.initialize()
+
+    def modify_user_visibility(self, domain: str, username: str, now_reachable: bool):
+        for idx in range(self.count()):
+            item = self.item(idx)
+            item_data = item.data(Qt.ItemDataRole.UserRole)
+            if item_data['username'] == username and item_data['domain'] == domain:
+                item.setHidden(not now_reachable)
+                return
 
     def handle_user_updated(self, username: str, domain: str):
         for idx in range(self.count()):
@@ -1218,6 +1245,8 @@ class UsersList(QListWidget):
             self.addItem(item)
             if user['username'] == current_user_username and domain == current_user_domain:
                 item.setHidden(True)
+            elif not self.brain.user_is_reachable(user['username']):
+                item.setHidden(True)
             else:
                 item.setHidden(False)
 
@@ -1296,6 +1325,24 @@ class ChatHistory(QWidget):
         self.brain.added_members_to_chat.connect(self.add_users)
         self.brain.remove_domain.connect(self.remove_domain_bubbles)
         self.brain.remove_chats.connect(self.remove_bubbles_by_dict)
+        self.brain.remove_user_from_domain_signal.connect(self.remove_user_from_all_chats)
+        self.brain.modify_admins_signal.connect(self.modify_admins)
+
+    def modify_admins(self, chat_id: str, domain: str, make: list, remove: list):
+        for idx in range(self.widget_layout.count()):
+            widget = self.widget_layout.widget(idx)
+            if isinstance(widget, ChatBubble):
+                if widget.domain != domain or widget.chat_id != chat_id: continue
+                widget.modify_admins(make, remove)
+
+    def remove_user_from_all_chats(self, domain: str, username: str):
+        for idx in range(self.widget_layout.count()):
+            widget = self.widget_layout.widget(idx)
+            if isinstance(widget, ChatBubble):
+                if widget.domain != domain: continue
+                user_in_chat = self.brain.user_is_in_chat(widget.chat_id, widget.domain, username)
+                if user_in_chat:
+                    widget.remove_users_usernames([username])
 
     def handle_user_updated(self, username: str, domain: str):
         for idx in range(self.widget_layout.count()):
