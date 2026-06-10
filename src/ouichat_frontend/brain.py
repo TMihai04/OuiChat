@@ -1,6 +1,9 @@
+import glob
+
 from PyQt6.QtCore import QObject, pyqtSignal
 
 import time
+import os
 
 from PyQt6.QtWidgets import QDialog
 
@@ -65,6 +68,9 @@ class Brain(QObject):
     main_window_user_settings_requested = pyqtSignal()
 
     MAX_CHAT_BUBBLES = 15
+
+    cache_path = "../../ignore/Cache"
+    os.makedirs(cache_path, exist_ok=True)
 
     def __init__(self, refresh_login_dialog_class: type, error_dialog):
         super().__init__()
@@ -306,8 +312,8 @@ class Brain(QObject):
                         sender=sender,
                         was_edited=created_at != updated_at,
                         is_reply=replied_to is not None,
-                        reply_sender="ASD", # TO BE MODIFIED
-                        reply_snip="ASD", # TO BE MODIFIED
+                        reply_sender="Unknown User", # TO BE MODIFIED
+                        reply_snip="Unknown Message", # TO BE MODIFIED
                         timestamp=created_at,
                         text=text,
                         files=list(map(lambda file_id: {"file_name": file_id, "file_id": file_id}, attachments)), # FUTURE: GET FILE NAME FROM MESSAGE STATE
@@ -340,6 +346,14 @@ class Brain(QObject):
 
         else:
             return
+
+    def icon_path_from_icon_id(self, icon_id: str | None):
+        if icon_id is None: return "./Icons/default_user_icon.png"
+
+        matching_files = glob.glob(f"{self.cache_path}/{icon_id}.*")
+        if matching_files:
+            return matching_files[0]
+        return None
 
     def delete_message_request(self, message_id: str):
         current_user_domain = self.get_current_user_domain()
@@ -458,7 +472,7 @@ class Brain(QObject):
     def set_user_icon_path(self, username: str, domain: str, icon_path: str | None):
         user_data = self.get_user_details(username, domain)
         if not user_data: return False
-        user_data['profile']['picture_id'] = icon_path if icon_path is not None else './Icons/default_user_icon.png'
+        user_data['profile']['picture_id'] = icon_path if icon_path is not None else None
 
         self.user_updated.emit(username, domain)
 
@@ -643,11 +657,18 @@ class Brain(QObject):
 
         return True, None
 
+
     def set_current_user_icon_path(self, icon_path: str):
         current_user_access_token = self.get_current_user_access_token()
         current_user_domain = self.get_current_user_domain()
 
-        success, resp_data = self.request_manager.request_change_user_icon(current_user_domain, current_user_access_token, icon_path)
+        success, resp_data, uploaded_files = self.upload_files([(icon_path, "icon")])
+        if not success:
+            return False, "Could not upload icon."
+
+        icon_id = uploaded_files[0]['file_id']
+
+        success, resp_data = self.request_manager.request_change_user_icon(current_user_domain, current_user_access_token, icon_id)
         if not success:
             if resp_data['code'] == 401:
                 refreshed = self.refresh_tokens()
@@ -675,21 +696,21 @@ class Brain(QObject):
                 return False, "Could NOT upload all files.", uploaded_files
         return True, None, uploaded_files
 
-    def download_file(self, file_id: str):
+    def download_file(self, file_id: str, path: str | None = None):
         current_user_domain = self.get_current_user_domain()
         current_user_access_token = self.get_current_user_access_token()
-        success, resp_data = self.request_manager.request_download_file(current_user_domain, current_user_access_token, file_id)
+        success, resp_data = self.request_manager.request_download_file(current_user_domain, current_user_access_token, file_id, path)
         if not success:
             if resp_data['code'] == 401:
                 refreshed = self.refresh_tokens()
                 if not refreshed:
                     return False, "Could not refresh session"
                 else:
-                    return self.download_file(file_id)
+                    return self.download_file(file_id, path)
             else:
                 return False, "Could NOT download file."
 
-        return True, None
+        return True, resp_data
 
     def add_users_to_chat_request(self, chat_id: str, domain: str, users: list):
         current_user_access_token = self.get_current_user_access_token()
@@ -745,7 +766,7 @@ class Brain(QObject):
 
         name = f'{current_user_username}s Chatroom'
         description = f'{current_user_username}s Chatroom'
-        icon_id = "./Icons/chat_room_icon.png"
+        icon_id = ""
 
         success, resp_data = self.request_manager.request_create_chat(
             current_user_domain, current_user_access_token, is_group_chat = True,
@@ -796,9 +817,14 @@ class Brain(QObject):
         """
         current_user_access_token = self.get_current_user_access_token()
 
-        # SEND ICON_ID NOT ICON_PATH
+        success, resp_data, uploaded_files = self.upload_files([(icon_path, "icon")])
+        if not success:
+            return False, resp_data
+
+        icon_id = uploaded_files[0]['file_id']
+
         success, resp_data = self.request_manager.request_modify_chat_icon(
-            domain, current_user_access_token, chat_id, icon_path
+            domain, current_user_access_token, chat_id, icon_id
         )
         if not success:
             if resp_data['code'] == 401:
@@ -1006,13 +1032,6 @@ class Brain(QObject):
             else:
                 return False, "Could NOT modify admin!"
 
-        # MODIFY ADMIN ONLY ON WEBSOCKET UPDATE
-        users = chat['users']
-        for user in users:
-            if user['username'] == username:
-                user['is_admin'] = is_admin
-                break
-
         return True, None
 
     def update_timestamps(self, messages: dict):
@@ -1025,8 +1044,14 @@ class Brain(QObject):
     def get_user_icon_path(self, username: str, domain: str):
         user_data = self.get_user_details(username, domain)
         if not user_data: return './Icons/default_user_icon.png'
-        icon_path = user_data['profile']['picture_id']
-        if not icon_path: return './Icons/default_user_icon.png'
+        icon_id = user_data['profile']['picture_id']
+        icon_path = self.icon_path_from_icon_id(icon_id)
+        if not icon_path:
+            success, resp_data = self.download_file(icon_id, str(self.cache_path))
+            if not success:
+                return './Icons/default_user_icon.png'
+            return resp_data
+
         return icon_path
 
     def get_user_description (self, username: str, domain: str):
@@ -1185,8 +1210,8 @@ class Brain(QObject):
                 sender=message['sender'],
                 was_edited=message['created_at'] != message['updated_at'],
                 is_reply=message['replied_to'] is not None,
-                reply_sender='ASD', # TO BE MODIFIED
-                reply_snip='ASD', # TO BE MODIFIED
+                reply_sender='Unknown User', # TO BE MODIFIED
+                reply_snip='Unknown Message', # TO BE MODIFIED
                 timestamp=message['created_at'],
                 text=message['content'] if message['content'] else "",
                 files=list(map(lambda file_id: {"file_name": file_id, "file_id": file_id}, message['attachments'])) # FUTURE: GET FILE NAME FROM MESSAGE STATE
@@ -1427,21 +1452,23 @@ class Brain(QObject):
 
     def get_chat_icon_path(self, chat_id: str, domain: str):
         chat = self.find_chat(chat_id, domain)
-        if not chat: return None
+        if not chat: return './Icons/chat_room_icon.png'
 
         if chat['chat_type'] == "group":
-            return chat['icon_path']
+            icon_id = chat['icon_path']
+            icon_path = self.icon_path_from_icon_id(icon_id)
+            if not icon_path:
+                success, resp_data = self.download_file(icon_id, str(self.cache_path))
+                if not success:
+                    return './Icons/chat_room_icon.png'
+                return resp_data
+
+            return icon_path
         else:
             current_username = self.get_current_user_username()
             usernames = [usr['username'] for usr in chat['users']]
             other_username = usernames[0] if usernames[0] != current_username else usernames[1]
-            other_user_data = self.get_user_details(other_username, domain)
-            if not other_user_data: return "./Icons/default_user_icon.png"
-
-            icon_path = other_user_data['profile']['picture_id']
-            if icon_path is None:
-                return "./Icons/default_user_icon.png"
-            return icon_path
+            return self.get_user_icon_path(other_username, domain)
 
     def get_chat_users(self, chat_id: str, domain: str):
         chat = self.find_chat(chat_id, domain)

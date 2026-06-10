@@ -792,35 +792,35 @@ class ChatDetails(QScrollArea):
         if not file_path:
             return
 
-        with Image.open(file_path) as original_image:
-            image_copy = original_image.copy()
+        # with Image.open(file_path) as original_image:
+        #     image_copy = original_image.copy()
+        #
+        # new_width = 64
+        # new_height = 64
+        # resized_copy = image_copy.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        #
+        # save_dir = "./Cache/ChatIcons"
+        # if not os.path.exists(save_dir):
+        #     os.makedirs(save_dir)
+        # new_file_path = f"{save_dir}/{self.chat_id}_{int(time.time())}.png"
+        #
+        # resized_copy.save(new_file_path, "PNG")
+        #
+        # old_file_path = self.brain.get_chat_icon_path(self.chat_id, self.domain)
 
-        new_width = 64
-        new_height = 64
-        resized_copy = image_copy.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
-        save_dir = "./Cache/ChatIcons"
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-        new_file_path = f"{save_dir}/{self.chat_id}_{int(time.time())}.png"
-
-        resized_copy.save(new_file_path, "PNG")
-
-        old_file_path = self.brain.get_chat_icon_path(self.chat_id, self.domain)
-
-        success, error_msg = self.brain.set_chat_icon_path_request(self.chat_id, self.domain, new_file_path)
+        success, error_msg = self.brain.set_chat_icon_path_request(self.chat_id, self.domain, file_path)
         if not success:
             error_dialog = ErrorDialog()
             error_dialog.set_error_message(error_msg)
             error_dialog.exec()
             return
 
-        if old_file_path != "./Icons/chat_room_icon.png":
-            if os.path.exists(old_file_path):
-                try:
-                    os.remove(old_file_path)
-                except OSError:
-                    pass
+        # if old_file_path != "./Icons/chat_room_icon.png":
+        #     if os.path.exists(old_file_path):
+        #         try:
+        #             os.remove(old_file_path)
+        #         except OSError:
+        #             pass
 
     def add_members(self):
         if self.add_users_dialog.isVisible():
@@ -1036,9 +1036,10 @@ class ChatBubble(QWidget):
         self.chat_details_widget.modify_admins(make, remove)
 
     def update_user(self, username: str, domain: str):
-        chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
-        if chat_type == 'direct':
-            self.chat.update_user(username, domain)
+        # chat_type = self.brain.get_chat_type(self.chat_id, self.domain)
+        # if chat_type == 'direct':
+        #     self.chat.update_user(username, domain)
+        self.chat.update_user(username, domain)
         self.chat_details_widget.update_user(username, domain)
 
     def display_chat_details(self):

@@ -635,7 +635,7 @@ class UploadFileWorker(QThread):
         resp = asyncio.run(upload_file_request(self.domain, self.access_token, self.absolute_file_path, self.file_type))
         self.finished.emit(resp)
 
-async def download_file_request(domain: str, access_token: str, file_id: str):
+async def download_file_request(domain: str, access_token: str, file_id: str, path: str | None):
     headers = {
         'Authorization': f"Bearer {access_token}"
     }
@@ -656,23 +656,28 @@ async def download_file_request(domain: str, access_token: str, file_id: str):
                     if "filename=" in cd_header:
                         filename = cd_header.split("filename=")[-1].strip(' "\'')
 
-                    user_path = os.path.expanduser('~')
-                    downloads_path = os.path.join(user_path, 'Downloads')
-                    if not os.path.exists(downloads_path):
-                        os.makedirs(downloads_path)
+                    if path is None:
+                        user_path = os.path.expanduser('~')
+                        downloads_path = os.path.join(user_path, 'Downloads')
+                        if not os.path.exists(downloads_path):
+                            os.makedirs(downloads_path)
 
-                    base_name, ext = os.path.splitext(filename)
-                    save_path = os.path.join(downloads_path, filename)
-                    counter = 1
-                    while os.path.exists(save_path):
-                        save_path = os.path.join(downloads_path, f"{base_name} ({counter}){ext}")
-                        counter += 1
+                        base_name, ext = os.path.splitext(filename)
+                        save_path = os.path.join(downloads_path, filename)
+                        counter = 1
+                        while os.path.exists(save_path):
+                            save_path = os.path.join(downloads_path, f"{base_name} ({counter}){ext}")
+                            counter += 1
+
+                    else:
+                        _, ext = os.path.splitext(filename)
+                        save_path = f'{path}/{file_id}{ext}'
 
                     with open(save_path, 'wb') as file:
                         async for chunk in resp.content.iter_chunked(8192):
                             file.write(chunk)
 
-                    return get_resp_dict(False, resp.status, None)
+                    return get_resp_dict(False, resp.status, save_path)
 
             except (aiohttp.ClientError, asyncio.TimeoutError) as _:
                 await asyncio.sleep(REQUEST_TIMEOUT * request_count)
@@ -683,14 +688,15 @@ async def download_file_request(domain: str, access_token: str, file_id: str):
 class DownloadFileWorker(QThread):
     finished = pyqtSignal(dict)
 
-    def __init__(self, domain: str, access_token: str, file_id: str):
+    def __init__(self, domain: str, access_token: str, file_id: str, path: str | None):
         super().__init__()
         self.domain = domain
         self.access_token = access_token
         self.file_id = file_id
+        self.path = path
 
     def run(self):
-        resp = asyncio.run(download_file_request(self.domain, self.access_token, self.file_id))
+        resp = asyncio.run(download_file_request(self.domain, self.access_token, self.file_id, self.path))
         self.finished.emit(resp)
 
 async def send_message_request(domain: str, access_token: str, chat_id: str, text: str | None, file_ids: list | None, replied_to: str | None):
@@ -1058,15 +1064,15 @@ class RequestManager(QObject):
 
         return True, None, successfully_uploaded_files
 
-    def request_download_file(self, domain: str, access_token: str, file_id: str):
-        self.download_file_worker = DownloadFileWorker(domain, access_token, file_id)
+    def request_download_file(self, domain: str, access_token: str, file_id: str, path: str | None):
+        self.download_file_worker = DownloadFileWorker(domain, access_token, file_id, path)
         worker_response = execute_request_loop(self.download_file_worker)
         self.download_file_worker.deleteLater()
 
         is_error = worker_response.get('is_error')
         if is_error:
             return False, worker_response
-        return True, None
+        return True, worker_response.get('field')
 
     def request_block_unblock_user(self, domain: str, access_token: str, username: str, block: bool):
         self.block_unblock_worker = BlockUnblockUserWorker(domain, access_token, username, block)

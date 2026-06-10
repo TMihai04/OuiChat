@@ -140,30 +140,30 @@ class UserSettingsScreen(QWidget):
         if not file_path:
             return
 
-        with Image.open(file_path) as original_image:
-            image_copy = original_image.copy()
+        # with Image.open(file_path) as original_image:
+        #     image_copy = original_image.copy()
+        #
+        # new_width = 64
+        # new_height = 64
+        # resized_copy = image_copy.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        #
+        # current_user_username = self.brain.get_current_user_username()
+        # current_user_domain = self.brain.get_current_user_domain()
+        #
+        # save_dir = "./Cache/UserIcons"
+        # if not os.path.exists(save_dir):
+        #     os.makedirs(save_dir)
+        # new_file_path = f"{save_dir}/{current_user_username}_{current_user_domain}_{int(time.time())}.png"
+        #
+        # resized_copy.save(new_file_path, "PNG")
+        #
+        # old_file_path = self.brain.get_current_user_icon()
 
-        new_width = 64
-        new_height = 64
-        resized_copy = image_copy.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        self.brain.set_current_user_icon_path(file_path)
 
-        current_user_username = self.brain.get_current_user_username()
-        current_user_domain = self.brain.get_current_user_domain()
-
-        save_dir = "./Cache/UserIcons"
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-        new_file_path = f"{save_dir}/{current_user_username}_{current_user_domain}_{int(time.time())}.png"
-
-        resized_copy.save(new_file_path, "PNG")
-
-        old_file_path = self.brain.get_current_user_icon()
-
-        self.brain.set_current_user_icon_path(new_file_path)
-
-        if old_file_path != "./Icons/default_user_icon.png":
-            if os.path.exists(old_file_path):
-                try:
-                    os.remove(old_file_path)
-                except OSError:
-                    pass
+        # if old_file_path != "./Icons/default_user_icon.png":
+        #     if os.path.exists(old_file_path):
+        #         try:
+        #             os.remove(old_file_path)
+        #         except OSError:
+        #             pass

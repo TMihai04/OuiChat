@@ -273,7 +273,7 @@ async def change_calling_profile_picture(
     logger.debug(f"Changing current user's profile pciture - username: {username}")
 
     message = "Success"
-    update = db.update_user(
+    update = await db.update_user(
         username,
         pic_id=body.icon_id,
     )
