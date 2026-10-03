@@ -387,7 +387,7 @@ class Brain(QObject):
             else:
                 return False, "Could NOT edit message."
 
-        return True
+        return True, None
 
     def send_message_request(self, text: str, file_ids: list, replied_to: str):
         current_user_domain = self.get_current_user_domain()

@@ -314,7 +314,7 @@ async def create_chat_request(domain: str, access_token: str,
         "group": {
             "name": name,
             "description": description,
-            "picture_id": icon_id
+            "picture_id": icon_id if icon_id != "" else None
         },
         "participants": participants
     }
