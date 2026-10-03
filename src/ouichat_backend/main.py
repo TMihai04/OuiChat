@@ -5,6 +5,7 @@ from ouichat_backend.utils.logger import logger
 from ouichat_backend.routes import *
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 
@@ -32,6 +33,17 @@ fapi = FastAPI(
     lifespan=lifespan,
 )
 
+# The web client is served from a different origin than the domain typed at
+# login. These headers let that page read HTTP responses. Tokens are sent in
+# the Authorization header, not cookies, so a wildcard origin is safe here.
+fapi.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
+)
 
 fapi.include_router(auth_router)
 fapi.include_router(index_router)
