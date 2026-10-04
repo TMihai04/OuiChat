@@ -3,8 +3,8 @@
   font-family: "Segoe UI", sans-serif;
   font-size: 13px;
   color: #f4f0f8;
-  background: #4F485B;
-  --bg: #4F485B;
+  background: #5C5A69;
+  --bg: #5C5A69;
   --panel: #453F54;
   --panel-deep: #3C364A;
   --raised: #5C546C;
@@ -127,7 +127,7 @@ button.accent-button:hover:not(:disabled) {
   height: 100%;
   display: grid;
   place-items: center;
-  background: var(--bg);
+  background: var(--bg) center / cover no-repeat url("/login-background.jpeg");
 }
 
 .login-pop {
@@ -350,6 +350,26 @@ button.row.selected:hover:not(:disabled) {
 .message.mine .message-body { align-items: flex-end; }
 .message-body:hover { background: rgba(154, 118, 183, 0.18); }
 .message-meta { color: #f7f2fb; margin-bottom: 2px; }
+.edited {
+  margin-left: 6px;
+  color: #c8bfd4;
+  font-size: 11px;
+}
+.day-separator {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 8px 8px;
+  color: #d5d0de;
+  font-size: 12px;
+}
+.day-separator::before,
+.day-separator::after {
+  content: "";
+  height: 1px;
+  background: rgba(244, 240, 248, 0.28);
+}
 .message-text { white-space: pre-wrap; word-break: break-word; margin: 0; text-align: left; }
 .reply-quote {
   color: #ddd4e6;

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue"
 import { errorText } from "../api/http"
-import { formatTime } from "../format"
+import { formatDay, formatTime } from "../format"
 import { useAppStore, type ChatMessage } from "../stores/app"
 import AttachmentName from "./AttachmentName.vue"
 import Avatar from "./Avatar.vue"
@@ -16,6 +16,20 @@ const thread = computed(() => {
   const chat = store.selectedChat
   if (!chat) return null
   return store.threadFor(chat.domain, chat.id)
+})
+
+const transcript = computed(() => {
+  const rows: Array<{ kind: "day"; id: string; label: string } | { kind: "message"; id: string; message: ChatMessage }> = []
+  let previousDay = ""
+  for (const message of thread.value?.items ?? []) {
+    const label = formatDay(message.createdAt)
+    if (label !== previousDay) {
+      rows.push({ kind: "day", id: `day-${message.id}`, label })
+      previousDay = label
+    }
+    rows.push({ kind: "message", id: message.id, message })
+  }
+  return rows
 })
 
 const menuItems = computed(() => {
@@ -110,34 +124,36 @@ async function pick(action: string) {
       </button>
     </div>
     <div ref="scroller" class="messages" @scroll="onScroll">
+      <template v-for="row in transcript" :key="row.id">
+      <div v-if="row.kind === 'day'" class="day-separator">{{ row.label }}</div>
       <article
-        v-for="message in thread?.items ?? []"
-        :key="message.id"
+        v-else
         class="message"
-        :class="{ mine: message.sender === store.current?.username }"
-        @contextmenu.prevent="menu = { x: $event.clientX, y: $event.clientY, message }"
+        :class="{ mine: row.message.sender === store.current?.username }"
+        @contextmenu.prevent="menu = { x: $event.clientX, y: $event.clientY, message: row.message }"
       >
-        <Avatar :domain="message.domain" :picture-id="picture(message.sender)" fallback="/icons/default_user_icon.png" />
+        <Avatar :domain="row.message.domain" :picture-id="picture(row.message.sender)" fallback="/icons/default_user_icon.png" />
         <div class="message-body">
           <div class="message-meta">
-            {{ message.sender }} - {{ formatTime(message.createdAt) }}<span v-if="message.edited"> (Edited)</span>
+            {{ row.message.sender }} - {{ formatTime(row.message.createdAt) }}<span v-if="row.message.edited" class="edited">edited</span>
           </div>
-          <div v-if="quote(message)" class="reply-quote">{{ quote(message) }}</div>
-          <p v-if="message.content" class="message-text">{{ message.content }}</p>
-          <div v-if="message.attachments.length" class="file-stack">
+          <div v-if="quote(row.message)" class="reply-quote">{{ quote(row.message) }}</div>
+          <p v-if="row.message.content" class="message-text">{{ row.message.content }}</p>
+          <div v-if="row.message.attachments.length" class="file-stack">
             <button
-              v-for="fileId in message.attachments"
+              v-for="fileId in row.message.attachments"
               :key="fileId"
               class="file-chip"
               type="button"
               @click="store.downloadAttachment(fileId).catch((cause) => store.error = errorText(cause))"
             >
               <img src="/icons/download_file_icon.png" width="22" height="22" alt="" />
-              <AttachmentName :domain="message.domain" :file-id="fileId" />
+              <AttachmentName :domain="row.message.domain" :file-id="fileId" />
             </button>
           </div>
         </div>
       </article>
+      </template>
     </div>
     <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" @pick="pick" />
   </div>
