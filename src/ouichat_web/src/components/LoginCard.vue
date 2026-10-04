@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue"
+import { onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import { errorText } from "../api/http"
 import { useAppStore } from "../stores/app"
@@ -17,6 +17,28 @@ const register = ref(false)
 const showPassword = ref(false)
 const error = ref("")
 const busy = ref(false)
+const domainInput = ref<HTMLInputElement | null>(null)
+const usernameInput = ref<HTMLInputElement | null>(null)
+const passwordInput = ref<HTMLInputElement | null>(null)
+
+function moveField(event: KeyboardEvent, direction: 1 | -1) {
+  const inputs = [domainInput.value, usernameInput.value, passwordInput.value].filter((input): input is HTMLInputElement => input !== null)
+  const index = inputs.indexOf(event.target as HTMLInputElement)
+  if (index < 0) return
+  event.preventDefault()
+  const next = inputs[(index + direction + inputs.length) % inputs.length]
+  next.focus()
+  next.select()
+}
+
+function onFieldKeydown(event: KeyboardEvent) {
+  if (event.key === "ArrowDown" || event.key === "Enter") moveField(event, 1)
+  else if (event.key === "ArrowUp") moveField(event, -1)
+}
+
+onMounted(() => {
+  domainInput.value?.focus()
+})
 
 async function submit() {
   error.value = ""
@@ -50,20 +72,21 @@ async function submit() {
 </script>
 
 <template>
+  <div :class="modal ? 'login-pop' : 'center-page'">
   <form class="dialog-card" @submit.prevent="submit">
     <h1 style="text-align: center; font-size: 14px; font-weight: 600; margin: 0 0 16px;">Insert domain and credentials</h1>
     <label class="form-row">
       <span>Domain:</span>
-      <input v-model="domain" class="field" placeholder="Domain..." autocomplete="off" />
+      <input ref="domainInput" v-model="domain" class="field" placeholder="Domain..." autocomplete="off" @keydown="onFieldKeydown" />
     </label>
     <label class="form-row">
       <span>Username:</span>
-      <input v-model="username" class="field" placeholder="Username..." autocomplete="username" />
+      <input ref="usernameInput" v-model="username" class="field" placeholder="Username..." autocomplete="username" @keydown="onFieldKeydown" />
     </label>
     <label class="form-row">
       <span>Password:</span>
       <span class="password-wrap">
-        <input v-model="password" class="field" :type="showPassword ? 'text' : 'password'" placeholder="Password..." autocomplete="current-password" />
+        <input ref="passwordInput" v-model="password" class="field" :type="showPassword ? 'text' : 'password'" placeholder="Password..." autocomplete="current-password" @keydown="onFieldKeydown" />
         <button class="icon-button eye" type="button" @click="showPassword = !showPassword">
           <img :src="showPassword ? '/icons/opened_eye_icon.png' : '/icons/closed_eye_icon.png'" width="18" height="18" alt="" />
         </button>
@@ -79,4 +102,5 @@ async function submit() {
       <button type="submit" :disabled="busy">Login</button>
     </div>
   </form>
+  </div>
 </template>

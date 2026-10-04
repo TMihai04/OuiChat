@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from "vue"
 import { errorText } from "../api/http"
 import { formatTime } from "../format"
 import { useAppStore, type ChatMessage } from "../stores/app"
+import AttachmentName from "./AttachmentName.vue"
 import Avatar from "./Avatar.vue"
 import ContextMenu from "./ContextMenu.vue"
 
@@ -130,7 +131,7 @@ async function pick(action: string) {
             @click="store.downloadAttachment(fileId).catch((cause) => store.error = errorText(cause))"
           >
             <img src="/icons/download_file_icon.png" width="16" height="16" alt="" />
-            <span>{{ fileId }}</span>
+            <AttachmentName :domain="message.domain" :file-id="fileId" />
           </button>
         </div>
       </article>

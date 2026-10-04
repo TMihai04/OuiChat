@@ -6,7 +6,7 @@ import type {
   TokenPair,
   UserRaw,
 } from "./types"
-import { request, type DownloadedFile } from "./http"
+import { ApiError, httpOrigin, request, type DownloadedFile } from "./http"
 
 function formBody(username: string, password: string): URLSearchParams {
   const body = new URLSearchParams()
@@ -279,4 +279,31 @@ export function downloadFile(domain: string, accessToken: string, fileId: string
     query: { file_id: fileId },
     expect: "blob",
   }) as Promise<DownloadedFile>
+}
+
+export async function attachmentFileName(domain: string, accessToken: string, fileId: string) {
+  const url = new URL(`${httpOrigin(domain)}/attachments/download`)
+  url.searchParams.set("file_id", fileId)
+  let response: Response
+  try {
+    response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Range: "bytes=0-0",
+      },
+    })
+  } catch {
+    throw new ApiError(0, "Cannot establish a connection with the server.")
+  }
+  const header = response.headers.get("Content-Disposition") ?? ""
+  await response.body?.cancel()
+  if (response.status === 401) throw new ApiError(401, "Unauthorized")
+  if (!response.ok && response.status !== 206) throw new ApiError(response.status, "Could not read the file name.")
+  const match = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i.exec(header)
+  const encoded = match?.[1] ?? match?.[2] ?? ""
+  try {
+    return decodeURIComponent(encoded) || fileId
+  } catch {
+    return encoded || fileId
+  }
 }

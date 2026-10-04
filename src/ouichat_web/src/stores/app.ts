@@ -10,6 +10,26 @@ export const MAX_SESSIONS = 3
 const MESSAGE_BATCH = 30
 const STORAGE_KEY = "ouichat.sessions"
 const CURRENT_KEY = "ouichat.current"
+const REFRESH_LEAD_MS = 90_000
+
+function accessTokenExpiry(token: string): number | null {
+  const segment = token.split(".")[1]
+  if (!segment) return null
+  try {
+    const base64 = segment.replace(/-/g, "+").replace(/_/g, "/")
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4)
+    const payload = JSON.parse(atob(padded)) as { exp?: unknown }
+    return typeof payload.exp === "number" ? payload.exp * 1000 : null
+  } catch {
+    return null
+  }
+}
+
+function accessTokenFresh(token: string, leadMs: number): boolean {
+  const expiry = accessTokenExpiry(token)
+  if (expiry === null) return false
+  return expiry - Date.now() > leadMs
+}
 
 export interface Session {
   username: string
@@ -112,8 +132,12 @@ export const useAppStore = defineStore("app", () => {
 
   const iconCache = new Map<string, string>()
   const iconJobs = new Map<string, Promise<string>>()
+  const attachmentNames = new Map<string, string>()
+  const attachmentNameJobs = new Map<string, Promise<string>>()
   const recoveries = new Map<string, Promise<boolean>>()
   const reloginQueue: ReloginJob[] = []
+
+  const refreshTimers = new Map<string, number>()
 
   const hub = new SocketHub({
     onEvent: (username, domain, event) => applyEvent(username, domain, event),
@@ -121,6 +145,7 @@ export const useAppStore = defineStore("app", () => {
       error.value = `Connection lost with ${domain}. Logging out...`
       logout(username, domain)
     },
+    ensureToken: (username, domain) => ensureToken(username, domain),
   })
 
   const current = computed(() => sessions.value.find((session) => sessionKey(session.username, session.domain) === currentKey.value) ?? null)
@@ -376,6 +401,29 @@ export const useAppStore = defineStore("app", () => {
     return job
   }
 
+  async function resolveAttachmentName(domain: string, fileId: string): Promise<string> {
+    const key = `${domain}:${fileId}`
+    const known = attachmentNames.get(key)
+    if (known) return known
+    const pending = attachmentNameJobs.get(key)
+    if (pending) return pending
+    const session = current.value?.domain === domain ? current.value : sessionsOn(domain)[0]
+    if (!session) return fileId
+    const job = (async () => {
+      try {
+        const name = await withSession(session, (active) => api.attachmentFileName(active.domain, active.accessToken, fileId))
+        attachmentNames.set(key, name)
+        return name
+      } catch {
+        return fileId
+      } finally {
+        attachmentNameJobs.delete(key)
+      }
+    })()
+    attachmentNameJobs.set(key, job)
+    return job
+  }
+
   async function downloadAttachment(fileId: string) {
     const me = requireCurrent()
     const file = await withSession(me, (session) => api.downloadFile(session.domain, session.accessToken, fileId))
@@ -454,14 +502,19 @@ export const useAppStore = defineStore("app", () => {
     const job = (async () => {
       try {
         const tokens = await api.refreshTokens(session.domain, session.refreshToken)
+        if (!findSession(session.username, session.domain)) return false
         session.accessToken = tokens.access_token
         session.refreshToken = tokens.refresh_token
         hub.updateToken(session.username, session.domain, session.accessToken)
         persist()
+        scheduleRefresh(session)
         return true
       } catch {
         if (!interactive) return false
-        return askRelogin(session)
+        const ok = await askRelogin(session)
+        const live = findSession(session.username, session.domain)
+        if (ok && live) scheduleRefresh(live)
+        return ok
       }
     })().finally(() => {
       recoveries.delete(key)
@@ -538,6 +591,7 @@ export const useAppStore = defineStore("app", () => {
       throw cause
     }
     hub.connect(session.username, session.domain, session.accessToken)
+    scheduleRefresh(session)
     persist()
   }
 
@@ -556,7 +610,40 @@ export const useAppStore = defineStore("app", () => {
     }
   }
 
+  function clearRefresh(username: string, domain: string) {
+    const key = sessionKey(username, domain)
+    const timer = refreshTimers.get(key)
+    if (timer !== undefined) window.clearTimeout(timer)
+    refreshTimers.delete(key)
+  }
+
+  function scheduleRefresh(session: Session) {
+    clearRefresh(session.username, session.domain)
+    const expiry = accessTokenExpiry(session.accessToken)
+    const delay = expiry === null ? 10 * 60 * 1000 : Math.max(0, expiry - Date.now() - REFRESH_LEAD_MS)
+    const key = sessionKey(session.username, session.domain)
+    const timer = window.setTimeout(() => {
+      refreshTimers.delete(key)
+      const live = findSession(session.username, session.domain)
+      if (live) void recover(live, true)
+    }, delay)
+    refreshTimers.set(key, timer)
+  }
+
+  async function ensureToken(username: string, domain: string) {
+    const session = findSession(username, domain)
+    if (!session) return null
+    if (accessTokenFresh(session.accessToken, REFRESH_LEAD_MS)) {
+      return { token: session.accessToken, refreshed: false }
+    }
+    const ok = await recover(session, true)
+    const live = findSession(username, domain)
+    if (!ok || !live) return null
+    return { token: live.accessToken, refreshed: true }
+  }
+
   function logout(username: string, domain: string) {
+    clearRefresh(username, domain)
     const leavingCurrent = current.value?.username === username && current.value.domain === domain
     if (leavingCurrent && selectedChat.value) markRead(selectedChat.value, username)
     hub.disconnect(username, domain)
@@ -760,6 +847,7 @@ export const useAppStore = defineStore("app", () => {
     for (const file of files) {
       try {
         const fileId = await withSession(me, (session) => api.uploadFile(session.domain, session.accessToken, file, "attachment"))
+        attachmentNames.set(`${me.domain}:${fileId}`, file.name)
         uploaded.push(fileId)
       } catch (cause) {
         uploadError = errorText(cause)
@@ -1000,6 +1088,7 @@ export const useAppStore = defineStore("app", () => {
       try {
         await loadDomain(session, false)
         hub.connect(session.username, session.domain, session.accessToken)
+        scheduleRefresh(session)
         kept.push(session)
       } catch {
         hub.disconnect(session.username, session.domain)
@@ -1012,6 +1101,13 @@ export const useAppStore = defineStore("app", () => {
     persist()
     ready.value = true
   }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return
+    for (const session of sessions.value) {
+      if (!accessTokenFresh(session.accessToken, REFRESH_LEAD_MS)) void recover(session, true)
+    }
+  })
 
   return {
     ready,
@@ -1036,6 +1132,7 @@ export const useAppStore = defineStore("app", () => {
     pickerCandidates,
     removableMembers,
     resolveIcon,
+    resolveAttachmentName,
     downloadAttachment,
     signIn,
     switchTo,

@@ -76,7 +76,7 @@ button:disabled { opacity: 0.45; cursor: default; }
   height: 32px;
   object-fit: cover;
   border-radius: 2px;
-  background: #1b1b1b;
+  background: transparent;
   flex: none;
 }
 
@@ -89,7 +89,12 @@ button:disabled { opacity: 0.45; cursor: default; }
   height: 100%;
   display: grid;
   place-items: center;
-  background: #161616;
+  background: #1e1e1e;
+}
+
+.login-pop {
+  width: fit-content;
+  max-width: calc(100vw - 32px);
 }
 
 .dialog-card, .modal-card {

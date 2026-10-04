@@ -17,7 +17,6 @@ const rightQuery = ref("")
 const selected = ref<string[]>([])
 
 const left = computed(() => props.candidates.filter((user) => {
-  if (selected.value.includes(user.username)) return false
   return user.username.toLowerCase().includes(leftQuery.value.trim().toLowerCase())
 }))
 
