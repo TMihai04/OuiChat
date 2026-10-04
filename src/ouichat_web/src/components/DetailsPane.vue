@@ -152,10 +152,10 @@ async function changeIcon(event: Event) {
         </button>
       </div>
       <div v-if="admin" class="member-tools">
-        <button type="button" @click="emit('add')">
+        <button class="mid-button" type="button" @click="emit('add')">
           <img src="/icons/plus_icon.png" width="12" height="12" alt="" /> Add members
         </button>
-        <button type="button" @click="emit('remove')">
+        <button class="mid-button" type="button" @click="emit('remove')">
           <img src="/icons/minus_icon.png" width="12" height="12" alt="" /> Remove members
         </button>
       </div>

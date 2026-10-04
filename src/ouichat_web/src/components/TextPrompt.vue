@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from "vue"
+import { onBeforeUnmount, onMounted, ref, watch } from "vue"
 
 const props = defineProps<{
   title: string
@@ -16,6 +16,15 @@ watch(() => props.initial, (value) => {
   text.value = value
   error.value = ""
 })
+
+function onEscape(event: KeyboardEvent) {
+  if (event.key !== "Escape") return
+  event.preventDefault()
+  emit("cancel")
+}
+
+onMounted(() => window.addEventListener("keydown", onEscape))
+onBeforeUnmount(() => window.removeEventListener("keydown", onEscape))
 
 function apply() {
   if (!text.value.trim()) {

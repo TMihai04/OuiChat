@@ -1,7 +1,17 @@
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted } from "vue"
 import { useAppStore } from "../stores/app"
 
 const store = useAppStore()
+
+function onEscape(event: KeyboardEvent) {
+  if (event.key !== "Escape" || !store.error) return
+  event.preventDefault()
+  store.error = null
+}
+
+onMounted(() => window.addEventListener("keydown", onEscape))
+onBeforeUnmount(() => window.removeEventListener("keydown", onEscape))
 </script>
 
 <template>

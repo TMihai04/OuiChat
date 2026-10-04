@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import type { DirUser } from "../stores/app"
 import Avatar from "./Avatar.vue"
 
@@ -31,6 +31,15 @@ function userOf(username: string): DirUser {
     pictureId: null,
   }
 }
+
+function onEscape(event: KeyboardEvent) {
+  if (event.key !== "Escape") return
+  event.preventDefault()
+  emit("cancel")
+}
+
+onMounted(() => window.addEventListener("keydown", onEscape))
+onBeforeUnmount(() => window.removeEventListener("keydown", onEscape))
 
 function toggle(username: string, on: boolean) {
   if (on) {
@@ -78,8 +87,8 @@ function toggle(username: string, on: boolean) {
         </section>
       </div>
       <div class="dialog-actions">
-        <button type="button" @click="emit('cancel')">Cancel</button>
-        <button type="button" :disabled="!allowEmpty && selected.length === 0" @click="emit('confirm', selected.slice())">{{ confirmLabel }}</button>
+        <button class="mid-button" type="button" @click="emit('cancel')">Cancel</button>
+        <button class="mid-button" type="button" :disabled="!allowEmpty && selected.length === 0" @click="emit('confirm', selected.slice())">{{ confirmLabel }}</button>
       </div>
     </div>
   </div>

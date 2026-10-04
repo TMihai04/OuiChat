@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue"
+import { onBeforeUnmount, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import { errorText } from "../api/http"
 import { useAppStore } from "../stores/app"
@@ -32,13 +32,23 @@ function moveField(event: KeyboardEvent, direction: 1 | -1) {
 }
 
 function onFieldKeydown(event: KeyboardEvent) {
+  if (event.key === "Enter" && event.target === passwordInput.value) return
   if (event.key === "ArrowDown" || event.key === "Enter") moveField(event, 1)
   else if (event.key === "ArrowUp") moveField(event, -1)
 }
 
+function onEscape(event: KeyboardEvent) {
+  if (event.key !== "Escape" || !props.modal) return
+  event.preventDefault()
+  emit("close")
+}
+
 onMounted(() => {
   domainInput.value?.focus()
+  window.addEventListener("keydown", onEscape)
 })
+
+onBeforeUnmount(() => window.removeEventListener("keydown", onEscape))
 
 async function submit() {
   error.value = ""
@@ -98,7 +108,7 @@ async function submit() {
     </label>
     <div class="form-error">{{ error }}</div>
     <div class="form-actions">
-      <button v-if="modal" type="button" @click="emit('close')">Cancel</button>
+      <button v-if="modal" class="mid-button" type="button" @click="emit('close')">Cancel</button>
       <button class="accent-button" type="submit" :disabled="busy">Login</button>
     </div>
   </form>

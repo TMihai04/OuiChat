@@ -65,6 +65,18 @@ button.accent-button:hover:not(:disabled) {
   border-color: #b08ccc;
 }
 
+button.mid-button {
+  background: #7b6592;
+  border-color: #9a84ad;
+  color: #ffffff;
+}
+
+button.mid-button:hover:not(:disabled) {
+  background: #8d78a4;
+  border-color: #8d78a4;
+  color: #ffffff;
+}
+
 .icon-button {
   background: transparent;
   border: none;
@@ -213,8 +225,14 @@ button.surface-button:hover:not(:disabled) {
 .check-row {
   display: flex;
   justify-content: center;
+  align-items: center;
   gap: 8px;
   margin: 8px 0 12px;
+}
+
+.check-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
 }
 
 .shell {
@@ -556,7 +574,7 @@ button.row.selected:hover:not(:disabled) {
 .picker-list {
   height: 280px;
   overflow: auto;
-  background: #5c4d6a;
+  background: #48434f;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   margin-top: 8px;

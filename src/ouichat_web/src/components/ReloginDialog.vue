@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue"
+import { onBeforeUnmount, onMounted, ref } from "vue"
 import { errorText } from "../api/http"
 import { useAppStore } from "../stores/app"
 
@@ -8,6 +8,15 @@ const password = ref("")
 const showPassword = ref(false)
 const error = ref("")
 const busy = ref(false)
+
+function onEscape(event: KeyboardEvent) {
+  if (event.key !== "Escape" || !store.relogin) return
+  event.preventDefault()
+  store.cancelRelogin()
+}
+
+onMounted(() => window.addEventListener("keydown", onEscape))
+onBeforeUnmount(() => window.removeEventListener("keydown", onEscape))
 
 async function submit() {
   error.value = ""
