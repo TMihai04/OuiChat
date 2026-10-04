@@ -124,11 +124,13 @@ async function changeIcon(event: Event) {
       </div>
     </div>
     <div style="margin-top: 16px;">
-      <div>Description:</div>
-      <p style="margin: 6px 0; white-space: pre-wrap;">{{ store.displayDescription(chat) }}</p>
-      <button v-if="group && admin" class="icon-button" type="button" @click="openPrompt('description')">
-        <img src="/icons/edit_icon.png" width="16" height="16" alt="" />
-      </button>
+      <div class="description-head">
+        <span>Description:</span>
+        <button v-if="group && admin" class="icon-button" type="button" @click="openPrompt('description')">
+          <img src="/icons/edit_icon.png" width="16" height="16" alt="" />
+        </button>
+      </div>
+      <div class="description-widget">{{ store.displayDescription(chat) }}</div>
     </div>
     <template v-if="group">
       <div style="display: flex; justify-content: flex-end; margin-top: 12px;">

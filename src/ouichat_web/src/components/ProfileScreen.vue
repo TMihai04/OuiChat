@@ -58,11 +58,13 @@ async function changeIcon(event: Event) {
       <div>{{ store.current.username }}</div>
     </div>
     <div style="margin-top: 18px;">
-      <div>Description:</div>
-      <p style="margin: 6px 0; white-space: pre-wrap;">{{ store.current.status }}</p>
-      <button class="icon-button" type="button" @click="editing = true">
-        <img src="/icons/edit_icon.png" width="16" height="16" alt="" />
-      </button>
+      <div class="description-head">
+        <span>Description:</span>
+        <button class="icon-button" type="button" @click="editing = true">
+          <img src="/icons/edit_icon.png" width="16" height="16" alt="" />
+        </button>
+      </div>
+      <div class="description-widget">{{ store.current.status }}</div>
     </div>
     <button type="button" style="margin-top: 16px; width: 100px; height: 28px;" @click="logout">Log Out</button>
     <input ref="iconInput" hidden type="file" accept="image/png,image/jpeg" @change="changeIcon" />

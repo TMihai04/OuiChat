@@ -129,13 +129,14 @@ async function pick(action: string) {
       <article
         v-else
         class="message"
-        :class="{ mine: row.message.sender === store.current?.username }"
         @contextmenu.prevent="menu = { x: $event.clientX, y: $event.clientY, message: row.message }"
       >
         <Avatar :domain="row.message.domain" :picture-id="picture(row.message.sender)" fallback="/icons/default_user_icon.png" />
         <div class="message-body">
           <div class="message-meta">
-            {{ row.message.sender }} - {{ formatTime(row.message.createdAt) }}<span v-if="row.message.edited" class="edited">edited</span>
+            <span class="message-author">{{ row.message.sender }}</span>
+            <span class="message-time">{{ formatTime(row.message.createdAt) }}</span>
+            <span v-if="row.message.edited" class="edited">edited</span>
           </div>
           <div v-if="quote(row.message)" class="reply-quote">{{ quote(row.message) }}</div>
           <p v-if="row.message.content" class="message-text">{{ row.message.content }}</p>

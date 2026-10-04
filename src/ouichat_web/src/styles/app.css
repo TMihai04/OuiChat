@@ -1,10 +1,10 @@
 :root {
   color-scheme: dark;
   font-family: "Segoe UI", sans-serif;
-  font-size: 13px;
+  font-size: 15px;
   color: #f4f0f8;
-  background: #5C5A69;
-  --bg: #5C5A69;
+  background: #343232;
+  --bg: #343232;
   --panel: #453F54;
   --panel-deep: #3C364A;
   --raised: #5C546C;
@@ -96,8 +96,8 @@ button.accent-button:hover:not(:disabled) {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
-  padding: 0 8px;
-  height: 28px;
+  padding: 0 10px;
+  height: 36px;
 }
 
 .search input {
@@ -244,7 +244,7 @@ button.row.selected:hover:not(:disabled) {
 }
 .row-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.wide-button { width: 100%; height: 32px; }
+.wide-button { width: 100%; height: 40px; }
 
 .account-bar {
   display: grid;
@@ -253,7 +253,7 @@ button.row.selected:hover:not(:disabled) {
 }
 
 .account-button, .square {
-  height: 40px;
+  height: 44px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -312,7 +312,7 @@ button.row.selected:hover:not(:disabled) {
 
 .chat-title {
   flex: 1;
-  height: 28px;
+  height: 40px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -332,28 +332,34 @@ button.row.selected:hover:not(:disabled) {
 .message {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 4px 2px;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
 }
 
-.message.mine { flex-direction: row-reverse; }
+.message:hover { background: rgba(154, 118, 183, 0.18); }
 
 .message-body {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  max-width: min(72%, 560px);
-  border-radius: var(--radius);
-  padding: 4px 8px;
+  flex: 1;
+  min-width: 0;
 }
 
-.message.mine .message-body { align-items: flex-end; }
-.message-body:hover { background: rgba(154, 118, 183, 0.18); }
-.message-meta { color: #f7f2fb; margin-bottom: 2px; }
+.message-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: #f7f2fb;
+  margin-bottom: 2px;
+}
+.message-author { font-weight: 600; }
+.message-time { color: #c8bfd4; font-size: 13px; }
 .edited {
-  margin-left: 6px;
   color: #c8bfd4;
-  font-size: 11px;
+  font-size: 13px;
 }
 .day-separator {
   display: grid;
@@ -362,7 +368,7 @@ button.row.selected:hover:not(:disabled) {
   gap: 10px;
   margin: 14px 8px 8px;
   color: #d5d0de;
-  font-size: 12px;
+  font-size: 14px;
 }
 .day-separator::before,
 .day-separator::after {
@@ -373,7 +379,7 @@ button.row.selected:hover:not(:disabled) {
 .message-text { white-space: pre-wrap; word-break: break-word; margin: 0; text-align: left; }
 .reply-quote {
   color: #ddd4e6;
-  font-size: 12px;
+  font-size: 14px;
   margin-bottom: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -435,7 +441,7 @@ button.row.selected:hover:not(:disabled) {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 28px;
+  min-height: 36px;
 }
 
 .context-bar span, .staged-chip span { min-width: 0; }
@@ -449,8 +455,8 @@ button.row.selected:hover:not(:disabled) {
 
 .composer textarea {
   resize: none;
-  min-height: 40px;
-  max-height: 120px;
+  min-height: 48px;
+  max-height: 140px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
@@ -524,7 +530,23 @@ button.row.selected:hover:not(:disabled) {
 
 .badge-wrap { position: relative; width: 32px; height: 32px; flex: none; }
 .badge-wrap.unread .avatar {
-  box-shadow: 0 0 0 2px var(--accent);
+  box-shadow: 0 0 0 2px #e7d4f7;
+}
+
+.description-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.description-widget {
+  margin-top: 8px;
+  min-height: 88px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  white-space: pre-wrap;
 }
 
 .profile-page, .settings-page {
@@ -542,7 +564,7 @@ button.row.selected:hover:not(:disabled) {
   flex: 1;
   display: grid;
   place-items: center;
-  font-size: 16px;
+  font-size: 18px;
 }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }

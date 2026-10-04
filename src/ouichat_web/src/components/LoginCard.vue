@@ -74,7 +74,7 @@ async function submit() {
 <template>
   <div :class="modal ? 'login-pop' : 'center-page'">
   <form class="dialog-card" @submit.prevent="submit">
-    <h1 style="text-align: center; font-size: 14px; font-weight: 600; margin: 0 0 16px;">Insert domain and credentials</h1>
+    <h1 style="text-align: center; font-size: 16px; font-weight: 600; margin: 0 0 16px;">Insert domain and credentials</h1>
     <label class="form-row">
       <span>Domain:</span>
       <input ref="domainInput" v-model="domain" class="field" placeholder="Domain..." autocomplete="off" @keydown="onFieldKeydown" />
