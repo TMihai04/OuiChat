@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { errorText } from "../api/http"
 import { useAppStore } from "../stores/app"
 
@@ -46,9 +46,25 @@ function onCompose(event: Event) {
   box.value?.focus()
 }
 
+const composerMin = 48
+const composerMax = 140
+
+function fitComposer() {
+  const element = box.value
+  if (!element) return
+  element.style.height = "0px"
+  const next = Math.min(composerMax, Math.max(composerMin, element.scrollHeight))
+  element.style.height = `${next}px`
+}
+
+watch(text, () => void nextTick(fitComposer))
+watch(visible, () => void nextTick(fitComposer))
 watch(() => store.selectedChat?.id, () => reset())
 
-onMounted(() => window.addEventListener("ouichat-compose", onCompose))
+onMounted(() => {
+  window.addEventListener("ouichat-compose", onCompose)
+  fitComposer()
+})
 onBeforeUnmount(() => window.removeEventListener("ouichat-compose", onCompose))
 
 function addFiles(event: Event) {

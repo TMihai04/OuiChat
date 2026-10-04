@@ -103,7 +103,7 @@ async function changeIcon(event: Event) {
 <template>
   <div v-if="chat" class="pane details">
     <div class="details-close">
-      <button class="icon-button" type="button" @click="store.showChat()">
+      <button class="surface-button" type="button" @click="store.showChat()">
         <img src="/icons/close_icon.png" width="20" height="20" alt="" />
       </button>
     </div>
@@ -126,7 +126,7 @@ async function changeIcon(event: Event) {
     <div style="margin-top: 16px;">
       <div class="description-head">
         <span>Description:</span>
-        <button v-if="group && admin" class="icon-button" type="button" @click="openPrompt('description')">
+        <button v-if="group && admin" class="surface-button" type="button" @click="openPrompt('description')">
           <img src="/icons/edit_icon.png" width="16" height="16" alt="" />
         </button>
       </div>

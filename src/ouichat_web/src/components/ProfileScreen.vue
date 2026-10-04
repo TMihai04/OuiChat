@@ -42,7 +42,7 @@ async function changeIcon(event: Event) {
 <template>
   <div v-if="store.current" class="profile-page">
     <div class="profile-close">
-      <button class="icon-button" type="button" @click="router.push('/app')">
+      <button class="surface-button" type="button" @click="router.push('/app')">
         <img src="/icons/close_icon.png" width="20" height="20" alt="" />
       </button>
     </div>
@@ -60,7 +60,7 @@ async function changeIcon(event: Event) {
     <div style="margin-top: 18px;">
       <div class="description-head">
         <span>Description:</span>
-        <button class="icon-button" type="button" @click="editing = true">
+        <button class="surface-button" type="button" @click="editing = true">
           <img src="/icons/edit_icon.png" width="16" height="16" alt="" />
         </button>
       </div>

@@ -5,8 +5,8 @@
   color: #f4f0f8;
   background: #343232;
   --bg: #343232;
-  --panel: #453F54;
-  --panel-deep: #3C364A;
+  --panel: #4A484E;
+  --panel-deep: #3E3C42;
   --raised: #5C546C;
   --button: #5A5368;
   --line: #7A718C;
@@ -79,6 +79,32 @@ button.accent-button:hover:not(:disabled) {
   background: var(--accent);
   border-color: transparent;
   filter: none;
+}
+
+.surface-button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--button);
+  border: 1px solid var(--line);
+}
+
+button.surface-button:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.pane-back {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .field {
@@ -320,6 +346,7 @@ button.row.selected:hover:not(:disabled) {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
+  font-size: 17px;
 }
 
 .messages {
@@ -448,15 +475,22 @@ button.row.selected:hover:not(:disabled) {
 
 .composer-row {
   display: grid;
-  grid-template-columns: 40px 1fr 40px;
+  grid-template-columns: 48px 1fr 48px;
   gap: 6px;
   align-items: end;
 }
 
+.composer-row .square {
+  width: 48px;
+  height: 48px;
+}
+
 .composer textarea {
   resize: none;
+  height: 48px;
   min-height: 48px;
   max-height: 140px;
+  overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);

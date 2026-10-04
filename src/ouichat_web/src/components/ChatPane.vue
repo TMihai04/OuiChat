@@ -110,7 +110,7 @@ async function pick(action: string) {
 <template>
   <div v-if="store.selectedChat" class="pane">
     <div class="pane-toolbar">
-      <button class="icon-button" type="button" title="Back" @click="store.showUsers()">
+      <button class="pane-back" type="button" title="Back" @click="store.showUsers()">
         <img src="/icons/left_arrow_icon.png" width="18" height="18" alt="" />
       </button>
       <button class="chat-title" type="button" @click="store.showDetails()">
@@ -118,7 +118,7 @@ async function pick(action: string) {
           :domain="store.selectedChat.domain"
           :picture-id="store.chatPicture(store.selectedChat).pictureId"
           :fallback="store.chatPicture(store.selectedChat).fallback"
-          :size="20"
+          :size="26"
         />
         <span class="row-label">{{ store.displayName(store.selectedChat) }}</span>
       </button>
