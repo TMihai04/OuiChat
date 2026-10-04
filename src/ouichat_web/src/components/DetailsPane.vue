@@ -118,16 +118,16 @@ async function changeIcon(event: Event) {
       />
       <div class="name-line">
         <span>{{ store.displayName(chat) }}</span>
-        <button v-if="group && admin" class="icon-button" type="button" @click="openPrompt('name')">
-          <img src="/icons/edit_icon.png" width="16" height="16" alt="" />
+        <button v-if="group && admin" class="surface-button edit-button" type="button" @click="openPrompt('name')">
+          <img src="/icons/edit_icon.png" width="14" height="14" alt="" />
         </button>
       </div>
     </div>
     <div style="margin-top: 16px;">
       <div class="description-head">
         <span>Description:</span>
-        <button v-if="group && admin" class="surface-button" type="button" @click="openPrompt('description')">
-          <img src="/icons/edit_icon.png" width="16" height="16" alt="" />
+        <button v-if="group && admin" class="surface-button edit-button" type="button" @click="openPrompt('description')">
+          <img src="/icons/edit_icon.png" width="14" height="14" alt="" />
         </button>
       </div>
       <div class="description-widget">{{ store.displayDescription(chat) }}</div>
