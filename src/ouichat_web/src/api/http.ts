@@ -13,7 +13,7 @@ export function isLocalEnvironment(): boolean {
 }
 
 export function httpOrigin(domain: string): string {
-  return `${isLocalEnvironment() ? "http" : "https"}://${domain}`
+  return `${isLocalEnvironment() ? "http" : "https"}://${domain}/api`
 }
 
 export function wsOrigin(domain: string): string {

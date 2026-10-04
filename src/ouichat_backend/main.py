@@ -45,5 +45,6 @@ fapi.add_middleware(
     expose_headers=["Content-Disposition"],
 )
 
-fapi.include_router(auth_router)
-fapi.include_router(index_router)
+fapi.include_router(auth_router, prefix="/api")
+fapi.include_router(index_router, prefix="/api")
+fapi.include_router(ws_router)

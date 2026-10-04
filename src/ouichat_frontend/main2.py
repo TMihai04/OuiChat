@@ -4,8 +4,8 @@ import json
 
 url = "http://localhost:8000"
 
-login= "/login"
-me = "/users/me"
+login= "/api/login"
+me = "/api/users/me"
 
 async def main():
 

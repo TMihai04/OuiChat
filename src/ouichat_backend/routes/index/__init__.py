@@ -15,8 +15,8 @@ index_router.include_router(users_router)
 index_router.include_router(chat_router)
 index_router.include_router(messages_router)
 index_router.include_router(attachments_router)
-index_router.include_router(ws_router)
 
 __all__ = [
     "index_router",
+    "ws_router",
 ]
