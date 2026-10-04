@@ -167,13 +167,13 @@ button.surface-button:hover:not(:disabled) {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   padding: 18px 16px 16px;
-  box-shadow: 0 12px 40px rgba(28, 22, 38, 0.45);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
 }
 
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(28, 22, 38, 0.55);
+  background: rgba(22, 22, 22, 0.46);
   display: grid;
   place-items: center;
   z-index: 30;
@@ -298,7 +298,7 @@ button.row.selected:hover:not(:disabled) {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 4px;
-  box-shadow: 0 8px 24px rgba(28, 22, 38, 0.4);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
 .menu button, .account-menu button {
@@ -556,7 +556,7 @@ button.row.selected:hover:not(:disabled) {
 .picker-list {
   height: 280px;
   overflow: auto;
-  background: var(--panel-deep);
+  background: #5c4d6a;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   margin-top: 8px;
