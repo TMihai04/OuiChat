@@ -99,7 +99,7 @@ async function submit() {
     <div class="form-error">{{ error }}</div>
     <div class="form-actions">
       <button v-if="modal" type="button" @click="emit('close')">Cancel</button>
-      <button type="submit" :disabled="busy">Login</button>
+      <button class="accent-button" type="submit" :disabled="busy">Login</button>
     </div>
   </form>
   </div>

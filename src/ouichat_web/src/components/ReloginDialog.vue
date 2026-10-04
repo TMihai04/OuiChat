@@ -46,7 +46,7 @@ async function submit() {
       <div class="form-error">{{ error }}</div>
       <div class="dialog-actions">
         <button type="button" @click="store.cancelRelogin()">Log out</button>
-        <button type="submit" :disabled="busy">Login</button>
+        <button class="accent-button" type="submit" :disabled="busy">Login</button>
       </div>
     </form>
   </div>

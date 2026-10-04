@@ -72,9 +72,8 @@ async function pick(action: string) {
       @click="store.selectChat(chat.id)"
       @contextmenu.prevent="menu = { x: $event.clientX, y: $event.clientY, chatId: chat.id }"
     >
-      <span class="badge-wrap">
+      <span class="badge-wrap" :class="{ unread: store.unread(chat) }">
         <Avatar :domain="chat.domain" :picture-id="store.chatPicture(chat).pictureId" :fallback="store.chatPicture(chat).fallback" />
-        <img v-if="store.unread(chat)" class="badge" src="/icons/new_messages_icon.png" alt="" />
       </span>
       <span class="row-label">{{ store.displayName(chat) }}</span>
     </button>

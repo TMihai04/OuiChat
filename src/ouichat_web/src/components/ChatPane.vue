@@ -114,25 +114,28 @@ async function pick(action: string) {
         v-for="message in thread?.items ?? []"
         :key="message.id"
         class="message"
+        :class="{ mine: message.sender === store.current?.username }"
         @contextmenu.prevent="menu = { x: $event.clientX, y: $event.clientY, message }"
       >
         <Avatar :domain="message.domain" :picture-id="picture(message.sender)" fallback="/icons/default_user_icon.png" />
-        <div>
+        <div class="message-body">
           <div class="message-meta">
             {{ message.sender }} - {{ formatTime(message.createdAt) }}<span v-if="message.edited"> (Edited)</span>
           </div>
           <div v-if="quote(message)" class="reply-quote">{{ quote(message) }}</div>
           <p v-if="message.content" class="message-text">{{ message.content }}</p>
-          <button
-            v-for="fileId in message.attachments"
-            :key="fileId"
-            class="file-chip"
-            type="button"
-            @click="store.downloadAttachment(fileId).catch((cause) => store.error = errorText(cause))"
-          >
-            <img src="/icons/download_file_icon.png" width="16" height="16" alt="" />
-            <AttachmentName :domain="message.domain" :file-id="fileId" />
-          </button>
+          <div v-if="message.attachments.length" class="file-stack">
+            <button
+              v-for="fileId in message.attachments"
+              :key="fileId"
+              class="file-chip"
+              type="button"
+              @click="store.downloadAttachment(fileId).catch((cause) => store.error = errorText(cause))"
+            >
+              <img src="/icons/download_file_icon.png" width="22" height="22" alt="" />
+              <AttachmentName :domain="message.domain" :file-id="fileId" />
+            </button>
+          </div>
         </div>
       </article>
     </div>
