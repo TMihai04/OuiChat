@@ -9,7 +9,10 @@ export class ApiError extends Error {
 }
 
 export function isLocalEnvironment(): boolean {
-  return (import.meta.env.VITE_ENVIRONMENT ?? "local") !== "production"
+  const configured = import.meta.env.VITE_ENVIRONMENT
+  if (configured === "production") return false
+  if (configured === "local") return true
+  return window.location.protocol !== "https:"
 }
 
 export function httpOrigin(domain: string): string {
