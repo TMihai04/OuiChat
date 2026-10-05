@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
-import { errorText } from "../api/http"
+import { ApiError, errorText } from "../api/http"
 import { useAppStore } from "../stores/app"
+import Avatar from "./Avatar.vue"
+
+const MESSAGE_LIMIT = 512
 
 interface ComposeDetail {
   mode: "reply" | "edit"
@@ -20,9 +23,22 @@ const targetSnip = ref("")
 const fileInput = ref<HTMLInputElement | null>(null)
 const box = ref<HTMLTextAreaElement | null>(null)
 const busy = ref(false)
+const pausedUntil = ref<Record<string, number>>({})
+const now = ref(Date.now())
+let pauseTimer = 0
 
 const writable = computed(() => store.selectedChat ? store.isWritable(store.selectedChat) : false)
 const visible = computed(() => store.pane === "chat" && !!store.selectedChat && writable.value)
+const paused = computed(() => {
+  const id = store.selectedChat?.id
+  if (!id) return false
+  return (pausedUntil.value[id] ?? 0) > now.value
+})
+const replyPicture = computed(() => {
+  const chat = store.selectedChat
+  if (!chat || mode.value !== "reply" || !targetSender.value) return null
+  return store.userByName(chat.domain, targetSender.value)?.pictureId ?? null
+})
 
 function reset() {
   text.value = ""
@@ -61,16 +77,7 @@ watch(text, () => void nextTick(fitComposer))
 watch(visible, () => void nextTick(fitComposer))
 watch(() => store.selectedChat?.id, () => reset())
 
-onMounted(() => {
-  window.addEventListener("ouichat-compose", onCompose)
-  fitComposer()
-})
-onBeforeUnmount(() => window.removeEventListener("ouichat-compose", onCompose))
-
-function addFiles(event: Event) {
-  const input = event.target as HTMLInputElement
-  const picked = Array.from(input.files ?? [])
-  input.value = ""
+function stage(picked: File[]) {
   if (mode.value === "edit") return
   const next = [...files.value]
   for (const file of picked) {
@@ -83,6 +90,43 @@ function addFiles(event: Event) {
   files.value = next
 }
 
+function addFiles(event: Event) {
+  const input = event.target as HTMLInputElement
+  const picked = Array.from(input.files ?? [])
+  input.value = ""
+  stage(picked)
+}
+
+function onExternalFiles(event: Event) {
+  stage((event as CustomEvent<File[]>).detail ?? [])
+}
+
+function onDrop(event: DragEvent) {
+  stage(Array.from(event.dataTransfer?.files ?? []))
+}
+
+function pause(chatId: string) {
+  pausedUntil.value = { ...pausedUntil.value, [chatId]: Date.now() + 10_000 }
+  now.value = Date.now()
+  window.clearInterval(pauseTimer)
+  pauseTimer = window.setInterval(() => {
+    now.value = Date.now()
+    const still = Object.values(pausedUntil.value).some((until) => until > now.value)
+    if (!still) window.clearInterval(pauseTimer)
+  }, 250)
+}
+
+onMounted(() => {
+  window.addEventListener("ouichat-compose", onCompose)
+  window.addEventListener("ouichat-files", onExternalFiles)
+  fitComposer()
+})
+onBeforeUnmount(() => {
+  window.removeEventListener("ouichat-compose", onCompose)
+  window.removeEventListener("ouichat-files", onExternalFiles)
+  window.clearInterval(pauseTimer)
+})
+
 function onKeydown(event: KeyboardEvent) {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault()
@@ -91,6 +135,11 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 async function send() {
+  if (paused.value) return
+  if (text.value.length > MESSAGE_LIMIT) {
+    store.error = "A message can be at most 512 characters"
+    return
+  }
   const value = text.value.trim()
   if (!value && files.value.length === 0) return
   if (mode.value === "edit" && !value) {
@@ -106,7 +155,9 @@ async function send() {
     }
     reset()
   } catch (cause) {
-    store.error = errorText(cause)
+    const chatId = store.selectedChat?.id
+    if (cause instanceof ApiError && cause.status === 429 && chatId) pause(chatId)
+    else store.error = errorText(cause)
   } finally {
     busy.value = false
   }
@@ -114,11 +165,19 @@ async function send() {
 </script>
 
 <template>
-  <form v-if="visible" class="composer" @submit.prevent="send">
+  <form v-if="visible" class="composer" @submit.prevent="send" @dragover.prevent @drop.prevent="onDrop">
+    <p v-if="paused" class="pause-note">Sending is paused</p>
     <div v-if="mode" class="context-bar">
       <button class="icon-button" type="button" @click="reset()">
         <img src="/icons/close_icon.png" width="16" height="16" alt="" />
       </button>
+      <Avatar
+        v-if="mode === 'reply' && store.selectedChat"
+        :domain="store.selectedChat.domain"
+        :picture-id="replyPicture"
+        fallback="/icons/default_user_icon.png"
+        :size="20"
+      />
       <strong>{{ mode === "edit" ? "Editing:" : "Replying to:" }}</strong>
       <span class="row-label">{{ targetSender }}: {{ targetSnip }}</span>
     </div>
@@ -140,9 +199,10 @@ async function send() {
         v-model="text"
         placeholder="Start typing..."
         rows="1"
+        maxlength="512"
         @keydown="onKeydown"
       />
-      <button class="square" type="submit" :disabled="busy" title="Send">
+      <button class="square" type="submit" :disabled="busy || paused" title="Send">
         <img src="/icons/send_message_icon.png" width="22" height="22" alt="" />
       </button>
     </div>

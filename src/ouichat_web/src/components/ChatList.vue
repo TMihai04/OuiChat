@@ -6,13 +6,25 @@ import Avatar from "./Avatar.vue"
 import ContextMenu from "./ContextMenu.vue"
 
 const store = useAppStore()
-const query = ref("")
+const dmQuery = ref("")
+const roomQuery = ref("")
 const menu = ref<{ x: number; y: number; chatId: string } | null>(null)
 
-const chats = computed(() => {
-  const text = query.value.trim().toLowerCase()
-  return store.visibleChats.filter((chat) => store.displayName(chat).toLowerCase().includes(text))
-})
+function matching(type: "direct" | "group", query: string) {
+  const text = query.trim().toLowerCase()
+  return store.visibleChats.filter((chat) => chat.type === type && store.displayName(chat).toLowerCase().includes(text))
+}
+
+const directChats = computed(() => matching("direct", dmQuery.value))
+const groupChats = computed(() => matching("group", roomQuery.value))
+
+function dmPresence(chat: { type: string; domain: string; participants: { username: string }[] }) {
+  const me = store.current
+  if (!me || chat.type !== "direct") return null
+  const other = chat.participants.find((participant) => participant.username !== me.username)
+  if (!other) return null
+  return store.presenceOf(chat.domain, other.username)
+}
 
 const menuItems = computed(() => {
   const chat = store.visibleChats.find((entry) => entry.id === menu.value?.chatId)
@@ -62,30 +74,57 @@ async function pick(action: string) {
 </script>
 
 <template>
-  <div class="chat-search">
-    <label class="search">
-      <img src="/icons/search_icon.png" width="14" height="14" alt="" />
-      <input v-model="query" placeholder="Search chat..." />
-    </label>
-    <button class="home-button" type="button" title="Home" @click="store.showUsers()">
-      <img src="/icons/home.png" width="18" height="18" alt="" />
-    </button>
-  </div>
-  <div class="list-panel">
-    <button
-      v-for="chat in chats"
-      :key="chat.id"
-      class="row"
-      :class="{ selected: store.selectedChat?.id === chat.id }"
-      type="button"
-      @click="store.selectChat(chat.id)"
-      @contextmenu.prevent="menu = { x: $event.clientX, y: $event.clientY, chatId: chat.id }"
-    >
-      <span class="badge-wrap" :class="{ unread: store.unread(chat) }">
-        <Avatar :domain="chat.domain" :picture-id="store.chatPicture(chat).pictureId" :fallback="store.chatPicture(chat).fallback" />
-      </span>
-      <span class="row-label">{{ store.displayName(chat) }}</span>
-    </button>
+  <div class="chat-lists">
+    <section class="list-block">
+      <h2 class="list-title">DMs</h2>
+      <button class="home-wide" type="button" title="Home" @click="store.showUsers()">
+        <img src="/icons/home.png" width="18" height="18" alt="" />
+      </button>
+      <label class="search">
+        <img src="/icons/search_icon.png" width="14" height="14" alt="" />
+        <input v-model="dmQuery" placeholder="Search DM..." />
+      </label>
+      <div class="list-panel">
+        <button
+          v-for="chat in directChats"
+          :key="chat.id"
+          class="row"
+          :class="{ selected: store.selectedChat?.id === chat.id, unread: store.unread(chat) }"
+          type="button"
+          @click="store.selectChat(chat.id)"
+          @contextmenu.prevent="menu = { x: $event.clientX, y: $event.clientY, chatId: chat.id }"
+        >
+          <Avatar
+            :domain="chat.domain"
+            :picture-id="store.chatPicture(chat).pictureId"
+            :fallback="store.chatPicture(chat).fallback"
+            :presence="dmPresence(chat)"
+          />
+          <span class="row-label">{{ store.displayName(chat) }}</span>
+        </button>
+      </div>
+    </section>
+    <section class="list-block">
+      <h2 class="list-title">Chatrooms</h2>
+      <label class="search">
+        <img src="/icons/search_icon.png" width="14" height="14" alt="" />
+        <input v-model="roomQuery" placeholder="Search chatroom..." />
+      </label>
+      <div class="list-panel">
+        <button
+          v-for="chat in groupChats"
+          :key="chat.id"
+          class="row"
+          :class="{ selected: store.selectedChat?.id === chat.id, unread: store.unread(chat) }"
+          type="button"
+          @click="store.selectChat(chat.id)"
+          @contextmenu.prevent="menu = { x: $event.clientX, y: $event.clientY, chatId: chat.id }"
+        >
+          <Avatar :domain="chat.domain" :picture-id="store.chatPicture(chat).pictureId" :fallback="store.chatPicture(chat).fallback" />
+          <span class="row-label">{{ store.displayName(chat) }}</span>
+        </button>
+      </div>
+    </section>
   </div>
   <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" @pick="pick" />
 </template>

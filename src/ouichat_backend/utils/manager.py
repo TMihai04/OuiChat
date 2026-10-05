@@ -2,15 +2,47 @@
 
 from .logger import logger
 
+import asyncio
 from collections import defaultdict
 from fastapi import WebSocket, WebSocketException, WebSocketDisconnect, status
 from pydantic import BaseModel
-from typing import Literal
+from typing import Awaitable, Callable, Literal
 
 
 class WebsocketManager:
     def __init__(self):
         self.active_connections = defaultdict(list)
+        self._offline_tasks: dict[str, asyncio.Task] = {}
+
+    def connection_count(self, username: str) -> int:
+        return len(self.active_connections.get(username) or [])
+
+    def online_usernames(self) -> list[str]:
+        names = {name for name, sockets in self.active_connections.items() if sockets}
+        names.update(self._offline_tasks)
+        return sorted(names)
+
+    def cancel_offline(self, username: str) -> None:
+        task = self._offline_tasks.pop(username, None)
+        if task and not task.done():
+            task.cancel()
+
+    def schedule_offline(self, username: str, announce: Callable[[], Awaitable[None]]) -> None:
+        if self.connection_count(username) > 0:
+            return
+        self.cancel_offline(username)
+
+        async def wait_then_announce() -> None:
+            try:
+                await asyncio.sleep(2)
+            except asyncio.CancelledError:
+                return
+            self._offline_tasks.pop(username, None)
+            if self.connection_count(username) > 0:
+                return
+            await announce()
+
+        self._offline_tasks[username] = asyncio.create_task(wait_then_announce())
 
     async def connect(
         self,

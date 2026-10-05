@@ -127,6 +127,7 @@ export const useAppStore = defineStore("app", () => {
   const threads = ref<Record<string, Thread>>({})
   const selectedChatId = ref<string | null>(null)
   const pane = ref<"users" | "chat" | "details">("users")
+  const onlineUsers = ref<Record<string, string[]>>({})
   const error = ref<string | null>(null)
   const relogin = ref<{ username: string; domain: string } | null>(null)
 
@@ -248,6 +249,21 @@ export const useAppStore = defineStore("app", () => {
 
   function isCreator(chat: Chat, username: string): boolean {
     return chat.creators.includes(username)
+  }
+
+  function presenceOf(domain: string, username: string): "online" | "offline" {
+    return (onlineUsers.value[domain] ?? []).includes(username) ? "online" : "offline"
+  }
+
+  function setOnline(domain: string, names: string[]) {
+    onlineUsers.value = { ...onlineUsers.value, [domain]: names }
+  }
+
+  function markOnline(domain: string, username: string, online: boolean) {
+    const names = new Set(onlineUsers.value[domain] ?? [])
+    if (online) names.add(username)
+    else names.delete(username)
+    setOnline(domain, [...names])
   }
 
   function unread(chat: Chat): boolean {
@@ -760,15 +776,30 @@ export const useAppStore = defineStore("app", () => {
     await ensureMessages(chat, oldest.id)
   }
 
+  async function revealMessage(messageId: string): Promise<boolean> {
+    const chat = selectedChat.value
+    if (!chat) return false
+    const thread = threadFor(chat.domain, chat.id)
+    if (!thread.loaded) await ensureMessages(chat, null)
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (thread.items.some((message) => message.id === messageId)) return true
+      if (!thread.hasMore) return false
+      const oldest = thread.items[0]
+      if (!oldest) return false
+      await ensureMessages(chat, oldest.id)
+    }
+    return thread.items.some((message) => message.id === messageId)
+  }
+
   async function openDirect(username: string) {
     const me = requireCurrent()
     if (username === me.username) return
-    if (me.blacklist.includes(username)) return
     const existing = directChatId(me.username, username, me.domain)
     if (existing) {
       await selectChat(existing)
       return
     }
+    if (me.blacklist.includes(username)) return
     const created = await withSession(me, (session) => api.createChat(session.domain, session.accessToken, {
       type: "direct",
       participants: { [session.username]: true, [username]: true },
@@ -969,6 +1000,9 @@ export const useAppStore = defineStore("app", () => {
         if (user) user.status = data.status
         const session = findSession(data.username, domain)
         if (session) session.status = data.status
+      } else if (child === "presence") {
+        if (Array.isArray(data.usernames)) setOnline(domain, asStringList(data.usernames))
+        else if (typeof data.username === "string" && typeof data.online === "boolean") markOnline(domain, data.username, data.online)
       } else if (child === "picture" && typeof data.username === "string") {
         const pictureId = typeof data.picture_id === "string" ? data.picture_id : null
         const user = userByName(domain, data.username)
@@ -1135,6 +1169,8 @@ export const useAppStore = defineStore("app", () => {
     isWritable,
     isAdmin,
     isCreator,
+    presenceOf,
+    directChatId,
     unread,
     threadFor,
     userByName,
@@ -1152,6 +1188,7 @@ export const useAppStore = defineStore("app", () => {
     showChat,
     markSelectedRead,
     loadOlder,
+    revealMessage,
     openDirect,
     createGroup,
     addMembers,

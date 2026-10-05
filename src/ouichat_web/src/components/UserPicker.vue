@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
-import type { DirUser } from "../stores/app"
+import { useAppStore, type DirUser } from "../stores/app"
 import Avatar from "./Avatar.vue"
+
+const store = useAppStore()
 
 const props = defineProps<{
   title: string
@@ -23,6 +25,10 @@ const left = computed(() => props.candidates.filter((user) => {
 const right = computed(() => props.candidates
   .filter((user) => selected.value.includes(user.username))
   .filter((user) => user.username.toLowerCase().includes(rightQuery.value.trim().toLowerCase())))
+
+function storePresence(username: string) {
+  return store.presenceOf(props.domain, username)
+}
 
 function userOf(username: string): DirUser {
   return props.candidates.find((user) => user.username === username) ?? {
@@ -51,7 +57,7 @@ function toggle(username: string, on: boolean) {
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="emit('cancel')">
+  <div class="modal-backdrop" @pointerdown.self="emit('cancel')">
     <div class="picker">
       <div class="picker-columns">
         <section>
@@ -65,7 +71,7 @@ function toggle(username: string, on: boolean) {
           <div class="picker-list">
             <label v-for="user in left" :key="user.username" class="row">
               <input type="checkbox" :checked="selected.includes(user.username)" @change="toggle(user.username, ($event.target as HTMLInputElement).checked)" />
-              <Avatar :domain="domain" :picture-id="user.pictureId" fallback="/icons/default_user_icon.png" />
+              <Avatar :domain="domain" :picture-id="user.pictureId" fallback="/icons/default_user_icon.png" :presence="storePresence(user.username)" />
               <span class="row-label">{{ user.username }}</span>
             </label>
           </div>
@@ -80,7 +86,7 @@ function toggle(username: string, on: boolean) {
           </div>
           <div class="picker-list">
             <button v-for="username in right.map((user) => user.username)" :key="username" class="row" type="button" @click="toggle(username, false)">
-              <Avatar :domain="domain" :picture-id="userOf(username).pictureId" fallback="/icons/default_user_icon.png" />
+              <Avatar :domain="domain" :picture-id="userOf(username).pictureId" fallback="/icons/default_user_icon.png" :presence="storePresence(username)" />
               <span class="row-label">{{ username }}</span>
             </button>
           </div>

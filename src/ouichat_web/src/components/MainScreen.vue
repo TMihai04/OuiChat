@@ -17,6 +17,7 @@ const router = useRouter()
 const accountOpen = ref(false)
 const addingAccount = ref(false)
 const picker = ref<null | "create" | "add" | "remove">(null)
+const showPanel = ref(true)
 
 const candidates = computed(() => {
   if (picker.value === "remove" && store.selectedChat) return store.removableMembers(store.selectedChat)
@@ -48,8 +49,8 @@ async function confirmPicker(usernames: string[]) {
 </script>
 
 <template>
-  <div class="shell">
-    <aside class="left">
+  <div class="shell" :class="{ collapsed: !showPanel }">
+    <aside v-show="showPanel" class="left">
       <ChatList />
       <button class="wide-button" type="button" @click="picker = 'create'">
         <img src="/icons/plus_icon.png" width="12" height="12" alt="" /> New Chat
@@ -61,6 +62,7 @@ async function confirmPicker(usernames: string[]) {
             :domain="store.current.domain"
             :picture-id="store.current.pictureId"
             fallback="/icons/default_user_icon.png"
+            :presence="store.presenceOf(store.current.domain, store.current.username)"
           />
           <span class="row-label">{{ store.current?.username }} ({{ store.current?.domain }})</span>
         </button>
@@ -78,7 +80,7 @@ async function confirmPicker(usernames: string[]) {
           type="button"
           @click="chooseAccount(session.username, session.domain)"
         >
-          <Avatar :domain="session.domain" :picture-id="session.pictureId" fallback="/icons/default_user_icon.png" :size="24" />
+          <Avatar :domain="session.domain" :picture-id="session.pictureId" fallback="/icons/default_user_icon.png" :size="24" :presence="store.presenceOf(session.domain, session.username)" />
           <span class="row-label">{{ session.username }} ({{ session.domain }})</span>
         </button>
         <button type="button" :disabled="store.sessions.length >= MAX_SESSIONS" @click="accountOpen = false; addingAccount = true">
@@ -87,6 +89,9 @@ async function confirmPicker(usernames: string[]) {
         </button>
       </div>
     </aside>
+    <button class="panel-toggle" type="button" :title="showPanel ? 'Hide chats' : 'Show chats'" @click="showPanel = !showPanel">
+      <img src="/icons/left_arrow_icon.png" width="16" height="16" alt="" :class="{ 'arrow-right': !showPanel }" />
+    </button>
     <section class="right">
       <UsersPane v-if="store.pane === 'users'" />
       <ChatPane v-else-if="store.pane === 'chat'" />
@@ -96,7 +101,7 @@ async function confirmPicker(usernames: string[]) {
     <div v-if="addingAccount" class="modal-backdrop">
       <LoginCard modal @close="addingAccount = false" />
     </div>
-    <div v-if="accountOpen" class="modal-backdrop" style="background: transparent; z-index: 20;" @click="accountOpen = false" />
+    <div v-if="accountOpen" class="modal-backdrop" style="background: transparent; z-index: 20;" @pointerdown="accountOpen = false" />
     <UserPicker
       v-if="picker && store.current"
       :title="pickerTitle"

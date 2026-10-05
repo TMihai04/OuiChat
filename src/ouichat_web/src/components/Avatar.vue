@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from "vue"
+import { computed, ref, watch } from "vue"
 import { useAppStore } from "../stores/app"
 
 const props = withDefaults(defineProps<{
@@ -8,11 +8,15 @@ const props = withDefaults(defineProps<{
   fallback: string
   size?: number
   clickable?: boolean
+  presence?: "online" | "offline" | null
 }>(), {
   pictureId: null,
   size: 32,
   clickable: false,
+  presence: null,
 })
+
+const presenceClass = computed(() => props.presence ? `presence-${props.presence}` : "")
 
 const emit = defineEmits<{ click: [] }>()
 const store = useAppStore()
@@ -30,7 +34,7 @@ watch(() => [props.domain, props.pictureId, props.fallback] as const, async ([do
 
 <template>
   <button v-if="clickable" class="icon-button" type="button" @click="emit('click')">
-    <img class="avatar" :style="{ width: `${size}px`, height: `${size}px` }" :src="src" alt="" />
+    <img class="avatar" :class="presenceClass" :style="{ width: `${size}px`, height: `${size}px` }" :src="src" alt="" />
   </button>
-  <img v-else class="avatar" :style="{ width: `${size}px`, height: `${size}px` }" :src="src" alt="" />
+  <img v-else class="avatar" :class="presenceClass" :style="{ width: `${size}px`, height: `${size}px` }" :src="src" alt="" />
 </template>

@@ -59,7 +59,7 @@ async function openUser(username: string) {
         @click="openUser(user.username)"
         @contextmenu.prevent="menu = { x: $event.clientX, y: $event.clientY, username: user.username }"
       >
-        <Avatar :domain="store.current?.domain ?? ''" :picture-id="user.pictureId" fallback="/icons/default_user_icon.png" />
+        <Avatar :domain="store.current?.domain ?? ''" :picture-id="user.pictureId" fallback="/icons/default_user_icon.png" :presence="store.current ? store.presenceOf(store.current.domain, user.username) : null" />
         <span class="row-label">{{ user.username }}</span>
       </button>
     </div>

@@ -16,6 +16,7 @@ const iconInput = ref<HTMLInputElement | null>(null)
 const chat = computed(() => store.selectedChat)
 const me = computed(() => store.current)
 const admin = computed(() => chat.value && me.value ? store.isAdmin(chat.value, me.value.username) : false)
+const owner = computed(() => chat.value && me.value ? store.isCreator(chat.value, me.value.username) : false)
 const group = computed(() => chat.value?.type === "group")
 
 const members = computed(() => {
@@ -31,12 +32,19 @@ const menuItems = computed(() => {
   const username = menu.value?.username
   const currentChat = chat.value
   const user = me.value
-  if (!username || !currentChat || !user || !store.isAdmin(currentChat, user.username)) return []
-  if (username === user.username) return []
-  if (store.isCreator(currentChat, username)) return []
+  if (!username || !currentChat || !user) return []
+  const items: { id: string; label: string }[] = []
+  if (username !== user.username) {
+    const blocked = user.blacklist.includes(username)
+    const existing = store.directChatId(user.username, username, currentChat.domain)
+    if (!blocked || existing) items.push({ id: "direct", label: "Go to conversation" })
+  }
+  if (!store.isAdmin(currentChat, user.username) || username === user.username) return items
+  if (store.isCreator(currentChat, username)) return items
   const targetAdmin = store.isAdmin(currentChat, username)
-  if (targetAdmin && !store.isCreator(currentChat, user.username)) return []
-  return [{ id: targetAdmin ? "demote" : "promote", label: targetAdmin ? "Remove Admin" : "Make Admin" }]
+  if (targetAdmin && !store.isCreator(currentChat, user.username)) return items
+  items.push({ id: targetAdmin ? "demote" : "promote", label: targetAdmin ? "Remove Admin" : "Make Admin" })
+  return items
 })
 
 function memberPicture(username: string): string | null {
@@ -50,7 +58,20 @@ async function pick(action: string) {
   menu.value = null
   if (!username || !currentChat) return
   try {
+    if (action === "direct") {
+      await store.openDirect(username)
+      return
+    }
     await store.setAdmin(currentChat.id, username, action === "promote")
+  } catch (cause) {
+    store.error = errorText(cause)
+  }
+}
+
+async function removeChat() {
+  if (!chat.value) return
+  try {
+    await store.deleteChatById(chat.value.id)
   } catch (cause) {
     store.error = errorText(cause)
   }
@@ -159,8 +180,8 @@ async function changeIcon(event: Event) {
           type="button"
           @contextmenu.prevent="menu = { x: $event.clientX, y: $event.clientY, username: member.username }"
         >
-          <Avatar :domain="chat.domain" :picture-id="memberPicture(member.username)" fallback="/icons/default_user_icon.png" />
-          <span class="row-label">{{ member.username }}<template v-if="member.isAdmin"> (Admin)</template></span>
+          <Avatar :domain="chat.domain" :picture-id="memberPicture(member.username)" fallback="/icons/default_user_icon.png" :presence="store.presenceOf(chat.domain, member.username)" />
+          <span class="row-label">{{ member.username }}<span v-if="store.isCreator(chat, member.username)" class="edited"> (Owner)</span><template v-else-if="member.isAdmin"> (Admin)</template></span>
         </button>
       </div>
       <div v-if="admin" class="member-tools">
@@ -172,6 +193,7 @@ async function changeIcon(event: Event) {
         </button>
       </div>
       <div class="leave-row">
+        <button v-if="owner" class="mid-button" type="button" @click="removeChat">Delete Chat</button>
         <button class="mid-button" type="button" @click="leave">Leave Chat</button>
       </div>
     </template>

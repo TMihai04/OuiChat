@@ -6,11 +6,14 @@ import { useAppStore, type ChatMessage } from "../stores/app"
 import AttachmentName from "./AttachmentName.vue"
 import Avatar from "./Avatar.vue"
 import ContextMenu from "./ContextMenu.vue"
+import MessageText from "./MessageText.vue"
 
 const store = useAppStore()
 const scroller = ref<HTMLElement | null>(null)
 const menu = ref<{ x: number; y: number; message: ChatMessage } | null>(null)
 const stick = ref(true)
+const highlighted = ref<string | null>(null)
+let highlightTimer = 0
 
 const thread = computed(() => {
   const chat = store.selectedChat
@@ -52,12 +55,43 @@ function openMenu(event: MouseEvent, message: ChatMessage) {
   menu.value = { x: event.clientX, y: event.clientY, message }
 }
 
-function quote(message: ChatMessage): string | null {
-  if (!message.repliedTo || !thread.value) return null
-  const original = thread.value.items.find((entry) => entry.id === message.repliedTo)
-  if (!original) return "Unknown User: Unknown Message"
+function quote(message: ChatMessage): { text: string; sender: string | null; id: string } | null {
+  if (!message.repliedTo) return null
+  const original = thread.value?.items.find((entry) => entry.id === message.repliedTo)
+  if (!original) return { text: "Unknown User: Unknown Message", sender: null, id: message.repliedTo }
   const snip = original.content || "Attachment"
-  return `${original.sender}: ${snip}`
+  return { text: `${original.sender}: ${snip}`, sender: original.sender, id: original.id }
+}
+
+function scrollToMessage(id: string) {
+  const scrollerEl = scroller.value
+  const target = scrollerEl?.querySelector(`[data-message-id="${CSS.escape(id)}"]`)
+  if (!scrollerEl || !(target instanceof HTMLElement)) return
+  const delta = target.getBoundingClientRect().top - scrollerEl.getBoundingClientRect().top
+  scrollerEl.scrollTo({
+    top: scrollerEl.scrollTop + delta - scrollerEl.clientHeight / 2 + target.clientHeight / 2,
+    behavior: "smooth",
+  })
+}
+
+async function jumpTo(message: ChatMessage) {
+  const targetId = message.repliedTo
+  if (!targetId) return
+  const found = await store.revealMessage(targetId)
+  if (!found) return
+  await nextTick()
+  scrollToMessage(targetId)
+  highlighted.value = targetId
+  window.clearTimeout(highlightTimer)
+  highlightTimer = window.setTimeout(() => {
+    if (highlighted.value === targetId) highlighted.value = null
+  }, 2000)
+}
+
+function onDrop(event: DragEvent) {
+  const picked = Array.from(event.dataTransfer?.files ?? [])
+  if (!picked.length) return
+  window.dispatchEvent(new CustomEvent("ouichat-files", { detail: picked }))
 }
 
 function picture(username: string): string | null {
@@ -114,7 +148,7 @@ async function pick(action: string) {
 </script>
 
 <template>
-  <div v-if="store.selectedChat" class="pane">
+  <div v-if="store.selectedChat" class="pane" @dragover.prevent @drop.prevent="onDrop">
     <div class="pane-toolbar">
       <button class="pane-back" type="button" title="Back" @click="store.showUsers()">
         <img src="/icons/left_arrow_icon.png" width="18" height="18" alt="" />
@@ -135,6 +169,8 @@ async function pick(action: string) {
       <article
         v-else
         class="message"
+        :class="{ flash: highlighted === row.message.id }"
+        :data-message-id="row.message.id"
         @contextmenu.prevent="openMenu($event, row.message)"
       >
         <Avatar :domain="row.message.domain" :picture-id="picture(row.message.sender)" fallback="/icons/default_user_icon.png" />
@@ -144,8 +180,17 @@ async function pick(action: string) {
             <span class="message-time">{{ formatTime(row.message.createdAt) }}</span>
             <span v-if="row.message.edited" class="edited">edited</span>
           </div>
-          <div v-if="quote(row.message)" class="reply-quote">{{ quote(row.message) }}</div>
-          <p v-if="row.message.content" class="message-text">{{ row.message.content }}</p>
+          <button v-if="quote(row.message)" class="reply-quote" type="button" @click="jumpTo(row.message)">
+            <Avatar
+              v-if="quote(row.message)?.sender"
+              :domain="row.message.domain"
+              :picture-id="picture(quote(row.message)?.sender || '')"
+              fallback="/icons/default_user_icon.png"
+              :size="20"
+            />
+            <span>{{ quote(row.message)?.text }}</span>
+          </button>
+          <MessageText v-if="row.message.content" :text="row.message.content" />
           <div v-if="row.message.attachments.length" class="file-stack">
             <button
               v-for="fileId in row.message.attachments"

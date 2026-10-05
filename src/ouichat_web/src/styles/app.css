@@ -152,16 +152,16 @@ button.edit-button {
   padding: 0;
 }
 
-.chat-search {
+.chat-lists {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.chat-search .search { flex: 1; }
-
-.home-button {
-  width: 36px;
+.home-wide {
+  width: 100%;
   height: 36px;
   flex: none;
   display: inline-flex;
@@ -169,6 +169,23 @@ button.edit-button {
   justify-content: center;
   padding: 0;
 }
+
+.list-block {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.list-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #d5d0de;
+}
+
+.list-block .list-panel { flex: 1; }
 
 .avatar {
   width: 32px;
@@ -178,6 +195,8 @@ button.edit-button {
   background: transparent;
   flex: none;
 }
+.avatar.presence-online { box-shadow: 0 0 0 2px #3dcb6c; }
+.avatar.presence-offline { box-shadow: 0 0 0 2px #e25858; }
 
 .page {
   height: 100%;
@@ -261,14 +280,32 @@ button.edit-button {
 .shell {
   height: 100%;
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 280px 36px 1fr;
   gap: 8px;
   padding: 10px;
   background: var(--bg);
 }
 
+.shell.collapsed {
+  grid-template-columns: 36px 1fr;
+}
+
+.panel-toggle {
+  align-self: center;
+  width: 28px;
+  height: 48px;
+  padding: 0;
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.arrow-right { transform: scaleX(-1); }
+
 .left, .right {
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -308,6 +345,14 @@ button.row.selected:hover:not(:disabled) {
   border-color: transparent;
   color: inherit;
   box-shadow: inset 3px 0 0 var(--accent);
+}
+button.row.unread:not(.selected) {
+  background: rgba(231, 212, 247, 0.34);
+}
+button.row.unread:not(.selected):hover:not(:disabled) {
+  background: rgba(231, 212, 247, 0.5);
+  border-color: transparent;
+  color: inherit;
 }
 .row-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -407,6 +452,7 @@ button.row.selected:hover:not(:disabled) {
 }
 
 .message:hover { background: rgba(154, 118, 183, 0.18); }
+.message.flash { background: rgba(231, 212, 247, 0.38); }
 
 .message-body {
   display: flex;
@@ -445,14 +491,30 @@ button.row.selected:hover:not(:disabled) {
   background: rgba(244, 240, 248, 0.28);
 }
 .message-text { white-space: pre-wrap; word-break: break-word; margin: 0; text-align: left; }
-.reply-quote {
+.message-text a { color: #e7d4f7; }
+button.reply-quote {
   color: #ddd4e6;
   font-size: 14px;
   margin-bottom: 4px;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  text-align: left;
+}
+button.reply-quote span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 100%;
+  min-width: 0;
+}
+button.reply-quote:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  color: #ffffff;
 }
 
 .file-stack {
@@ -503,6 +565,7 @@ button.row.selected:hover:not(:disabled) {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
 
 .context-bar, .staged-row {
@@ -516,9 +579,10 @@ button.row.selected:hover:not(:disabled) {
 
 .composer-row {
   display: grid;
-  grid-template-columns: 48px 1fr 48px;
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
   gap: 6px;
   align-items: end;
+  min-width: 0;
 }
 
 .composer-row .square {
@@ -531,11 +595,20 @@ button.row.selected:hover:not(:disabled) {
   height: 48px;
   min-height: 48px;
   max-height: 140px;
+  min-width: 0;
+  overflow-x: hidden;
   overflow-y: auto;
+  overflow-wrap: anywhere;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   padding: 8px;
+}
+
+.pause-note {
+  margin: 0;
+  color: #e7d4f7;
+  font-size: 13px;
 }
 
 .details {
@@ -587,6 +660,7 @@ button.row.selected:hover:not(:disabled) {
   margin-top: auto;
   display: flex;
   justify-content: center;
+  gap: 8px;
   padding-top: 16px;
 }
 
@@ -626,9 +700,6 @@ button.row.selected:hover:not(:disabled) {
 }
 
 .badge-wrap { position: relative; width: 32px; height: 32px; flex: none; }
-.badge-wrap.unread .avatar {
-  box-shadow: 0 0 0 2px #e7d4f7;
-}
 
 .description-head {
   display: flex;

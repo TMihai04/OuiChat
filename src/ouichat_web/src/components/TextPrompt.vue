@@ -36,7 +36,7 @@ function apply() {
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="emit('cancel')">
+  <div class="modal-backdrop" @pointerdown.self="emit('cancel')">
     <form class="modal-card" @submit.prevent="apply">
       <h2 style="margin: 0 0 12px; font-size: 14px;">{{ title }}</h2>
       <label>

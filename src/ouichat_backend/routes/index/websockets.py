@@ -15,6 +15,7 @@ from ouichat_backend.utils.methods import (
     ws_decode_access_token,
     decode_token,
     datetime_from_timestamp,
+    get_uuid4,
 )
 
 from . import _bodies
@@ -79,6 +80,40 @@ async def _token_expiration_notifier(
         pass
 
 
+async def _broadcast_presence(username: str, online: bool) -> None:
+    await ws_manager.notify_all(
+        payload=WebsocketUpdate(
+            event_id=get_uuid4(),
+            type="update",
+            scope="user.presence",
+            data={
+                "username": username,
+                "online": online,
+            },
+        ),
+        mode="binary",
+    )
+
+
+async def _send_presence_snapshot(websocket: WebSocket) -> None:
+    await ws_manager.notify(
+        websocket,
+        payload=WebsocketUpdate(
+            event_id=get_uuid4(),
+            type="update",
+            scope="user.presence",
+            data={
+                "usernames": ws_manager.online_usernames(),
+            },
+        ),
+        mode="binary",
+    )
+
+
+def _note_disconnect(username: str) -> None:
+    ws_manager.schedule_offline(username, lambda: _broadcast_presence(username, False))
+
+
 @router.websocket("/global")
 async def global_comm_ws(
     websocket: WebSocket,
@@ -86,10 +121,15 @@ async def global_comm_ws(
 ):
     logger.debug(f"weboscket connected - payload: {payload}")
 
+    username = payload.get("sub")
+    ws_manager.cancel_offline(username)
     await ws_manager.connect(
-        payload.get("sub"),
+        username,
         websocket
     )
+    if ws_manager.connection_count(username) == 1:
+        await _broadcast_presence(username, True)
+    await _send_presence_snapshot(websocket)
 
     notifier_task = asyncio.create_task(_token_expiration_notifier(
         username=payload.get("sub"),
@@ -137,6 +177,7 @@ async def global_comm_ws(
                 webscoket=websocket,
                 close=False
             )
+            _note_disconnect(payload.get("sub"))
             break
         except WebSocketException as e:
             logger.error(f"WebsocketException: {str(e)}")
@@ -148,6 +189,7 @@ async def global_comm_ws(
                 reason=e.reason,
                 close=True
             )
+            _note_disconnect(payload.get("sub"))
             break
     
     try:
