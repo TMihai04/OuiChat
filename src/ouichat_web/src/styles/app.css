@@ -461,6 +461,14 @@ button.row.unread:not(.selected):hover:not(:disabled) {
   background: rgba(231, 212, 247, 0.38);
   transition-duration: 0.15s;
 }
+.message.continued {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.message-gutter {
+  width: 32px;
+  flex: none;
+}
 
 .message-body {
   display: flex;

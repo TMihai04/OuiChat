@@ -10,7 +10,7 @@ const emit = defineEmits<{ add: []; remove: [] }>()
 const store = useAppStore()
 const memberQuery = ref("")
 const menu = ref<{ x: number; y: number; username: string } | null>(null)
-const prompt = ref<null | { field: "name" | "description"; title: string; label: string; placeholder: string; initial: string }>(null)
+const prompt = ref<null | { field: "name" | "description"; title: string; label: string; placeholder: string; initial: string; maxLength: number }>(null)
 const iconInput = ref<HTMLInputElement | null>(null)
 
 const chat = computed(() => store.selectedChat)
@@ -86,6 +86,7 @@ function openPrompt(field: "name" | "description") {
       label: "Change Chat Name:",
       placeholder: "Type chat name...",
       initial: store.displayName(chat.value),
+      maxLength: 50,
     }
     : {
       field,
@@ -93,6 +94,7 @@ function openPrompt(field: "name" | "description") {
       label: "Change Chat Description:",
       placeholder: "Type chat description...",
       initial: store.displayDescription(chat.value),
+      maxLength: 512,
     }
 }
 
@@ -205,6 +207,7 @@ async function changeIcon(event: Event) {
       :label="prompt.label"
       :placeholder="prompt.placeholder"
       :initial="prompt.initial"
+      :max-length="prompt.maxLength"
       @cancel="prompt = null"
       @submit="applyPrompt"
     />

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue"
+import { computed, nextTick, onMounted, ref, watch } from "vue"
 import { errorText } from "../api/http"
 import { formatDay, formatTime } from "../format"
 import { useAppStore, type ChatMessage } from "../stores/app"
@@ -21,16 +21,34 @@ const thread = computed(() => {
   return store.threadFor(chat.domain, chat.id)
 })
 
+function sameMinute(left: number, right: number): boolean {
+  const a = new Date(left)
+  const b = new Date(right)
+  return a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate()
+    && a.getHours() === b.getHours()
+    && a.getMinutes() === b.getMinutes()
+}
+
 const transcript = computed(() => {
-  const rows: Array<{ kind: "day"; id: string; label: string } | { kind: "message"; id: string; message: ChatMessage }> = []
+  const rows: Array<
+    { kind: "day"; id: string; label: string }
+    | { kind: "message"; id: string; message: ChatMessage; grouped: boolean }
+  > = []
   let previousDay = ""
+  let previous: ChatMessage | null = null
   for (const message of thread.value?.items ?? []) {
     const label = formatDay(message.createdAt)
     if (label !== previousDay) {
       rows.push({ kind: "day", id: `day-${message.id}`, label })
       previousDay = label
     }
-    rows.push({ kind: "message", id: message.id, message })
+    const grouped = previous !== null
+      && previous.sender === message.sender
+      && sameMinute(previous.createdAt, message.createdAt)
+    rows.push({ kind: "message", id: message.id, message, grouped })
+    previous = message
   }
   return rows
 })
@@ -112,9 +130,19 @@ async function onScroll() {
   element.scrollTop = element.scrollHeight - before + element.scrollTop
 }
 
+function pinToBottom() {
+  if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight
+}
+
+onMounted(async () => {
+  await nextTick()
+  pinToBottom()
+  requestAnimationFrame(pinToBottom)
+})
+
 watch(() => store.selectedChat?.id, async () => {
   await nextTick()
-  if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight
+  pinToBottom()
   stick.value = true
 })
 
@@ -169,17 +197,24 @@ async function pick(action: string) {
       <article
         v-else
         class="message"
-        :class="{ flash: highlighted === row.message.id }"
+        :class="{ flash: highlighted === row.message.id, continued: row.grouped }"
         :data-message-id="row.message.id"
         @contextmenu.prevent="openMenu($event, row.message)"
       >
-        <Avatar :domain="row.message.domain" :picture-id="picture(row.message.sender)" fallback="/icons/default_user_icon.png" />
+        <Avatar
+          v-if="!row.grouped"
+          :domain="row.message.domain"
+          :picture-id="picture(row.message.sender)"
+          fallback="/icons/default_user_icon.png"
+        />
+        <span v-else class="message-gutter"></span>
         <div class="message-body">
-          <div class="message-meta">
+          <div v-if="!row.grouped" class="message-meta">
             <span class="message-author">{{ row.message.sender }}</span>
             <span class="message-time">{{ formatTime(row.message.createdAt) }}</span>
             <span v-if="row.message.edited" class="edited">edited</span>
           </div>
+          <span v-else-if="row.message.edited" class="edited">edited</span>
           <button v-if="quote(row.message)" class="reply-quote" type="button" @click="jumpTo(row.message)">
             <Avatar
               v-if="quote(row.message)?.sender"
