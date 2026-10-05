@@ -354,10 +354,10 @@ class ChatList(QWidget):
 
     def __set_entry_characteristics(self, item: QListWidgetItem, chat_id: str, chat_domain: str):
         current_user_last_seen_time = self.brain.get_current_user_last_seen_time(chat_id, chat_domain)
-        chat_last_message_timestamp = self.brain.get_last_message_timestamp(chat_id, chat_domain)
+        chat_last_message_timestamp = self.brain.get_last_message_timestamp(chat_id, chat_domain) or 0
 
         has_unread = False
-        if current_user_last_seen_time and chat_last_message_timestamp:
+        if current_user_last_seen_time is not None:
             current_chat_id = self.brain.get_current_chat_id()
             current_chat_domain = self.brain.get_current_chat_domain()
             chat_currently_selected = current_chat_id == chat_id and current_chat_domain == chat_domain
@@ -432,8 +432,7 @@ class ChatList(QWidget):
             item = self.list_widget.item(row)
             item_data = item.data(Qt.ItemDataRole.UserRole)
             if item_data['chat_id'] == chat_id and item_data['domain'] == domain:
-                chat_last_message_timestamp = self.brain.get_last_message_timestamp(chat_id, domain)
-                if chat_last_message_timestamp is None: return
+                chat_last_message_timestamp = self.brain.get_last_message_timestamp(chat_id, domain) or 0
 
                 current_chat_id = self.brain.get_current_chat_id()
                 current_chat_domain = self.brain.get_current_chat_domain()

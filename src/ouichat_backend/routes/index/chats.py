@@ -467,6 +467,48 @@ async def remove_user_from_chat(
     logger.info(f"Removing users fome the conversation - username: {username} - chat_id: {str(chat_id)} - count: {len(to_remove)}")
 
 
+@router.post(
+    "/participant/seen",
+    status_code=status.HTTP_200_OK
+)
+async def mark_chat_seen(
+    chat_id: ChatId = Depends(_valids.validate_chat_id),
+    username: str = Depends(decode_sub_access_token)
+) -> GenericItemResponse:
+    """Use this endpoint to record that the current user has viewed the target conversation. `last_seen` is the server time in milliseconds.
+
+    Args:
+    * `chat_id`: The id of the conversation
+
+    Returns:
+    * `GenericItemResponse`: The stored `last_seen` timestamp
+
+    Throws:
+    * `404`: Conversation not found
+    * `405`: User is not a participant in this conversation"""
+
+    logger.debug(f"Marking chat seen - chat_id: {str(chat_id)} - username: {username}")
+
+    chat_doc = await db.get_chat(str(chat_id))
+    if not chat_doc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "Chat id not found"
+        )
+
+    flags = _get_participant_flags(username, chat_doc)
+    if not flags.get("participant"):
+        raise HTTPException(
+            status.HTTP_405_METHOD_NOT_ALLOWED, "User is not a participant in this conversation"
+        )
+
+    seen_at = timestamp_now()
+    await db.mark_participant_seen(str(chat_id), username, seen_at)
+    logger.info(f"Marked chat seen - chat_id: {str(chat_id)} - username: {username}")
+    return GenericItemResponse(
+        item={"last_seen": seen_at}
+    )
+
+
 @router.delete(
     "/participant/leave",
     status_code=status.HTTP_204_NO_CONTENT

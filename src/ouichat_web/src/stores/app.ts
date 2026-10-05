@@ -295,7 +295,7 @@ export const useAppStore = defineStore("app", () => {
       participants: (raw.preferences?.participants ?? []).map((participant) => ({
         username: participant.username,
         isAdmin: participant.is_admin,
-        lastSeenLocal: 0,
+        lastSeenLocal: typeof participant.last_seen === "number" ? participant.last_seen : 0,
       })),
       lastMessageAt: 0,
     }
@@ -311,7 +311,7 @@ export const useAppStore = defineStore("app", () => {
     next.lastMessageAt = Math.max(previous.lastMessageAt, next.lastMessageAt)
     for (const participant of next.participants) {
       const old = previous.participants.find((entry) => entry.username === participant.username)
-      if (old) participant.lastSeenLocal = old.lastSeenLocal
+      if (old) participant.lastSeenLocal = Math.max(old.lastSeenLocal, participant.lastSeenLocal)
     }
     chats.value[index] = next
   }
@@ -381,6 +381,19 @@ export const useAppStore = defineStore("app", () => {
     const self = chat.participants.find((participant) => participant.username === username)
     if (!self) return
     self.lastSeenLocal = Math.max(self.lastSeenLocal, Date.now(), chat.lastMessageAt)
+    const session = findSession(username, chat.domain)
+    if (session) void persistSeen(session, chat.id)
+  }
+
+  async function persistSeen(session: Session, chatId: string) {
+    try {
+      const response = await withSession(session, (active) => api.markChatSeen(active.domain, active.accessToken, chatId))
+      const live = chats.value.find((entry) => entry.domain === session.domain && entry.id === chatId)
+      const self = live?.participants.find((participant) => participant.username === session.username)
+      if (self) self.lastSeenLocal = Math.max(self.lastSeenLocal, response.item.last_seen)
+    } catch {
+      return
+    }
   }
 
   function forgetIcon(domain: string, pictureId: string | null) {
@@ -572,6 +585,35 @@ export const useAppStore = defineStore("app", () => {
       session.status = self.profile?.status || session.status
       session.pictureId = self.profile?.picture_id || null
     }
+    await hydrateLastMessages(session, interactive)
+  }
+
+  async function hydrateLastMessages(session: Session, interactive: boolean) {
+    const mine = chats.value.filter((chat) => chat.domain === session.domain && chat.participants.some((participant) => participant.username === session.username))
+    await Promise.all(mine.map(async (chat) => {
+      try {
+        const raw = await withSession(session, (active) => api.listMessages(
+          active.domain,
+          active.accessToken,
+          chat.id,
+          "old",
+          null,
+          1,
+        ), interactive)
+        const newest = raw[raw.length - 1]
+        if (!newest) return
+        const live = chats.value.find((entry) => entry.domain === session.domain && entry.id === chat.id)
+        if (!live) return
+        live.lastMessageAt = Math.max(live.lastMessageAt, newest.created_at)
+        const self = live.participants.find((participant) => participant.username === session.username)
+        if (self && self.lastSeenLocal === 0) {
+          const response = await withSession(session, (active) => api.markChatSeen(active.domain, active.accessToken, live.id), interactive)
+          self.lastSeenLocal = Math.max(self.lastSeenLocal, response.item.last_seen)
+        }
+      } catch {
+        return
+      }
+    }))
   }
 
   async function signIn(domain: string, username: string, password: string, register: boolean) {
@@ -1063,6 +1105,9 @@ export const useAppStore = defineStore("app", () => {
         chat.pictureId = typeof data.picture_id === "string" ? data.picture_id : null
       } else if (child === "owner" && typeof data.owner === "string") {
         chat.creators = [data.owner]
+      } else if (child === "seen" && typeof data.last_seen === "number") {
+        const self = chat.participants.find((participant) => participant.username === username)
+        if (self) self.lastSeenLocal = Math.max(self.lastSeenLocal, data.last_seen)
       }
       return
     }

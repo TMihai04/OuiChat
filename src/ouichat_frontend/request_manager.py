@@ -544,6 +544,44 @@ async def leave_chat_request(domain: str, access_token: str, chat_id: str, delet
 
         return get_resp_dict(True, 408, 'Cannot establish a connection with the server.')
 
+async def mark_chat_seen_request(domain: str, access_token: str, chat_id: str):
+    headers = {
+        'Authorization': f"Bearer {access_token}"
+    }
+    params = {
+        'chat_id': chat_id
+    }
+    async with aiohttp.ClientSession() as session:
+        for request_count in range(MAX_REQUESTS):
+            try:
+                async with session.post(url=f"{protocol}://{domain}/api/chats/participant/seen", headers=headers, params=params) as resp:
+                    try:
+                        resp.raise_for_status()
+                    except aiohttp.ClientResponseError as _:
+                        return await handle_error(resp)
+
+                    resp_dict = await resp.json()
+                    return get_resp_dict(False, resp.status, resp_dict)
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as _:
+                await asyncio.sleep(REQUEST_TIMEOUT * request_count)
+                continue
+
+        return get_resp_dict(True, 408, 'Cannot establish a connection with the server.')
+
+class MarkChatSeenWorker(QThread):
+    finished = pyqtSignal(dict)
+
+    def __init__(self, domain: str, access_token: str, chat_id: str):
+        super().__init__()
+        self.domain = domain
+        self.access_token = access_token
+        self.chat_id = chat_id
+
+    def run(self):
+        resp = asyncio.run(mark_chat_seen_request(self.domain, self.access_token, self.chat_id))
+        self.finished.emit(resp)
+
 class LeaveChatWorker(QThread):
     finished = pyqtSignal(dict)
 
@@ -955,6 +993,7 @@ class RequestManager(QObject):
         self.modify_admin_worker = None
         self.add_users_worker = None
         self.leave_chat_worker = None
+        self.mark_chat_seen_worker = None
         self.modify_chat_details_worker = None
         self.upload_files_worker = None
         self.download_file_worker = None
@@ -1149,6 +1188,14 @@ class RequestManager(QObject):
         if is_error:
             return False, worker_response
         return True, None
+
+    def request_mark_chat_seen(self, domain: str, access_token: str, chat_id: str):
+        self.mark_chat_seen_worker = MarkChatSeenWorker(domain, access_token, chat_id)
+        worker_response = execute_request_loop(self.mark_chat_seen_worker)
+        self.mark_chat_seen_worker.deleteLater()
+
+        is_error = worker_response.get('is_error')
+        return not is_error, worker_response
 
     def request_leave_chat(self, domain: str, access_token: str, chat_id: str):
         self.leave_chat_worker = LeaveChatWorker(domain, access_token, chat_id)

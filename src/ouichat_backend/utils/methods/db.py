@@ -412,6 +412,32 @@ async def add_chat(
         )
 
 
+async def mark_participant_seen(chat_id: str, username: str, seen_at: int) -> None:
+    collection = get_chats_collection()
+    await collection.update_one(
+        filter={
+            "conversation_id": chat_id,
+            "preferences.participants.username": username,
+        },
+        update={
+            "$set": {"preferences.participants.$.last_seen": seen_at}
+        }
+    )
+    await ws_manager.notify_user(
+        username=username,
+        payload=WebsocketUpdate(
+            event_id=get_uuid4(),
+            type="update",
+            scope="conversation.seen",
+            data={
+                "conversation_id": chat_id,
+                "last_seen": seen_at,
+            },
+        ),
+        mode="binary",
+    )
+
+
 async def get_chat(
     chat_id: str,
 ) -> ConversationDocument | None:

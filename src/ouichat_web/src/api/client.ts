@@ -147,6 +147,15 @@ export function changeMembers(
   })
 }
 
+export function markChatSeen(domain: string, accessToken: string, chatId: string) {
+  return request(domain, {
+    method: "POST",
+    path: "/chats/participant/seen",
+    accessToken,
+    query: { chat_id: chatId },
+  }) as Promise<ItemResponse<{ last_seen: number }>>
+}
+
 export function leaveChat(domain: string, accessToken: string, chatId: string) {
   return request(domain, {
     method: "DELETE",
