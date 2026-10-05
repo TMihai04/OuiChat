@@ -319,6 +319,7 @@ button.edit-button {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
+  user-select: none;
 }
 
 .row {
@@ -332,6 +333,7 @@ button.edit-button {
   border-radius: var(--radius-sm);
   padding: 8px 10px;
   cursor: pointer;
+  user-select: none;
 }
 
 .row:hover { background: rgba(154, 118, 183, 0.28); }
@@ -441,6 +443,7 @@ button.row.unread:not(.selected):hover:not(:disabled) {
   min-height: 0;
   overflow: auto;
   padding: 8px 10px 12px;
+  user-select: none;
 }
 
 .message {
@@ -506,7 +509,7 @@ button.row.unread:not(.selected):hover:not(:disabled) {
   height: 1px;
   background: rgba(244, 240, 248, 0.28);
 }
-.message-text { white-space: pre-wrap; word-break: break-word; margin: 0; text-align: left; }
+.message-text { white-space: pre-wrap; word-break: break-word; margin: 0; text-align: left; user-select: text; }
 .message-text a { color: #e7d4f7; }
 button.reply-quote {
   color: #ddd4e6;
@@ -731,6 +734,7 @@ button.reply-quote:hover:not(:disabled) {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   margin-top: 8px;
+  user-select: none;
 }
 
 .badge-wrap { position: relative; width: 32px; height: 32px; flex: none; }
