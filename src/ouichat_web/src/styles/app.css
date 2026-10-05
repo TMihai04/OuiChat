@@ -183,6 +183,7 @@ button.edit-button {
   font-size: 13px;
   font-weight: 600;
   color: #d5d0de;
+  text-align: center;
 }
 
 .list-block .list-panel { flex: 1; }
@@ -449,10 +450,17 @@ button.row.unread:not(.selected):hover:not(:disabled) {
   width: 100%;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
+  transition: background-color 1.1s ease;
 }
 
-.message:hover { background: rgba(154, 118, 183, 0.18); }
-.message.flash { background: rgba(231, 212, 247, 0.38); }
+.message:hover {
+  background: rgba(154, 118, 183, 0.18);
+  transition-duration: 0.15s;
+}
+.message.flash {
+  background: rgba(231, 212, 247, 0.38);
+  transition-duration: 0.15s;
+}
 
 .message-body {
   display: flex;
@@ -573,9 +581,27 @@ button.reply-quote:hover:not(:disabled) {
   align-items: center;
   gap: 8px;
   min-height: 36px;
+  min-width: 0;
 }
 
+.context-bar {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.context-bar strong {
+  flex: none;
+  white-space: nowrap;
+}
+
+.context-bar .avatar { flex: none; }
+
 .context-bar span, .staged-chip span { min-width: 0; }
+
+.context-bar .row-label {
+  flex: 1;
+  white-space: nowrap;
+}
 
 .composer-row {
   display: grid;

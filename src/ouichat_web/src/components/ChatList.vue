@@ -75,11 +75,11 @@ async function pick(action: string) {
 
 <template>
   <div class="chat-lists">
+    <button class="home-wide" type="button" title="Home" @click="store.showUsers()">
+      <img src="/icons/home.png" width="18" height="18" alt="" />
+    </button>
     <section class="list-block">
       <h2 class="list-title">DMs</h2>
-      <button class="home-wide" type="button" title="Home" @click="store.showUsers()">
-        <img src="/icons/home.png" width="18" height="18" alt="" />
-      </button>
       <label class="search">
         <img src="/icons/search_icon.png" width="14" height="14" alt="" />
         <input v-model="dmQuery" placeholder="Search DM..." />

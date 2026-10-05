@@ -78,16 +78,19 @@ watch(visible, () => void nextTick(fitComposer))
 watch(() => store.selectedChat?.id, () => reset())
 
 function stage(picked: File[]) {
-  if (mode.value === "edit") return
-  const next = [...files.value]
+  if (mode.value === "edit" || picked.length === 0) return
+  const same = (left: File, right: File) => left.name === right.name && left.size === right.size
+  const incoming: File[] = []
   for (const file of picked) {
-    if (next.length >= 5) {
-      store.error = "A message can have at most 5 attachments"
-      break
-    }
-    if (!next.some((entry) => entry.name === file.name && entry.size === file.size)) next.push(file)
+    if (files.value.some((entry) => same(entry, file)) || incoming.some((entry) => same(entry, file))) continue
+    incoming.push(file)
   }
-  files.value = next
+  if (incoming.length === 0) return
+  if (files.value.length + incoming.length > 5) {
+    store.error = "A message can have at most 5 attachments"
+    return
+  }
+  files.value = [...files.value, ...incoming]
 }
 
 function addFiles(event: Event) {
@@ -171,6 +174,7 @@ async function send() {
       <button class="icon-button" type="button" @click="reset()">
         <img src="/icons/close_icon.png" width="16" height="16" alt="" />
       </button>
+      <strong>{{ mode === "edit" ? "Editing" : "Reply to" }}</strong>
       <Avatar
         v-if="mode === 'reply' && store.selectedChat"
         :domain="store.selectedChat.domain"
@@ -178,7 +182,6 @@ async function send() {
         fallback="/icons/default_user_icon.png"
         :size="20"
       />
-      <strong>{{ mode === "edit" ? "Editing:" : "Replying to:" }}</strong>
       <span class="row-label">{{ targetSender }}: {{ targetSnip }}</span>
     </div>
     <div v-if="files.length" class="staged-row">
