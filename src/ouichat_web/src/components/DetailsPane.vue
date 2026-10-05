@@ -87,6 +87,15 @@ async function applyPrompt(value: string) {
   }
 }
 
+async function leave() {
+  if (!chat.value) return
+  try {
+    await store.leaveChatById(chat.value.id)
+  } catch (cause) {
+    store.error = errorText(cause)
+  }
+}
+
 async function changeIcon(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -108,14 +117,17 @@ async function changeIcon(event: Event) {
       </button>
     </div>
     <div class="center-col">
-      <Avatar
-        :domain="chat.domain"
-        :picture-id="store.chatPicture(chat).pictureId"
-        :fallback="store.chatPicture(chat).fallback"
-        :size="64"
-        :clickable="group && admin"
-        @click="iconInput?.click()"
-      />
+      <div class="icon-slot">
+        <Avatar
+          :domain="chat.domain"
+          :picture-id="store.chatPicture(chat).pictureId"
+          :fallback="store.chatPicture(chat).fallback"
+          :size="64"
+        />
+        <button v-if="group && admin" class="surface-button edit-button" type="button" title="Change icon" @click="iconInput?.click()">
+          <img src="/icons/edit_icon.png" width="14" height="14" alt="" />
+        </button>
+      </div>
       <div class="name-line">
         <span>{{ store.displayName(chat) }}</span>
         <button v-if="group && admin" class="surface-button edit-button" type="button" @click="openPrompt('name')">
@@ -158,6 +170,9 @@ async function changeIcon(event: Event) {
         <button class="mid-button" type="button" @click="emit('remove')">
           <img src="/icons/minus_icon.png" width="12" height="12" alt="" /> Remove members
         </button>
+      </div>
+      <div class="leave-row">
+        <button class="mid-button" type="button" @click="leave">Leave Chat</button>
       </div>
     </template>
     <input ref="iconInput" hidden type="file" accept="image/png,image/jpeg" @change="changeIcon" />

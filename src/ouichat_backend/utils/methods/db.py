@@ -522,6 +522,7 @@ async def update_chat(
     name: str | None = None,
     description: str | None = None,
     icon_id: str | None = None,
+    owner: str | None = None,
 ):
     upd = None
     if admins is not None:
@@ -714,6 +715,32 @@ async def update_chat(
                     data={
                         "conversation_id": chat_id,
                         "picture_id": icon_id
+                    },
+                ),
+                mode="binary"
+            )
+
+    if owner is not None:
+        upd = await _update_chat(
+            chat_id,
+            update={
+                "$set": {"preferences.created_by": [owner]}
+            }
+        )
+        if upd.modified_count == 0:
+            return upd
+
+        event_id = get_uuid4()
+        for user in notify:
+            await ws_manager.notify_user(
+                username=user,
+                payload=WebsocketUpdate(
+                    event_id=event_id,
+                    type="update",
+                    scope="conversation.owner",
+                    data={
+                        "conversation_id": chat_id,
+                        "owner": owner
                     },
                 ),
                 mode="binary"

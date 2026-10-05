@@ -609,7 +609,21 @@ class ChatList(QWidget):
         self.search(self.search_bar.text())
 
     def __delete_chat(self, item: QListWidgetItem):
-        self.__exit_chat(item)
+        item_data = item.data(Qt.ItemDataRole.UserRole)
+
+        success, error_msg = self.brain.delete_chat(item_data['chat_id'], item_data['domain'])
+        if not success:
+            error_dialog = ErrorDialog()
+            error_dialog.set_error_message(error_msg)
+            error_dialog.exec()
+            return
+
+        current_chat_id = self.brain.get_current_chat_id()
+        current_chat_domain = self.brain.get_current_chat_domain()
+        if current_chat_id == item_data['chat_id'] and current_chat_domain == item_data['domain']:
+            self.list_widget.setCurrentRow(-1)
+
+        self.search(self.search_bar.text())
 
     def __mark_read(self, item: QListWidgetItem):
         item_data = item.data(Qt.ItemDataRole.UserRole)

@@ -47,14 +47,17 @@ async function changeIcon(event: Event) {
       </button>
     </div>
     <div class="center-col">
-      <Avatar
-        :domain="store.current.domain"
-        :picture-id="store.current.pictureId"
-        fallback="/icons/default_user_icon.png"
-        :size="64"
-        clickable
-        @click="iconInput?.click()"
-      />
+      <div class="icon-slot">
+        <Avatar
+          :domain="store.current.domain"
+          :picture-id="store.current.pictureId"
+          fallback="/icons/default_user_icon.png"
+          :size="64"
+        />
+        <button class="surface-button edit-button" type="button" title="Change icon" @click="iconInput?.click()">
+          <img src="/icons/edit_icon.png" width="14" height="14" alt="" />
+        </button>
+      </div>
       <div>{{ store.current.username }}</div>
     </div>
     <div style="margin-top: 18px;">

@@ -48,8 +48,12 @@ async function pick(action: string) {
       if (other) await store.blockUser(other, action === "block")
       return
     }
-    if (action === "exit" || action === "delete") {
+    if (action === "exit") {
       await store.leaveChatById(chat.id)
+      return
+    }
+    if (action === "delete") {
+      await store.deleteChatById(chat.id)
     }
   } catch (cause) {
     store.error = errorText(cause)
@@ -58,10 +62,15 @@ async function pick(action: string) {
 </script>
 
 <template>
-  <label class="search">
-    <img src="/icons/search_icon.png" width="14" height="14" alt="" />
-    <input v-model="query" placeholder="Search chat..." />
-  </label>
+  <div class="chat-search">
+    <label class="search">
+      <img src="/icons/search_icon.png" width="14" height="14" alt="" />
+      <input v-model="query" placeholder="Search chat..." />
+    </label>
+    <button class="home-button" type="button" title="Home" @click="store.showUsers()">
+      <img src="/icons/home.png" width="18" height="18" alt="" />
+    </button>
+  </div>
   <div class="list-panel">
     <button
       v-for="chat in chats"

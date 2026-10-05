@@ -242,6 +242,9 @@ class ChatMessage(QWidget):
         self.__resize_text_box()
     
     def show_context_menu(self, position):
+        if self.brain.get_current_chat_setting() != "rw":
+            return
+
         current_user_username = self.brain.get_current_user_username()
         current_user_domain = self.brain.get_current_user_domain()
 

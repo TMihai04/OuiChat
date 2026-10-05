@@ -6,7 +6,7 @@ import type {
   TokenPair,
   UserRaw,
 } from "./types"
-import { ApiError, httpOrigin, request, type DownloadedFile } from "./http"
+import { ApiError, filenameFromDisposition, httpOrigin, request, type DownloadedFile } from "./http"
 
 function formBody(username: string, password: string): URLSearchParams {
   const body = new URLSearchParams()
@@ -157,6 +157,16 @@ export function leaveChat(domain: string, accessToken: string, chatId: string) {
   })
 }
 
+export function deleteChat(domain: string, accessToken: string, chatId: string) {
+  return request(domain, {
+    method: "DELETE",
+    path: "/chats/delete",
+    accessToken,
+    query: { chat_id: chatId },
+    expect: "empty",
+  })
+}
+
 export function setChatField(
   domain: string,
   accessToken: string,
@@ -299,11 +309,5 @@ export async function attachmentFileName(domain: string, accessToken: string, fi
   await response.body?.cancel()
   if (response.status === 401) throw new ApiError(401, "Unauthorized")
   if (!response.ok && response.status !== 206) throw new ApiError(response.status, "Could not read the file name.")
-  const match = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i.exec(header)
-  const encoded = match?.[1] ?? match?.[2] ?? ""
-  try {
-    return decodeURIComponent(encoded) || fileId
-  } catch {
-    return encoded || fileId
-  }
+  return filenameFromDisposition(header) ?? fileId
 }

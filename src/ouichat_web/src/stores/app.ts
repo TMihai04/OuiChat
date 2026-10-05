@@ -427,12 +427,14 @@ export const useAppStore = defineStore("app", () => {
   async function downloadAttachment(fileId: string) {
     const me = requireCurrent()
     const file = await withSession(me, (session) => api.downloadFile(session.domain, session.accessToken, fileId))
+    const cached = attachmentNames.get(`${me.domain}:${fileId}`)
+    const filename = file.filename !== "download" ? file.filename : cached || file.filename
     const url = URL.createObjectURL(file.blob)
     const link = document.createElement("a")
     link.href = url
-    link.download = file.filename
+    link.download = filename
     link.click()
-    URL.revokeObjectURL(url)
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
   }
 
   function pumpRelogin() {
@@ -806,6 +808,11 @@ export const useAppStore = defineStore("app", () => {
     await withSession(me, (session) => api.leaveChat(session.domain, session.accessToken, chatId))
   }
 
+  async function deleteChatById(chatId: string) {
+    const me = requireCurrent()
+    await withSession(me, (session) => api.deleteChat(session.domain, session.accessToken, chatId))
+  }
+
   async function setAdmin(chatId: string, username: string, admin: boolean) {
     const me = requireCurrent()
     await withSession(me, (session) => api.setAdmins(session.domain, session.accessToken, chatId, { [username]: admin }))
@@ -1020,6 +1027,8 @@ export const useAppStore = defineStore("app", () => {
       } else if (child === "picture") {
         forgetIcon(domain, chat.pictureId)
         chat.pictureId = typeof data.picture_id === "string" ? data.picture_id : null
+      } else if (child === "owner" && typeof data.owner === "string") {
+        chat.creators = [data.owner]
       }
       return
     }
@@ -1148,6 +1157,7 @@ export const useAppStore = defineStore("app", () => {
     addMembers,
     removeMembers,
     leaveChatById,
+    deleteChatById,
     setAdmin,
     renameChat,
     describeChat,

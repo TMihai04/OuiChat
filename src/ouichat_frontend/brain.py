@@ -288,6 +288,14 @@ class Brain(QObject):
 
                     return
 
+                elif event_scope_tokenized[1] == 'owner':
+                    chat_id = event_payload['conversation_id']
+                    owner = event_payload['owner']
+                    chat = self.find_chat(chat_id, domain)
+                    if chat:
+                        chat['creators'] = [owner]
+                    return
+
                 else: return
             else: return
 
@@ -1108,6 +1116,25 @@ class Brain(QObject):
                     return self.leave_chat(chat_id, domain)
             else:
                 return False, "Could NOT leave chatroom!"
+
+        return True, None
+
+    def delete_chat(self, chat_id: str, domain: str):
+        chat = self.find_chat(chat_id, domain)
+        if chat is None: return False, "Could NOT find chatroom!"
+
+        current_user_access_token = self.get_current_user_access_token()
+
+        success, resp_data = self.request_manager.request_delete_chat(domain, current_user_access_token, chat_id)
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed:
+                    return False, "Could not refresh session"
+                else:
+                    return self.delete_chat(chat_id, domain)
+            else:
+                return False, "Could NOT delete chatroom!"
 
         return True, None
 

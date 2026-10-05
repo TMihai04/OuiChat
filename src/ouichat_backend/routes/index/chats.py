@@ -214,6 +214,15 @@ def _get_participant_flags(
     return ret
 
 
+def _successor(username: str, chat_doc: ConversationDocument) -> str | None:
+    others = [part for part in chat_doc.preferences.participants if part.username != username]
+    if not others:
+        return None
+    admins = [part.username for part in others if part.is_admin]
+    pool = admins or [part.username for part in others]
+    return min(pool, key=str.casefold)
+
+
 @router.post(
     "/participant/admin",
     status_code=status.HTTP_201_CREATED
@@ -466,7 +475,7 @@ async def leave_chat(
     chat_id: ChatId = Depends(_valids.validate_chat_id),
     username: str = Depends(decode_sub_access_token)
 ):
-    """Use this endpoint to remove the current user from the participant list for the target conversation. If the current user is the creator of the conversation, the chat gets deleted. This operation fails for direct conversations.
+    """Use this endpoint to remove the current user from the participant list for the target conversation. If the current user is the only participant, the chat gets deleted. If they are the owner and other participants remain, ownership passes to the alphabetically first other admin, or to the alphabetically first other participant when no other admin exists. This operation fails for direct conversations.
     
     Args:
     * `chat_id`: The id of the conversation
@@ -498,14 +507,37 @@ async def leave_chat(
     
     chat_participants = [part.username for part in chat_doc.preferences.participants]
     
-    # Either update participant list or delete chat
+    # Either update participant list, transfer ownership, or delete an empty chat
     if flags.get("owner"):
-        await db.delete_chat(
-            str(chat_id),
-            notify=chat_participants
-        )
-
-        logger.debug(f"Owner left. Deleted chat - chat_id: {str(chat_id)} - username: {username}")
+        successor = _successor(username, chat_doc)
+        if successor is None:
+            await db.delete_chat(
+                str(chat_id),
+                notify=chat_participants
+            )
+            logger.debug(f"Owner left. Deleted chat - chat_id: {str(chat_id)} - username: {username}")
+        else:
+            successor_is_admin = any(
+                part.username == successor and part.is_admin
+                for part in chat_doc.preferences.participants
+            )
+            if not successor_is_admin:
+                await db.update_chat(
+                    str(chat_id),
+                    notify=chat_participants,
+                    admins={successor: True}
+                )
+            await db.update_chat(
+                str(chat_id),
+                notify=chat_participants,
+                owner=successor
+            )
+            await db.update_chat(
+                str(chat_id),
+                notify=chat_participants,
+                to_remove=[username]
+            )
+            logger.debug(f"Owner left. Transferred ownership - chat_id: {str(chat_id)} - username: {username} - successor: {successor}")
     else:
         await db.update_chat(
             str(chat_id),
@@ -514,6 +546,54 @@ async def leave_chat(
         )
 
     logger.info(f"Left chat - chat_id: {str(chat_id)} - username: {username}")
+
+
+@router.delete(
+    "/delete",
+    status_code=status.HTTP_204_NO_CONTENT
+)
+async def delete_conversation(
+    chat_id: ChatId = Depends(_valids.validate_chat_id),
+    username: str = Depends(decode_sub_access_token)
+):
+    """Use this endpoint to delete a conversation for every participant. The current user must be an admin. This operation fails for direct conversations.
+
+    Args:
+    * `chat_id`: The id of the conversation
+
+    Throws:
+    * `404`: Conversation not existent
+    * `405`: Chat id references a direct conversation *or* current user is not a participant *or* current user is not an admin"""
+
+    logger.debug(f"Attempting to delete chat - chat_id: {str(chat_id)} - username: {username}")
+
+    if chat_id.type == "direct":
+        raise HTTPException(
+            status.HTTP_405_METHOD_NOT_ALLOWED, "Not allowed for `direct` conversations"
+        )
+
+    chat_doc = await db.get_chat(str(chat_id))
+    if not chat_doc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "Chat id not found"
+        )
+
+    flags = _get_participant_flags(username, chat_doc)
+    if not flags.get("participant"):
+        raise HTTPException(
+            status.HTTP_405_METHOD_NOT_ALLOWED, "User is not a participant in this conversation"
+        )
+    if not flags.get("admin"):
+        raise HTTPException(
+            status.HTTP_405_METHOD_NOT_ALLOWED, "Only admins can alter conversation data"
+        )
+
+    await db.delete_chat(
+        str(chat_id),
+        notify=[part.username for part in chat_doc.preferences.participants]
+    )
+
+    logger.info(f"Deleted chat - chat_id: {str(chat_id)} - username: {username}")
 
 
 @router.post(

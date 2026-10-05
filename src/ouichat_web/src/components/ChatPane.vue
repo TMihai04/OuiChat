@@ -46,6 +46,12 @@ const menuItems = computed(() => {
   return items
 })
 
+function openMenu(event: MouseEvent, message: ChatMessage) {
+  const chat = store.selectedChat
+  if (!chat || !store.isWritable(chat)) return
+  menu.value = { x: event.clientX, y: event.clientY, message }
+}
+
 function quote(message: ChatMessage): string | null {
   if (!message.repliedTo || !thread.value) return null
   const original = thread.value.items.find((entry) => entry.id === message.repliedTo)
@@ -129,7 +135,7 @@ async function pick(action: string) {
       <article
         v-else
         class="message"
-        @contextmenu.prevent="menu = { x: $event.clientX, y: $event.clientY, message: row.message }"
+        @contextmenu.prevent="openMenu($event, row.message)"
       >
         <Avatar :domain="row.message.domain" :picture-id="picture(row.message.sender)" fallback="/icons/default_user_icon.png" />
         <div class="message-body">

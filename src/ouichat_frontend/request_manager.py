@@ -516,22 +516,25 @@ class ModifyUsersWorker(QThread):
         resp = asyncio.run(modify_users_request(domain=self.domain, access_token=self.access_token, chat_id=self.chat_id, usernames=self.usernames, add=self.add))
         self.finished.emit(resp)
 
-async def leave_chat_request(domain: str, access_token: str, chat_id: str):
+async def leave_chat_request(domain: str, access_token: str, chat_id: str, delete_room: bool = False):
     headers = {
         'Authorization': f"Bearer {access_token}"
     }
     params = {
         'chat_id': chat_id
     }
+    path = "/api/chats/delete" if delete_room else "/api/chats/participant/leave"
     async with aiohttp.ClientSession() as session:
         for request_count in range(MAX_REQUESTS):
             try:
-                async with session.delete(url=f"{protocol}://{domain}/api/chats/participant/leave", headers=headers, params=params) as resp:
+                async with session.delete(url=f"{protocol}://{domain}{path}", headers=headers, params=params) as resp:
                     try:
                         resp.raise_for_status()
                     except aiohttp.ClientResponseError as _:
                         return await handle_error(resp)
 
+                    if resp.status == 204:
+                        return get_resp_dict(False, resp.status, None)
                     resp_dict = await resp.json()
                     return get_resp_dict(False, resp.status, resp_dict)
 
@@ -544,14 +547,15 @@ async def leave_chat_request(domain: str, access_token: str, chat_id: str):
 class LeaveChatWorker(QThread):
     finished = pyqtSignal(dict)
 
-    def __init__(self, domain: str, access_token: str, chat_id: str):
+    def __init__(self, domain: str, access_token: str, chat_id: str, delete_room: bool = False):
         super().__init__()
         self.domain = domain
         self.access_token = access_token
         self.chat_id = chat_id
+        self.delete_room = delete_room
 
     def run(self):
-        resp = asyncio.run(leave_chat_request(domain=self.domain, access_token=self.access_token, chat_id=self.chat_id))
+        resp = asyncio.run(leave_chat_request(domain=self.domain, access_token=self.access_token, chat_id=self.chat_id, delete_room=self.delete_room))
         self.finished.emit(resp)
 
 async def modify_chat_details(domain: str, access_token: str, chat_id: str, text: str, field: str):
@@ -1148,6 +1152,16 @@ class RequestManager(QObject):
 
     def request_leave_chat(self, domain: str, access_token: str, chat_id: str):
         self.leave_chat_worker = LeaveChatWorker(domain, access_token, chat_id)
+        worker_response = execute_request_loop(self.leave_chat_worker)
+        self.leave_chat_worker.deleteLater()
+
+        is_error = worker_response.get('is_error')
+        if is_error:
+            return False, worker_response
+        return True, None
+
+    def request_delete_chat(self, domain: str, access_token: str, chat_id: str):
+        self.leave_chat_worker = LeaveChatWorker(domain, access_token, chat_id, delete_room=True)
         worker_response = execute_request_loop(self.leave_chat_worker)
         self.leave_chat_worker.deleteLater()
 

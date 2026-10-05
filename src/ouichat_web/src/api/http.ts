@@ -40,6 +40,19 @@ export interface DownloadedFile {
   filename: string
 }
 
+export function filenameFromDisposition(header: string): string | null {
+  const starred = /filename\*=utf-8''([^;]+)/i.exec(header)
+  const quoted = /filename="([^"]*)"/i.exec(header)
+  const plain = /(?:^|;)\s*filename=([^";\s]+)/i.exec(header)
+  const raw = (starred?.[1] ?? quoted?.[1] ?? plain?.[1] ?? "").trim()
+  if (!raw) return null
+  try {
+    return decodeURIComponent(raw).split(/[/\\]/).pop() || null
+  } catch {
+    return raw.split(/[/\\]/).pop() || null
+  }
+}
+
 function detailMessage(detail: unknown): string {
   if (typeof detail === "string" && detail.trim()) return detail
   if (Array.isArray(detail)) {
@@ -104,10 +117,9 @@ export async function request(domain: string, options: RequestOptions): Promise<
   if (options.expect === "text") return response.text()
   if (options.expect === "blob") {
     const header = response.headers.get("Content-Disposition") ?? ""
-    const match = /filename="?([^";]+)"?/i.exec(header)
     return {
       blob: await response.blob(),
-      filename: match?.[1] ?? "download",
+      filename: filenameFromDisposition(header) ?? "download",
     } satisfies DownloadedFile
   }
   if (response.status === 204) return null
