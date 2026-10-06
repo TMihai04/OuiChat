@@ -468,6 +468,9 @@ button.row.unread:not(.selected):hover:not(:disabled) {
   padding-top: 2px;
   padding-bottom: 2px;
 }
+.message:has(+ .message.continued) {
+  padding-bottom: 2px;
+}
 .message-gutter {
   width: 32px;
   flex: none;

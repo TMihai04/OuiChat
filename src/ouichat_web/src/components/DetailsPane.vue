@@ -183,7 +183,7 @@ async function changeIcon(event: Event) {
           @contextmenu.prevent="menu = { x: $event.clientX, y: $event.clientY, username: member.username }"
         >
           <Avatar :domain="chat.domain" :picture-id="memberPicture(member.username)" fallback="/icons/default_user_icon.png" :presence="store.presenceOf(chat.domain, member.username)" />
-          <span class="row-label">{{ member.username }}<span v-if="store.isCreator(chat, member.username)" class="edited"> (Owner)</span><template v-else-if="member.isAdmin"> (Admin)</template></span>
+          <span class="row-label">{{ member.username }}<span v-if="store.isCreator(chat, member.username)" class="edited"> (Owner)</span><span v-else-if="member.isAdmin" class="edited"> (Admin)</span></span>
         </button>
       </div>
       <div v-if="admin" class="member-tools">
