@@ -23,12 +23,34 @@ from typing import Literal
 
 import uuid
 import math
+import time
 
 
 router = APIRouter(
     prefix=EndpointPrefixes.MESSAGES.value,
     tags=[EndpointTags.MESSAGES]
 )
+
+_SEND_WINDOW_SECONDS = 2
+_SEND_LIMIT = 5
+_SEND_TIMEOUT_SECONDS = 10
+_send_times: dict[tuple[str, str], list[float]] = {}
+_silenced_until: dict[tuple[str, str], float] = {}
+
+
+def _sending_too_fast(username: str, chat_id: str) -> bool:
+    now = time.monotonic()
+    key = (username, chat_id)
+    if now < _silenced_until.get(key, 0):
+        return True
+    recent = [stamp for stamp in _send_times.get(key, []) if now - stamp < _SEND_WINDOW_SECONDS]
+    if len(recent) >= _SEND_LIMIT:
+        _silenced_until[key] = now + _SEND_TIMEOUT_SECONDS
+        _send_times.pop(key, None)
+        return True
+    recent.append(now)
+    _send_times[key] = recent
+    return False
 
 
 @router.get(
@@ -213,6 +235,12 @@ async def send_message(
     Throws:
     * `404`: Conversation not found
     * `405`: User not participant in the conversation"""
+
+    if _sending_too_fast(username, chat.conversation_id):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "You are sending messages too quickly. Try again in 10 seconds.",
+        )
 
     content_preview = f"{body.content[:16]}{"..." if len(body.content) > 16 else ""}" if body.content else None
     logger.debug(f"Sending message - username: {username} - chat_id: {chat.conversation_id} - content: {content_preview} - attachments: {body.attachments}")

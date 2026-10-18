@@ -354,10 +354,10 @@ class ChatList(QWidget):
 
     def __set_entry_characteristics(self, item: QListWidgetItem, chat_id: str, chat_domain: str):
         current_user_last_seen_time = self.brain.get_current_user_last_seen_time(chat_id, chat_domain)
-        chat_last_message_timestamp = self.brain.get_last_message_timestamp(chat_id, chat_domain)
+        chat_last_message_timestamp = self.brain.get_last_message_timestamp(chat_id, chat_domain) or 0
 
         has_unread = False
-        if current_user_last_seen_time and chat_last_message_timestamp:
+        if current_user_last_seen_time is not None:
             current_chat_id = self.brain.get_current_chat_id()
             current_chat_domain = self.brain.get_current_chat_domain()
             chat_currently_selected = current_chat_id == chat_id and current_chat_domain == chat_domain
@@ -432,8 +432,7 @@ class ChatList(QWidget):
             item = self.list_widget.item(row)
             item_data = item.data(Qt.ItemDataRole.UserRole)
             if item_data['chat_id'] == chat_id and item_data['domain'] == domain:
-                chat_last_message_timestamp = self.brain.get_last_message_timestamp(chat_id, domain)
-                if chat_last_message_timestamp is None: return
+                chat_last_message_timestamp = self.brain.get_last_message_timestamp(chat_id, domain) or 0
 
                 current_chat_id = self.brain.get_current_chat_id()
                 current_chat_domain = self.brain.get_current_chat_domain()
@@ -609,7 +608,21 @@ class ChatList(QWidget):
         self.search(self.search_bar.text())
 
     def __delete_chat(self, item: QListWidgetItem):
-        self.__exit_chat(item)
+        item_data = item.data(Qt.ItemDataRole.UserRole)
+
+        success, error_msg = self.brain.delete_chat(item_data['chat_id'], item_data['domain'])
+        if not success:
+            error_dialog = ErrorDialog()
+            error_dialog.set_error_message(error_msg)
+            error_dialog.exec()
+            return
+
+        current_chat_id = self.brain.get_current_chat_id()
+        current_chat_domain = self.brain.get_current_chat_domain()
+        if current_chat_id == item_data['chat_id'] and current_chat_domain == item_data['domain']:
+            self.list_widget.setCurrentRow(-1)
+
+        self.search(self.search_bar.text())
 
     def __mark_read(self, item: QListWidgetItem):
         item_data = item.data(Qt.ItemDataRole.UserRole)

@@ -288,6 +288,25 @@ class Brain(QObject):
 
                     return
 
+                elif event_scope_tokenized[1] == 'owner':
+                    chat_id = event_payload['conversation_id']
+                    owner = event_payload['owner']
+                    chat = self.find_chat(chat_id, domain)
+                    if chat:
+                        chat['creators'] = [owner]
+                    return
+
+                elif event_scope_tokenized[1] == 'seen':
+                    chat_id = event_payload['conversation_id']
+                    seen_at = event_payload.get('last_seen')
+                    username = None
+                    for user in self.users_list:
+                        if user['domain'] == domain and user['access_token'] == access_token:
+                            username = user['username']
+                    if username and isinstance(seen_at, int):
+                        self._write_last_seen(chat_id, domain, seen_at, username)
+                    return
+
                 else: return
             else: return
 
@@ -387,7 +406,7 @@ class Brain(QObject):
             else:
                 return False, "Could NOT edit message."
 
-        return True
+        return True, None
 
     def send_message_request(self, text: str, file_ids: list, replied_to: str):
         current_user_domain = self.get_current_user_domain()
@@ -750,7 +769,7 @@ class Brain(QObject):
             "users": [{
                 "username": participant.get('username'),
                 "is_admin": participant.get('is_admin'),
-                "last_seen_time": 0
+                "last_seen_time": participant.get('last_seen') or 0
             } for participant in chat_details.get('preferences').get('participants')],
         }
 
@@ -1111,6 +1130,25 @@ class Brain(QObject):
 
         return True, None
 
+    def delete_chat(self, chat_id: str, domain: str):
+        chat = self.find_chat(chat_id, domain)
+        if chat is None: return False, "Could NOT find chatroom!"
+
+        current_user_access_token = self.get_current_user_access_token()
+
+        success, resp_data = self.request_manager.request_delete_chat(domain, current_user_access_token, chat_id)
+        if not success:
+            if resp_data['code'] == 401:
+                refreshed = self.refresh_tokens()
+                if not refreshed:
+                    return False, "Could not refresh session"
+                else:
+                    return self.delete_chat(chat_id, domain)
+            else:
+                return False, "Could NOT delete chatroom!"
+
+        return True, None
+
     def remove_users_from_chat_request(self, chat_id: str, domain: str, users: list):
         current_user_access_token = self.get_current_user_access_token()
 
@@ -1145,17 +1183,65 @@ class Brain(QObject):
             self.set_current_user_last_seen_time(current_chat_id, current_chat_domain)
 
     def set_current_user_last_seen_time(self, chat_id: str, domain: str):
-        current_user_username = self.get_current_user_username()
         current_user_domain = self.get_current_user_domain()
         if current_user_domain != domain: return
+
+        stamp = max(int(time.time() * 1000), self.get_last_message_timestamp(chat_id, domain) or 0)
+        self._write_last_seen(chat_id, domain, stamp)
+        self._push_last_seen(chat_id, domain)
+
+    def _write_last_seen(self, chat_id: str, domain: str, stamp: int, username: str | None = None):
+        if username is None:
+            if self.get_current_user_domain() != domain: return
+            username = self.get_current_user_username()
 
         chat_users = self.get_chat_users(chat_id, domain)
         if chat_users is None: return
 
         for user in chat_users:
-            if user['username'] == current_user_username:
-                user['last_seen_time'] = time.time()
-                return
+            if user['username'] != username: continue
+            user['last_seen_time'] = max(user.get('last_seen_time') or 0, stamp)
+            if username == self.get_current_user_username() and domain == self.get_current_user_domain():
+                self.last_seen_time_updated.emit(chat_id, domain)
+            return
+
+    def _push_last_seen(self, chat_id: str, domain: str, retried: bool = False):
+        if self.get_current_user_domain() != domain: return
+        access_token = self.get_current_user_access_token()
+        success, resp_data = self.request_manager.request_mark_chat_seen(domain, access_token, chat_id)
+        if not success:
+            if not retried and resp_data.get('code') == 401 and self.refresh_tokens():
+                self._push_last_seen(chat_id, domain, retried=True)
+            return
+        seen_at = resp_data.get('field', {}).get('item', {}).get('last_seen')
+        if isinstance(seen_at, int):
+            self._write_last_seen(chat_id, domain, seen_at)
+
+    def prime_chat_activity(self, chats: list):
+        username = self.get_current_user_username()
+        domain = self.get_current_user_domain()
+        access_token = self.get_current_user_access_token()
+        for chat in chats:
+            if chat['domain'] != domain: continue
+            success, messages = self.load_messages(domain, chat['chat_id'], "old", None, 1)
+            if not success or not messages: continue
+            chat['last_message_timestamp'] = messages[-1]['timestamp']
+            seen = 0
+            for user in chat['users']:
+                if user['username'] == username:
+                    seen = user.get('last_seen_time') or 0
+                    break
+            if seen: continue
+            success, resp_data = self.request_manager.request_mark_chat_seen(domain, access_token, chat['chat_id'])
+            if not success and resp_data.get('code') == 401 and self.refresh_tokens():
+                access_token = self.get_current_user_access_token()
+                success, resp_data = self.request_manager.request_mark_chat_seen(domain, access_token, chat['chat_id'])
+            if not success: continue
+            seen_at = resp_data.get('field', {}).get('item', {}).get('last_seen')
+            if not isinstance(seen_at, int): continue
+            for user in chat['users']:
+                if user['username'] == username:
+                    user['last_seen_time'] = seen_at
 
     def get_current_user_last_seen_time(self, chat_id: str, domain: str):
         current_user_username = self.get_current_user_username()
@@ -1352,7 +1438,9 @@ class Brain(QObject):
         resp_data1 = resp_data1.get('field').get('items')
         resp_data2 = resp_data2.get('field')
 
-        self.add_chats(list(map(lambda chat_details: self.get_chat_dict_from_chat_details(user_data['domain'], chat_details), resp_data1)))
+        chat_dicts = list(map(lambda chat_details: self.get_chat_dict_from_chat_details(user_data['domain'], chat_details), resp_data1))
+        self.prime_chat_activity(chat_dicts)
+        self.add_chats(chat_dicts)
 
         white = resp_data2['white']
         black = resp_data2['black']

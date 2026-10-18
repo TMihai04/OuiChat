@@ -1,0 +1,247 @@
+<script setup lang="ts">
+import { computed, nextTick, onMounted, ref, watch } from "vue"
+import { errorText } from "../api/http"
+import { formatDay, formatTime } from "../format"
+import { useAppStore, type ChatMessage } from "../stores/app"
+import AttachmentName from "./AttachmentName.vue"
+import Avatar from "./Avatar.vue"
+import ContextMenu from "./ContextMenu.vue"
+import MessageText from "./MessageText.vue"
+
+const store = useAppStore()
+const scroller = ref<HTMLElement | null>(null)
+const menu = ref<{ x: number; y: number; message: ChatMessage } | null>(null)
+const stick = ref(true)
+const highlighted = ref<string | null>(null)
+let highlightTimer = 0
+
+const thread = computed(() => {
+  const chat = store.selectedChat
+  if (!chat) return null
+  return store.threadFor(chat.domain, chat.id)
+})
+
+function sameMinute(left: number, right: number): boolean {
+  const a = new Date(left)
+  const b = new Date(right)
+  return a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate()
+    && a.getHours() === b.getHours()
+    && a.getMinutes() === b.getMinutes()
+}
+
+const transcript = computed(() => {
+  const rows: Array<
+    { kind: "day"; id: string; label: string }
+    | { kind: "message"; id: string; message: ChatMessage; grouped: boolean }
+  > = []
+  let previousDay = ""
+  let previous: ChatMessage | null = null
+  for (const message of thread.value?.items ?? []) {
+    const label = formatDay(message.createdAt)
+    if (label !== previousDay) {
+      rows.push({ kind: "day", id: `day-${message.id}`, label })
+      previousDay = label
+    }
+    const grouped = previous !== null
+      && previous.sender === message.sender
+      && sameMinute(previous.createdAt, message.createdAt)
+    rows.push({ kind: "message", id: message.id, message, grouped })
+    previous = message
+  }
+  return rows
+})
+
+const menuItems = computed(() => {
+  const message = menu.value?.message
+  const me = store.current
+  const chat = store.selectedChat
+  if (!message || !me || !chat) return []
+  const items: { id: string; label: string }[] = []
+  if (store.isWritable(chat)) items.push({ id: "reply", label: "Reply" })
+  const sender = message.sender === me.username
+  const admin = store.isAdmin(chat, me.username)
+  if (admin || sender) items.push({ id: "delete", label: "Delete Message" })
+  if (sender) items.push({ id: "edit", label: "Edit Message" })
+  return items
+})
+
+function openMenu(event: MouseEvent, message: ChatMessage) {
+  const chat = store.selectedChat
+  if (!chat || !store.isWritable(chat)) return
+  menu.value = { x: event.clientX, y: event.clientY, message }
+}
+
+function quote(message: ChatMessage): { text: string; sender: string | null; id: string } | null {
+  if (!message.repliedTo) return null
+  const original = thread.value?.items.find((entry) => entry.id === message.repliedTo)
+  if (!original) return { text: "Unknown User: Unknown Message", sender: null, id: message.repliedTo }
+  const snip = original.content || "Attachment"
+  return { text: `${original.sender}: ${snip}`, sender: original.sender, id: original.id }
+}
+
+function scrollToMessage(id: string) {
+  const scrollerEl = scroller.value
+  const target = scrollerEl?.querySelector(`[data-message-id="${CSS.escape(id)}"]`)
+  if (!scrollerEl || !(target instanceof HTMLElement)) return
+  const delta = target.getBoundingClientRect().top - scrollerEl.getBoundingClientRect().top
+  scrollerEl.scrollTo({
+    top: scrollerEl.scrollTop + delta - scrollerEl.clientHeight / 2 + target.clientHeight / 2,
+    behavior: "smooth",
+  })
+}
+
+async function jumpTo(message: ChatMessage) {
+  const targetId = message.repliedTo
+  if (!targetId) return
+  const found = await store.revealMessage(targetId)
+  if (!found) return
+  await nextTick()
+  scrollToMessage(targetId)
+  highlighted.value = targetId
+  window.clearTimeout(highlightTimer)
+  highlightTimer = window.setTimeout(() => {
+    if (highlighted.value === targetId) highlighted.value = null
+  }, 2000)
+}
+
+function onDrop(event: DragEvent) {
+  const picked = Array.from(event.dataTransfer?.files ?? [])
+  if (!picked.length) return
+  window.dispatchEvent(new CustomEvent("ouichat-files", { detail: picked }))
+}
+
+function picture(username: string): string | null {
+  const chat = store.selectedChat
+  if (!chat) return null
+  return store.userByName(chat.domain, username)?.pictureId ?? null
+}
+
+async function onScroll() {
+  const element = scroller.value
+  const chat = store.selectedChat
+  if (!element || !chat) return
+  stick.value = element.scrollHeight - element.scrollTop - element.clientHeight < 80
+  if (element.scrollTop > 40) return
+  const before = element.scrollHeight
+  await store.loadOlder()
+  await nextTick()
+  element.scrollTop = element.scrollHeight - before + element.scrollTop
+}
+
+function pinToBottom() {
+  if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight
+}
+
+onMounted(async () => {
+  await nextTick()
+  pinToBottom()
+  requestAnimationFrame(pinToBottom)
+})
+
+watch(() => store.selectedChat?.id, async () => {
+  await nextTick()
+  pinToBottom()
+  stick.value = true
+})
+
+watch(() => thread.value?.items.at(-1)?.id, async () => {
+  if (!stick.value) return
+  await nextTick()
+  if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight
+})
+
+async function pick(action: string) {
+  const message = menu.value?.message
+  menu.value = null
+  if (!message) return
+  if (action === "reply" || action === "edit") {
+    window.dispatchEvent(new CustomEvent("ouichat-compose", {
+      detail: {
+        mode: action,
+        messageId: message.id,
+        sender: message.sender,
+        snip: message.content || "Attachment",
+      },
+    }))
+    return
+  }
+  try {
+    await store.deleteChatMessage(message.id)
+  } catch (cause) {
+    store.error = errorText(cause)
+  }
+}
+</script>
+
+<template>
+  <div v-if="store.selectedChat" class="pane" @dragover.prevent @drop.prevent="onDrop">
+    <div class="pane-toolbar">
+      <button class="pane-back" type="button" title="Back" @click="store.showUsers()">
+        <img src="/icons/left_arrow_icon.png" width="18" height="18" alt="" />
+      </button>
+      <button class="chat-title" type="button" @click="store.showDetails()">
+        <Avatar
+          :domain="store.selectedChat.domain"
+          :picture-id="store.chatPicture(store.selectedChat).pictureId"
+          :fallback="store.chatPicture(store.selectedChat).fallback"
+          :size="26"
+        />
+        <span class="row-label">{{ store.displayName(store.selectedChat) }}</span>
+      </button>
+    </div>
+    <div ref="scroller" class="messages" @scroll="onScroll">
+      <template v-for="row in transcript" :key="row.id">
+      <div v-if="row.kind === 'day'" class="day-separator">{{ row.label }}</div>
+      <article
+        v-else
+        class="message"
+        :class="{ flash: highlighted === row.message.id, continued: row.grouped }"
+        :data-message-id="row.message.id"
+        @contextmenu.prevent="openMenu($event, row.message)"
+      >
+        <Avatar
+          v-if="!row.grouped"
+          :domain="row.message.domain"
+          :picture-id="picture(row.message.sender)"
+          fallback="/icons/default_user_icon.png"
+        />
+        <span v-else class="message-gutter"></span>
+        <div class="message-body">
+          <div v-if="!row.grouped" class="message-meta">
+            <span class="message-author">{{ row.message.sender }}</span>
+            <span class="message-time">{{ formatTime(row.message.createdAt) }}</span>
+            <span v-if="row.message.edited" class="edited">edited</span>
+          </div>
+          <span v-else-if="row.message.edited" class="edited">edited</span>
+          <button v-if="quote(row.message)" class="reply-quote" type="button" @click="jumpTo(row.message)">
+            <Avatar
+              v-if="quote(row.message)?.sender"
+              :domain="row.message.domain"
+              :picture-id="picture(quote(row.message)?.sender || '')"
+              fallback="/icons/default_user_icon.png"
+              :size="20"
+            />
+            <span>{{ quote(row.message)?.text }}</span>
+          </button>
+          <MessageText v-if="row.message.content" :text="row.message.content" />
+          <div v-if="row.message.attachments.length" class="file-stack">
+            <button
+              v-for="fileId in row.message.attachments"
+              :key="fileId"
+              class="file-chip"
+              type="button"
+              @click="store.downloadAttachment(fileId).catch((cause) => store.error = errorText(cause))"
+            >
+              <img src="/icons/download_file_icon.png" width="22" height="22" alt="" />
+              <AttachmentName :domain="row.message.domain" :file-id="fileId" />
+            </button>
+          </div>
+        </div>
+      </article>
+      </template>
+    </div>
+    <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" @pick="pick" />
+  </div>
+</template>
