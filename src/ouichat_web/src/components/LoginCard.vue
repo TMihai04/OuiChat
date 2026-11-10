@@ -20,6 +20,7 @@ const busy = ref(false)
 const domainInput = ref<HTMLInputElement | null>(null)
 const usernameInput = ref<HTMLInputElement | null>(null)
 const passwordInput = ref<HTMLInputElement | null>(null)
+let loginAbortController: AbortController | null = null
 
 function moveField(event: KeyboardEvent, direction: 1 | -1) {
   const inputs = [domainInput.value, usernameInput.value, passwordInput.value].filter((input): input is HTMLInputElement => input !== null)
@@ -37,18 +38,53 @@ function onFieldKeydown(event: KeyboardEvent) {
   else if (event.key === "ArrowUp") moveField(event, -1)
 }
 
+function onCancel() {
+  if (busy.value) {
+    if (loginAbortController) {
+      loginAbortController.abort()
+      loginAbortController = null
+    }
+    busy.value = false
+    error.value = ""
+  } else if (props.modal) {
+    emit("close")
+  }
+}
+
 function onEscape(event: KeyboardEvent) {
-  if (event.key !== "Escape" || !props.modal) return
+  if (event.key !== "Escape") return
+  if (!busy.value && !props.modal) return
   event.preventDefault()
-  emit("close")
+  onCancel()
 }
 
 onMounted(() => {
-  domainInput.value?.focus()
+  const expiredRaw = typeof window !== "undefined" ? (sessionStorage.getItem("ouichat.expired_session") ?? localStorage.getItem("ouichat.expired_session")) : null
+  if (expiredRaw) {
+    try {
+      sessionStorage.removeItem("ouichat.expired_session")
+      localStorage.removeItem("ouichat.expired_session")
+      const parsed = JSON.parse(expiredRaw)
+      if (parsed.domain) domain.value = parsed.domain
+      if (parsed.username) username.value = parsed.username
+      error.value = "Your session has expired. Please log in again."
+      passwordInput.value?.focus()
+    } catch {
+      domainInput.value?.focus()
+    }
+  } else {
+    domainInput.value?.focus()
+  }
   window.addEventListener("keydown", onEscape)
 })
 
-onBeforeUnmount(() => window.removeEventListener("keydown", onEscape))
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onEscape)
+  if (loginAbortController) {
+    loginAbortController.abort()
+    loginAbortController = null
+  }
+})
 
 async function submit() {
   error.value = ""
@@ -69,14 +105,19 @@ async function submit() {
     if (error.value) return
   }
   busy.value = true
+  loginAbortController = new AbortController()
   try {
-    await store.signIn(domain.value, username.value, password.value, register.value)
+    await store.signIn(domain.value, username.value, password.value, register.value, loginAbortController.signal)
     if (props.modal) emit("close")
     else await router.push("/app")
   } catch (cause) {
+    if (cause instanceof DOMException && cause.name === "AbortError") {
+      return
+    }
     error.value = errorText(cause)
   } finally {
     busy.value = false
+    loginAbortController = null
   }
 }
 </script>
@@ -87,29 +128,61 @@ async function submit() {
     <h1 style="text-align: center; font-size: 16px; font-weight: 600; margin: 0 0 16px;">Insert domain and credentials</h1>
     <label class="form-row">
       <span>Domain:</span>
-      <input ref="domainInput" v-model="domain" class="field" placeholder="Domain..." autocomplete="off" @keydown="onFieldKeydown" />
+      <input
+        ref="domainInput"
+        v-model="domain"
+        class="field"
+        placeholder="Domain..."
+        autocomplete="off"
+        :disabled="busy"
+        @keydown="onFieldKeydown"
+      />
     </label>
     <label class="form-row">
       <span>Username:</span>
-      <input ref="usernameInput" v-model="username" class="field" placeholder="Username..." autocomplete="username" @keydown="onFieldKeydown" />
+      <input
+        ref="usernameInput"
+        v-model="username"
+        class="field"
+        placeholder="Username..."
+        autocomplete="username"
+        :disabled="busy"
+        @keydown="onFieldKeydown"
+      />
     </label>
     <label class="form-row">
       <span>Password:</span>
       <span class="password-wrap">
-        <input ref="passwordInput" v-model="password" class="field" :type="showPassword ? 'text' : 'password'" placeholder="Password..." autocomplete="current-password" @keydown="onFieldKeydown" />
-        <button class="icon-button eye" type="button" @click="showPassword = !showPassword">
+        <input
+          ref="passwordInput"
+          v-model="password"
+          class="field"
+          :type="showPassword ? 'text' : 'password'"
+          placeholder="Password..."
+          autocomplete="current-password"
+          :disabled="busy"
+          @keydown="onFieldKeydown"
+        />
+        <button
+          class="icon-button eye"
+          type="button"
+          :disabled="busy"
+          @click="showPassword = !showPassword"
+        >
           <img :src="showPassword ? '/icons/opened_eye_icon.png' : '/icons/closed_eye_icon.png'" width="18" height="18" alt="" />
         </button>
       </span>
     </label>
-    <label class="check-row">
-      <input v-model="register" type="checkbox" />
+    <label class="check-row" :class="{ disabled: busy }">
+      <input v-model="register" type="checkbox" :disabled="busy" />
       <span>Register and Login</span>
     </label>
     <div class="form-error">{{ error }}</div>
     <div class="form-actions">
-      <button v-if="modal" class="mid-button" type="button" @click="emit('close')">Cancel</button>
-      <button class="accent-button" type="submit" :disabled="busy">Login</button>
+      <button v-if="busy || modal" class="mid-button" type="button" @click="onCancel">Cancel</button>
+      <button class="accent-button" type="submit" :disabled="busy">
+        {{ busy ? "Logging in..." : "Login" }}
+      </button>
     </div>
   </form>
   </div>

@@ -34,15 +34,23 @@ function sameMinute(left: number, right: number): boolean {
 const transcript = computed(() => {
   const rows: Array<
     { kind: "day"; id: string; label: string }
+    | { kind: "unread"; id: string; label: string }
     | { kind: "message"; id: string; message: ChatMessage; grouped: boolean }
   > = []
   let previousDay = ""
   let previous: ChatMessage | null = null
+  const unreadMarker = store.unreadSeparator?.chatId === store.selectedChat?.id ? store.unreadSeparator : null
   for (const message of thread.value?.items ?? []) {
     const label = formatDay(message.createdAt)
     if (label !== previousDay) {
       rows.push({ kind: "day", id: `day-${message.id}`, label })
       previousDay = label
+      previous = null
+    }
+    if (unreadMarker && message.id === unreadMarker.firstMessageId) {
+      const countLabel = unreadMarker.count === 1 ? "1 new message" : `${unreadMarker.count} new messages`
+      rows.push({ kind: "unread", id: `unread-${unreadMarker.firstMessageId}`, label: countLabel })
+      previous = null
     }
     const grouped = previous !== null
       && previous.sender === message.sender
@@ -118,32 +126,81 @@ function picture(username: string): string | null {
   return store.userByName(chat.domain, username)?.pictureId ?? null
 }
 
+let loadingOlder = false
+let loadingNewer = false
+
 async function onScroll() {
   const element = scroller.value
   const chat = store.selectedChat
   if (!element || !chat) return
   stick.value = element.scrollHeight - element.scrollTop - element.clientHeight < 80
-  if (element.scrollTop > 40) return
-  const before = element.scrollHeight
-  await store.loadOlder()
-  await nextTick()
-  element.scrollTop = element.scrollHeight - before + element.scrollTop
+
+  // Scroll up: pre-fetch older messages before reaching the top
+  if (element.scrollTop <= 350 && thread.value?.hasMore && !thread.value?.loading && !loadingOlder) {
+    loadingOlder = true
+    const beforeHeight = element.scrollHeight
+    const beforeScrollTop = element.scrollTop
+    try {
+      await store.loadOlder()
+      await nextTick()
+      const diff = element.scrollHeight - beforeHeight
+      if (diff > 0) {
+        element.scrollTop = beforeScrollTop + diff
+      }
+    } finally {
+      loadingOlder = false
+    }
+    return
+  }
+
+  // Scroll down: pre-fetch newer messages before reaching the bottom if window was pruned
+  const distanceToBottom = element.scrollHeight - element.scrollTop - element.clientHeight
+  if (thread.value?.hasNewer && !thread.value?.loading && !loadingNewer && distanceToBottom <= 350) {
+    loadingNewer = true
+    try {
+      await store.loadNewer()
+    } finally {
+      loadingNewer = false
+    }
+  }
 }
 
 function pinToBottom() {
   if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight
 }
 
+function scrollToUnreadOrBottom() {
+  const scrollerEl = scroller.value
+  if (!scrollerEl) return
+  const separator = scrollerEl.querySelector("[data-unread-separator]") as HTMLElement | null
+  if (separator) {
+    const delta = separator.getBoundingClientRect().top - scrollerEl.getBoundingClientRect().top
+    scrollerEl.scrollTop = scrollerEl.scrollTop + delta - 12
+    stick.value = false
+  } else {
+    pinToBottom()
+    stick.value = true
+  }
+}
+
 onMounted(async () => {
   await nextTick()
-  pinToBottom()
-  requestAnimationFrame(pinToBottom)
+  scrollToUnreadOrBottom()
+  requestAnimationFrame(scrollToUnreadOrBottom)
 })
 
 watch(() => store.selectedChat?.id, async () => {
   await nextTick()
-  pinToBottom()
-  stick.value = true
+  scrollToUnreadOrBottom()
+  requestAnimationFrame(scrollToUnreadOrBottom)
+})
+
+watch(() => store.unreadSeparator, async (sep) => {
+  if (sep && sep.chatId === store.selectedChat?.id) {
+    await nextTick()
+    scrollToUnreadOrBottom()
+    requestAnimationFrame(scrollToUnreadOrBottom)
+  }
 })
 
 watch(() => thread.value?.items.at(-1)?.id, async () => {
@@ -178,7 +235,7 @@ async function pick(action: string) {
 <template>
   <div v-if="store.selectedChat" class="pane" @dragover.prevent @drop.prevent="onDrop">
     <div class="pane-toolbar">
-      <button class="pane-back" type="button" title="Back" @click="store.showUsers()">
+      <button class="pane-back" type="button" title="Back" @click="store.deselectChat()">
         <img src="/icons/left_arrow_icon.png" width="18" height="18" alt="" />
       </button>
       <button class="chat-title" type="button" @click="store.showDetails()">
@@ -194,6 +251,9 @@ async function pick(action: string) {
     <div ref="scroller" class="messages" @scroll="onScroll">
       <template v-for="row in transcript" :key="row.id">
       <div v-if="row.kind === 'day'" class="day-separator">{{ row.label }}</div>
+      <div v-else-if="row.kind === 'unread'" class="unread-separator" data-unread-separator>
+        <span class="unread-separator-label">{{ row.label }}</span>
+      </div>
       <article
         v-else
         class="message"

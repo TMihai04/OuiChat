@@ -2,7 +2,6 @@
 import { watch } from "vue"
 import { RouterView, useRoute, useRouter } from "vue-router"
 import ErrorDialog from "./components/ErrorDialog.vue"
-import ReloginDialog from "./components/ReloginDialog.vue"
 import { useAppStore } from "./stores/app"
 
 const store = useAppStore()
@@ -19,5 +18,4 @@ watch(() => store.sessions.length, (count, previous) => {
 <template>
   <RouterView />
   <ErrorDialog />
-  <ReloginDialog />
 </template>

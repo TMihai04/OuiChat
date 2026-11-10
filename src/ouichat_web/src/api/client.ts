@@ -16,19 +16,21 @@ function formBody(username: string, password: string): URLSearchParams {
   return body
 }
 
-export function registerAccount(domain: string, username: string, password: string) {
+export function registerAccount(domain: string, username: string, password: string, signal?: AbortSignal) {
   return request(domain, {
     method: "POST",
     path: "/register",
     form: formBody(username, password),
+    signal,
   })
 }
 
-export function loginAccount(domain: string, username: string, password: string) {
+export function loginAccount(domain: string, username: string, password: string, signal?: AbortSignal) {
   return request(domain, {
     method: "POST",
     path: "/login",
     form: formBody(username, password),
+    signal,
   }) as Promise<TokenPair>
 }
 
@@ -41,10 +43,11 @@ export function refreshTokens(domain: string, refreshToken: string) {
   }) as Promise<TokenPair>
 }
 
-export function getMe(domain: string, accessToken: string) {
+export function getMe(domain: string, accessToken: string, signal?: AbortSignal) {
   return request(domain, {
     path: "/users/me",
     accessToken,
+    signal,
   }) as Promise<ItemResponse<UserRaw>>
 }
 
@@ -80,6 +83,16 @@ export function setBlacklist(domain: string, accessToken: string, username: stri
     accessToken,
     json: { who: username },
     expect: block ? "json" : "empty",
+  })
+}
+
+export function setMutedChat(domain: string, accessToken: string, chatId: string, mute: boolean) {
+  return request(domain, {
+    method: mute ? "POST" : "DELETE",
+    path: "/users/preferences/muted",
+    accessToken,
+    json: { chat_id: chatId },
+    expect: mute ? "json" : "empty",
   })
 }
 

@@ -33,6 +33,7 @@ export interface RequestOptions {
   headers?: Record<string, string>
   accessToken?: string
   expect?: "json" | "text" | "blob" | "empty"
+  signal?: AbortSignal
 }
 
 export interface DownloadedFile {
@@ -104,8 +105,12 @@ export async function request(domain: string, options: RequestOptions): Promise<
       method: options.method ?? "GET",
       headers,
       body,
+      signal: options.signal,
     })
-  } catch {
+  } catch (cause) {
+    if (cause instanceof DOMException && cause.name === "AbortError") {
+      throw cause
+    }
     throw new ApiError(0, "Cannot establish a connection with the server.")
   }
 

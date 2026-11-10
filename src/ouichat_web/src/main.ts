@@ -3,6 +3,7 @@ import { createPinia } from "pinia"
 import App from "./App.vue"
 import router from "./router"
 import { useAppStore } from "./stores/app"
+import { initTheme } from "./theme"
 import "./styles/app.css"
 
 const SCROLL_AREAS = ".list-panel, .messages, .picker-list"
@@ -36,11 +37,41 @@ function ignoreBlankCaret(event: MouseEvent) {
 window.addEventListener("mousedown", ignoreBlankCaret, true)
 
 async function boot() {
+  initTheme()
+
   const app = createApp(App)
   const pinia = createPinia()
   app.use(pinia)
 
   const store = useAppStore()
+
+  // Native Android back button & notification navigation hooks
+  if (typeof window !== "undefined") {
+    ;(window as any).onNativeBackPressed = () => {
+      if (store.selectedChat) {
+        store.deselectChat()
+        return true
+      }
+      if (store.sidebarTab === "users") {
+        store.sidebarTab = "chats"
+        return true
+      }
+      return false
+    }
+
+    ;(window as any).selectChatFromNative = async (chatId: string) => {
+      if (!store.ready) {
+        await store.waitForReady()
+      }
+      if (store.current !== null) {
+        void router.push("/app")
+        void store.selectChat(chatId)
+      } else {
+        store.pendingChatId = chatId
+      }
+    }
+  }
+
   await store.init()
 
   app.use(router)

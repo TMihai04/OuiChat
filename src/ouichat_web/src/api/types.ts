@@ -12,7 +12,7 @@ export interface UserProfileRaw {
 export interface UserRaw {
   username: string
   profile?: UserProfileRaw
-  preferences?: { blacklist?: string[] }
+  preferences?: { blacklist?: string[]; muted_chats?: string[] }
 }
 
 export interface ParticipantRaw {

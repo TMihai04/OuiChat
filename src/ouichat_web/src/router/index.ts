@@ -15,8 +15,11 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const store = useAppStore()
+  if (!store.ready) {
+    await store.waitForReady()
+  }
   const signedIn = store.current !== null
   if (!signedIn && to.name !== "login") return { name: "login" }
   if (signedIn && to.name === "login") return { name: "main" }

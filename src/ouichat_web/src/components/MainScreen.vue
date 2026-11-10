@@ -49,10 +49,10 @@ async function confirmPicker(usernames: string[]) {
 </script>
 
 <template>
-  <div class="shell" :class="{ collapsed: !showPanel }">
+  <div class="shell" :class="{ collapsed: !showPanel, 'has-selected-chat': !!store.selectedChat }">
     <aside v-show="showPanel" class="left">
       <ChatList />
-      <button class="wide-button" type="button" @click="picker = 'create'">
+      <button v-if="store.sidebarTab === 'chats'" class="wide-button" type="button" @click="picker = 'create'">
         <img src="/icons/plus_icon.png" width="12" height="12" alt="" /> New Chat
       </button>
       <div class="account-bar">

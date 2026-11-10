@@ -23,16 +23,13 @@ const targetSnip = ref("")
 const fileInput = ref<HTMLInputElement | null>(null)
 const box = ref<HTMLTextAreaElement | null>(null)
 const busy = ref(false)
-const pausedUntil = ref<Record<string, number>>({})
-const now = ref(Date.now())
-let pauseTimer = 0
 
 const writable = computed(() => store.selectedChat ? store.isWritable(store.selectedChat) : false)
 const visible = computed(() => store.pane === "chat" && !!store.selectedChat && writable.value)
 const paused = computed(() => {
   const id = store.selectedChat?.id
   if (!id) return false
-  return (pausedUntil.value[id] ?? 0) > now.value
+  return store.isChatPaused(id)
 })
 const replyPicture = computed(() => {
   const chat = store.selectedChat
@@ -108,16 +105,7 @@ function onDrop(event: DragEvent) {
   stage(Array.from(event.dataTransfer?.files ?? []))
 }
 
-function pause(chatId: string) {
-  pausedUntil.value = { ...pausedUntil.value, [chatId]: Date.now() + 10_000 }
-  now.value = Date.now()
-  window.clearInterval(pauseTimer)
-  pauseTimer = window.setInterval(() => {
-    now.value = Date.now()
-    const still = Object.values(pausedUntil.value).some((until) => until > now.value)
-    if (!still) window.clearInterval(pauseTimer)
-  }, 250)
-}
+
 
 onMounted(() => {
   window.addEventListener("ouichat-compose", onCompose)
@@ -127,7 +115,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener("ouichat-compose", onCompose)
   window.removeEventListener("ouichat-files", onExternalFiles)
-  window.clearInterval(pauseTimer)
 })
 
 function onKeydown(event: KeyboardEvent) {
@@ -159,7 +146,7 @@ async function send() {
     reset()
   } catch (cause) {
     const chatId = store.selectedChat?.id
-    if (cause instanceof ApiError && cause.status === 429 && chatId) pause(chatId)
+    if (cause instanceof ApiError && cause.status === 429 && chatId) store.pauseChat(chatId)
     else store.error = errorText(cause)
   } finally {
     busy.value = false

@@ -69,8 +69,8 @@ function toggle(username: string, on: boolean) {
             </label>
           </div>
           <div class="picker-list">
-            <label v-for="user in left" :key="user.username" class="row">
-              <input type="checkbox" :checked="selected.includes(user.username)" @change="toggle(user.username, ($event.target as HTMLInputElement).checked)" />
+            <label v-for="user in left" :key="user.username" class="row user-picker-row">
+              <input type="checkbox" class="user-checkbox" :checked="selected.includes(user.username)" @change="toggle(user.username, ($event.target as HTMLInputElement).checked)" />
               <Avatar :domain="domain" :picture-id="user.pictureId" fallback="/icons/default_user_icon.png" :presence="storePresence(user.username)" />
               <span class="row-label">{{ user.username }}</span>
             </label>

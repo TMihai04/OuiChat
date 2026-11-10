@@ -148,13 +148,13 @@ async function changeIcon(event: Event) {
           :size="64"
         />
         <button v-if="group && admin" class="surface-button edit-button" type="button" title="Change icon" @click="iconInput?.click()">
-          <img src="/icons/edit_icon.png" width="14" height="14" alt="" />
+          <img src="/icons/edit_icon.png" width="18" height="18" alt="" />
         </button>
       </div>
       <div class="name-line">
         <span>{{ store.displayName(chat) }}</span>
         <button v-if="group && admin" class="surface-button edit-button" type="button" @click="openPrompt('name')">
-          <img src="/icons/edit_icon.png" width="14" height="14" alt="" />
+          <img src="/icons/edit_icon.png" width="18" height="18" alt="" />
         </button>
       </div>
     </div>
@@ -162,14 +162,14 @@ async function changeIcon(event: Event) {
       <div class="description-head">
         <span>Description:</span>
         <button v-if="group && admin" class="surface-button edit-button" type="button" @click="openPrompt('description')">
-          <img src="/icons/edit_icon.png" width="14" height="14" alt="" />
+          <img src="/icons/edit_icon.png" width="18" height="18" alt="" />
         </button>
       </div>
       <div class="description-widget">{{ store.displayDescription(chat) }}</div>
     </div>
     <template v-if="group">
-      <div style="display: flex; justify-content: flex-end; margin-top: 12px;">
-        <label class="search" style="width: 220px;">
+      <div class="member-search-wrap">
+        <label class="search member-search">
           <img src="/icons/search_icon.png" width="14" height="14" alt="" />
           <input v-model="memberQuery" placeholder="Search member..." />
         </label>
@@ -195,7 +195,7 @@ async function changeIcon(event: Event) {
         </button>
       </div>
       <div class="leave-row">
-        <button v-if="owner" class="mid-button" type="button" @click="removeChat">Delete Chat</button>
+        <button v-if="owner" class="mid-button danger-button" type="button" @click="removeChat">Delete Chat</button>
         <button class="mid-button" type="button" @click="leave">Leave Chat</button>
       </div>
     </template>

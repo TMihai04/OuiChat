@@ -5,12 +5,33 @@ import { ApiError, errorText } from "../api/http"
 import type { ConversationRaw, MessageRaw, UserRaw, WsEvent } from "../api/types"
 import { sessionKey } from "../format"
 import { SocketHub } from "../ws/hub"
+import { clearNotificationBuffer, queueDesktopNotification } from "../notifications"
 
 export const MAX_SESSIONS = 3
 const MESSAGE_BATCH = 30
+const WINDOW_LIMIT = 180
 const STORAGE_KEY = "ouichat.sessions"
 const CURRENT_KEY = "ouichat.current"
+const UNREAD_STORAGE_KEY = "ouichat.unread_counts"
+const EXPIRED_SESSION_KEY = "ouichat.expired_session"
 const REFRESH_LEAD_MS = 90_000
+
+function getSavedItem(key: string): string | null {
+  if (typeof window === "undefined") return null
+  return localStorage.getItem(key) ?? sessionStorage.getItem(key)
+}
+
+function setSavedItem(key: string, value: string) {
+  if (typeof window === "undefined") return
+  try { localStorage.setItem(key, value) } catch {}
+  try { sessionStorage.setItem(key, value) } catch {}
+}
+
+function removeSavedItem(key: string) {
+  if (typeof window === "undefined") return
+  try { localStorage.removeItem(key) } catch {}
+  try { sessionStorage.removeItem(key) } catch {}
+}
 
 function accessTokenExpiry(token: string): number | null {
   const segment = token.split(".")[1]
@@ -37,6 +58,7 @@ export interface Session {
   accessToken: string
   refreshToken: string
   blacklist: string[]
+  mutedChats: string[]
   reachable: string[]
   status: string
   pictureId: string | null
@@ -82,13 +104,9 @@ export interface ChatMessage {
 export interface Thread {
   items: ChatMessage[]
   hasMore: boolean
+  hasNewer?: boolean
   loaded: boolean
   loading: boolean
-}
-
-interface ReloginJob {
-  key: string
-  resolve: (ok: boolean) => void
 }
 
 function normalizeUser(raw: UserRaw): DirUser {
@@ -120,23 +138,56 @@ function asStringList(value: unknown): string[] {
 
 export const useAppStore = defineStore("app", () => {
   const ready = ref(false)
+  let readyResolver: (() => void) | null = null
+  const readyPromise = new Promise<void>((resolve) => {
+    readyResolver = resolve
+  })
+
+  function waitForReady(): Promise<void> {
+    if (ready.value) return Promise.resolve()
+    return readyPromise
+  }
   const sessions = ref<Session[]>([])
   const currentKey = ref<string | null>(null)
   const domainUsers = ref<Record<string, DirUser[]>>({})
   const chats = ref<Chat[]>([])
   const threads = ref<Record<string, Thread>>({})
   const selectedChatId = ref<string | null>(null)
+  const pendingChatId = ref<string | null>(null)
+  const unreadCounts = ref<Record<string, number>>({})
+  const unreadSeparator = ref<{ chatId: string; firstMessageId: string; count: number } | null>(null)
+  const pausedUntil = ref<Record<string, number>>({})
+  const pauseNow = ref(Date.now())
+  let pauseTimer: number | null = null
+
+  function isChatPaused(chatId: string): boolean {
+    return (pausedUntil.value[chatId] ?? 0) > pauseNow.value
+  }
+
+  function pauseChat(chatId: string, durationMs = 10_000) {
+    pausedUntil.value = { ...pausedUntil.value, [chatId]: Date.now() + durationMs }
+    pauseNow.value = Date.now()
+    if (pauseTimer === null) {
+      pauseTimer = window.setInterval(() => {
+        pauseNow.value = Date.now()
+        const still = Object.values(pausedUntil.value).some((until) => until > pauseNow.value)
+        if (!still && pauseTimer !== null) {
+          window.clearInterval(pauseTimer)
+          pauseTimer = null
+        }
+      }, 250)
+    }
+  }
   const pane = ref<"users" | "chat" | "details">("users")
+  const sidebarTab = ref<"chats" | "users">("chats")
   const onlineUsers = ref<Record<string, string[]>>({})
   const error = ref<string | null>(null)
-  const relogin = ref<{ username: string; domain: string } | null>(null)
 
   const iconCache = new Map<string, string>()
   const iconJobs = new Map<string, Promise<string>>()
   const attachmentNames = new Map<string, string>()
   const attachmentNameJobs = new Map<string, Promise<string>>()
   const recoveries = new Map<string, Promise<boolean>>()
-  const reloginQueue: ReloginJob[] = []
 
   const refreshTimers = new Map<string, number>()
 
@@ -185,12 +236,39 @@ export const useAppStore = defineStore("app", () => {
       accessToken: session.accessToken,
       refreshToken: session.refreshToken,
       blacklist: [...session.blacklist],
+      mutedChats: [...(session.mutedChats ?? [])],
       reachable: [...session.reachable],
       status: session.status,
       pictureId: session.pictureId,
     }))
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(saved))
-    sessionStorage.setItem(CURRENT_KEY, currentKey.value ?? "")
+    setSavedItem(STORAGE_KEY, JSON.stringify(saved))
+    setSavedItem(CURRENT_KEY, currentKey.value ?? "")
+  }
+
+  function persistUnreadCounts() {
+    setSavedItem(UNREAD_STORAGE_KEY, JSON.stringify(unreadCounts.value))
+  }
+
+  function syncNativeUnreadCounts() {
+    if (typeof window !== "undefined" && (window as any).AndroidBridge?.getUnreadCounts) {
+      try {
+        const raw = (window as any).AndroidBridge.getUnreadCounts()
+        if (raw) {
+          const nativeCounts = JSON.parse(raw) as Record<string, number>
+          for (const [chatId, count] of Object.entries(nativeCounts)) {
+            const matchingChat = chats.value.find((entry) => entry.id === chatId)
+            const domain = matchingChat?.domain || current.value?.domain
+            if (domain && count > 0) {
+              const key = `${domain}:${chatId}`
+              unreadCounts.value[key] = Math.max(unreadCounts.value[key] ?? 0, count)
+            }
+          }
+          persistUnreadCounts()
+        }
+      } catch (err) {
+        console.error("Error syncing native unread counts", err)
+      }
+    }
   }
 
   function findSession(username: string, domain: string): Session | undefined {
@@ -372,7 +450,7 @@ export const useAppStore = defineStore("app", () => {
   function threadFor(domain: string, chatId: string): Thread {
     const key = `${domain}:${chatId}`
     if (!threads.value[key]) {
-      threads.value[key] = { items: [], hasMore: true, loaded: false, loading: false }
+      threads.value[key] = { items: [], hasMore: true, hasNewer: false, loaded: false, loading: false }
     }
     return threads.value[key]
   }
@@ -466,67 +544,7 @@ export const useAppStore = defineStore("app", () => {
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
   }
 
-  function pumpRelogin() {
-    if (relogin.value || reloginQueue.length === 0) return
-    const job = reloginQueue[0]
-    const session = sessions.value.find((entry) => sessionKey(entry.username, entry.domain) === job.key)
-    if (!session) {
-      reloginQueue.shift()
-      job.resolve(false)
-      pumpRelogin()
-      return
-    }
-    relogin.value = { username: session.username, domain: session.domain }
-  }
-
-  function askRelogin(session: Session): Promise<boolean> {
-    const key = sessionKey(session.username, session.domain)
-    const existing = reloginQueue.find((job) => job.key === key)
-    if (existing) {
-      return new Promise((resolve) => {
-        const previous = existing.resolve
-        existing.resolve = (ok) => {
-          previous(ok)
-          resolve(ok)
-        }
-      })
-    }
-    return new Promise((resolve) => {
-      reloginQueue.push({ key, resolve })
-      pumpRelogin()
-    })
-  }
-
-  function settleRelogin(ok: boolean) {
-    const job = reloginQueue.shift()
-    relogin.value = null
-    job?.resolve(ok)
-    pumpRelogin()
-  }
-
-  async function submitRelogin(password: string) {
-    if (!relogin.value) return
-    const { username, domain } = relogin.value
-    const tokens = await api.loginAccount(domain, username, password)
-    const session = findSession(username, domain)
-    if (!session) {
-      settleRelogin(false)
-      return
-    }
-    session.accessToken = tokens.access_token
-    session.refreshToken = tokens.refresh_token
-    hub.updateToken(username, domain, session.accessToken)
-    persist()
-    settleRelogin(true)
-  }
-
-  function cancelRelogin() {
-    const target = relogin.value
-    settleRelogin(false)
-    if (target) logout(target.username, target.domain)
-  }
-
-  async function recover(session: Session, interactive: boolean): Promise<boolean> {
+  async function recover(session: Session, _interactive = false): Promise<boolean> {
     const key = sessionKey(session.username, session.domain)
     const existing = recoveries.get(key)
     if (existing) return existing
@@ -538,14 +556,13 @@ export const useAppStore = defineStore("app", () => {
         session.refreshToken = tokens.refresh_token
         hub.updateToken(session.username, session.domain, session.accessToken)
         persist()
+        syncNativeBridge(session)
         scheduleRefresh(session)
         return true
       } catch {
-        if (!interactive) return false
-        const ok = await askRelogin(session)
-        const live = findSession(session.username, session.domain)
-        if (ok && live) scheduleRefresh(live)
-        return ok
+        setSavedItem(EXPIRED_SESSION_KEY, JSON.stringify({ username: session.username, domain: session.domain }))
+        logout(session.username, session.domain)
+        return false
       }
     })().finally(() => {
       recoveries.delete(key)
@@ -598,7 +615,7 @@ export const useAppStore = defineStore("app", () => {
           chat.id,
           "old",
           null,
-          1,
+          15,
         ), interactive)
         const newest = raw[raw.length - 1]
         if (!newest) return
@@ -606,9 +623,16 @@ export const useAppStore = defineStore("app", () => {
         if (!live) return
         live.lastMessageAt = Math.max(live.lastMessageAt, newest.created_at)
         const self = live.participants.find((participant) => participant.username === session.username)
-        if (self && self.lastSeenLocal === 0) {
+        if (self && self.lastSeenLocal === 0 && live.lastMessageAt === 0) {
           const response = await withSession(session, (active) => api.markChatSeen(active.domain, active.accessToken, live.id), interactive)
           self.lastSeenLocal = Math.max(self.lastSeenLocal, response.item.last_seen)
+        } else if (self && live.lastMessageAt > self.lastSeenLocal) {
+          const unreadMsgs = raw.filter((m) => m.created_at > self.lastSeenLocal && m.sender !== session.username)
+          if (unreadMsgs.length > 0) {
+            const key = `${session.domain}:${chat.id}`
+            unreadCounts.value[key] = Math.max(unreadCounts.value[key] ?? 0, unreadMsgs.length)
+            persistUnreadCounts()
+          }
         }
       } catch {
         return
@@ -616,7 +640,7 @@ export const useAppStore = defineStore("app", () => {
     }))
   }
 
-  async function signIn(domain: string, username: string, password: string, register: boolean) {
+  async function signIn(domain: string, username: string, password: string, register: boolean, signal?: AbortSignal) {
     const cleanDomain = domain.trim()
     const cleanUsername = username.trim()
     if (!cleanDomain) throw new Error("Domain must not be empty")
@@ -624,16 +648,20 @@ export const useAppStore = defineStore("app", () => {
     if (!password) throw new Error("Password must not be empty")
     if (sessions.value.length >= MAX_SESSIONS) throw new Error("You can only be signed in to 3 accounts")
     if (findSession(cleanUsername, cleanDomain)) throw new Error("Username already logged in")
-    if (register) await api.registerAccount(cleanDomain, cleanUsername, password)
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError")
+    if (register) await api.registerAccount(cleanDomain, cleanUsername, password, signal)
 
-    const tokens = await api.loginAccount(cleanDomain, cleanUsername, password)
-    const me = await api.getMe(cleanDomain, tokens.access_token)
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError")
+    const tokens = await api.loginAccount(cleanDomain, cleanUsername, password, signal)
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError")
+    const me = await api.getMe(cleanDomain, tokens.access_token, signal)
     const session: Session = {
       username: me.item.username || cleanUsername,
       domain: cleanDomain,
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       blacklist: me.item.preferences?.blacklist ?? [],
+      mutedChats: me.item.preferences?.muted_chats ?? [],
       reachable: [],
       status: me.item.profile?.status || "Hi there!",
       pictureId: me.item.profile?.picture_id || null,
@@ -642,6 +670,7 @@ export const useAppStore = defineStore("app", () => {
     sessions.value.push(session)
     currentKey.value = sessionKey(session.username, session.domain)
     selectedChatId.value = null
+    unreadSeparator.value = null
     pane.value = "users"
     try {
       await loadDomain(session)
@@ -653,6 +682,7 @@ export const useAppStore = defineStore("app", () => {
     hub.connect(session.username, session.domain, session.accessToken)
     scheduleRefresh(session)
     persist()
+    syncNativeBridge(session)
   }
 
   async function switchTo(username: string, domain: string) {
@@ -661,8 +691,10 @@ export const useAppStore = defineStore("app", () => {
     if (current.value && selectedChat.value) markRead(selectedChat.value, current.value.username)
     currentKey.value = sessionKey(username, domain)
     selectedChatId.value = null
+    unreadSeparator.value = null
     pane.value = "users"
     persist()
+    syncNativeBridge(session)
     try {
       await loadDomain(session)
     } catch (cause) {
@@ -706,6 +738,7 @@ export const useAppStore = defineStore("app", () => {
     clearRefresh(username, domain)
     const leavingCurrent = current.value?.username === username && current.value.domain === domain
     if (leavingCurrent && selectedChat.value) markRead(selectedChat.value, username)
+    unreadSeparator.value = null
     hub.disconnect(username, domain)
     const remaining = sessions.value.filter((session) => !(session.username === username && session.domain === domain))
     const others = remaining.filter((session) => session.domain === domain)
@@ -730,6 +763,19 @@ export const useAppStore = defineStore("app", () => {
       const fallback = remaining[0]
       currentKey.value = fallback ? sessionKey(fallback.username, fallback.domain) : null
     }
+    if (remaining.length === 0) {
+      removeSavedItem(STORAGE_KEY)
+      removeSavedItem(CURRENT_KEY)
+      if (typeof window !== "undefined" && (window as any).AndroidBridge) {
+        try {
+          (window as any).AndroidBridge.onLogout()
+        } catch (err) {
+          console.error("[NativeBridge] onLogout error:", err)
+        }
+      }
+    } else {
+      syncAllNativeSessions()
+    }
     persist()
   }
 
@@ -740,21 +786,117 @@ export const useAppStore = defineStore("app", () => {
   }
 
   async function selectChat(chatId: string) {
-    const me = requireCurrent()
-    const chat = chats.value.find((entry) => entry.domain === me.domain && entry.id === chatId)
+    if (!ready.value) {
+      pendingChatId.value = chatId
+      return
+    }
+    let me = current.value
+    if (!me && sessions.value.length > 0) {
+      await switchTo(sessions.value[0].username, sessions.value[0].domain)
+      me = current.value
+    }
+    if (!me) return
+
+    let chat = chats.value.find((entry) => entry.domain === me!.domain && entry.id === chatId)
+    if (!chat) {
+      // Check if chat belongs to another logged-in user session
+      for (const otherSession of sessions.value) {
+        if (otherSession !== me) {
+          const match = chats.value.find((entry) => entry.domain === otherSession.domain && entry.id === chatId)
+          if (match) {
+            await switchTo(otherSession.username, otherSession.domain)
+            me = otherSession
+            chat = match
+            break
+          }
+        }
+      }
+    }
+    if (!chat) {
+      await fetchChat(me.username, me.domain, chatId)
+      chat = chats.value.find((entry) => entry.domain === me!.domain && entry.id === chatId)
+    }
     if (!chat) return
-    if (selectedChat.value) markRead(selectedChat.value, me.username)
+    if (selectedChat.value && selectedChat.value.id !== chatId) {
+      markRead(selectedChat.value, me.username)
+      clearNotificationBuffer(`${selectedChat.value.domain}:${selectedChat.value.id}`)
+      if (typeof window !== "undefined" && (window as any).AndroidBridge?.clearNotification) {
+        try { (window as any).AndroidBridge.clearNotification(selectedChat.value.id) } catch {}
+      }
+    }
+
+    const wasUnread = unread(chat) || (unreadCounts.value[`${me.domain}:${chatId}`] || 0) > 0
+    const selfParticipant = chat.participants.find((p) => p.username === me!.username)
+    const lastSeen = selfParticipant?.lastSeenLocal ?? 0
+    const cachedBadge = unreadCounts.value[`${me.domain}:${chatId}`] || 0
+
     selectedChatId.value = chatId
     pane.value = "chat"
-    markRead(chat, me.username)
-    await ensureMessages(chat, null)
+    unreadSeparator.value = null
+
+    clearNotificationBuffer(`${me.domain}:${chatId}`)
+    if (typeof window !== "undefined" && (window as any).AndroidBridge?.clearNotification) {
+      try { (window as any).AndroidBridge.clearNotification(chatId) } catch {}
+    }
+    if (typeof window !== "undefined" && (window as any).AndroidBridge?.clearUnreadCount) {
+      try { (window as any).AndroidBridge.clearUnreadCount(chatId) } catch {}
+    }
+    unreadCounts.value[`${me.domain}:${chatId}`] = 0
+    persistUnreadCounts()
+
+    // Prune inactive threads in memory to keep DOM and memory lean across multiple rooms
+    for (const [key, t] of Object.entries(threads.value)) {
+      if (key !== `${me.domain}:${chatId}` && t.items.length > MESSAGE_BATCH) {
+        t.items = t.items.slice(-MESSAGE_BATCH)
+        t.hasMore = true
+        t.hasNewer = false
+      }
+    }
+
+    const initialBatch = wasUnread && cachedBadge > MESSAGE_BATCH
+      ? Math.min(cachedBadge + 10, 100)
+      : MESSAGE_BATCH
+
+    await ensureMessages(chat, null, initialBatch)
+
+    if (wasUnread) {
+      const thread = threadFor(chat.domain, chat.id)
+      while (
+        thread.hasMore &&
+        thread.items.length > 0 &&
+        thread.items[0].createdAt > lastSeen &&
+        thread.items.length < 200
+      ) {
+        await ensureMessages(chat, thread.items[0].id)
+      }
+
+      const unreadItems = thread.items.filter((m) => m.createdAt > lastSeen && m.sender !== me!.username)
+      if (unreadItems.length > 0) {
+        unreadSeparator.value = {
+          chatId: chat.id,
+          firstMessageId: unreadItems[0].id,
+          count: Math.max(unreadItems.length, cachedBadge),
+        }
+      } else if (cachedBadge > 0 && thread.items.length > 0) {
+        const sliceCount = Math.min(cachedBadge, thread.items.length)
+        const firstUnread = thread.items[thread.items.length - sliceCount]
+        unreadSeparator.value = {
+          chatId: chat.id,
+          firstMessageId: firstUnread.id,
+          count: cachedBadge,
+        }
+      }
+    }
+
     markRead(chat, me.username)
   }
 
   function showUsers() {
     const me = current.value
     if (me && selectedChat.value) markRead(selectedChat.value, me.username)
+    sidebarTab.value = "users"
     selectedChatId.value = null
+    unreadSeparator.value = null
     pane.value = "users"
   }
 
@@ -772,9 +914,15 @@ export const useAppStore = defineStore("app", () => {
     const me = current.value
     if (!me || !selectedChat.value) return
     markRead(selectedChat.value, me.username)
+    clearNotificationBuffer(`${selectedChat.value.domain}:${selectedChat.value.id}`)
+    unreadCounts.value[`${me.domain}:${selectedChat.value.id}`] = 0
+    persistUnreadCounts()
+    if (typeof window !== "undefined" && (window as any).AndroidBridge?.clearUnreadCount) {
+      try { (window as any).AndroidBridge.clearUnreadCount(selectedChat.value.id) } catch {}
+    }
   }
 
-  async function ensureMessages(chat: Chat, beforeId: string | null) {
+  async function ensureMessages(chat: Chat, beforeId: string | null, batchSize = MESSAGE_BATCH) {
     const me = current.value
     if (!me || me.domain !== chat.domain) return
     const thread = threadFor(chat.domain, chat.id)
@@ -788,17 +936,23 @@ export const useAppStore = defineStore("app", () => {
         chat.id,
         "old",
         beforeId,
-        MESSAGE_BATCH,
+        batchSize,
       ))
       const incoming = raw.map((message) => normalizeMessage(chat.domain, chat.id, message))
       if (!beforeId) {
         thread.items = incoming
+        thread.hasNewer = false
       } else {
         const known = new Set(thread.items.map((message) => message.id))
         const older = incoming.filter((message) => message.id !== beforeId && !known.has(message.id))
         thread.items = [...older, ...thread.items]
+        // Sliding window: prune excess newer messages from the bottom
+        if (thread.items.length > WINDOW_LIMIT) {
+          thread.items = thread.items.slice(0, WINDOW_LIMIT)
+          thread.hasNewer = true
+        }
       }
-      thread.hasMore = raw.length >= MESSAGE_BATCH
+      thread.hasMore = raw.length >= batchSize
       thread.loaded = true
       const newest = thread.items[thread.items.length - 1]
       if (newest) chat.lastMessageAt = Math.max(chat.lastMessageAt, newest.createdAt)
@@ -816,6 +970,44 @@ export const useAppStore = defineStore("app", () => {
     const oldest = thread.items[0]
     if (!oldest) return
     await ensureMessages(chat, oldest.id)
+  }
+
+  async function loadNewer() {
+    const chat = selectedChat.value
+    if (!chat) return
+    const thread = threadFor(chat.domain, chat.id)
+    if (thread.loading || !thread.hasNewer) return
+    const me = current.value
+    if (!me || me.domain !== chat.domain) return
+    const newest = thread.items[thread.items.length - 1]
+    if (!newest) return
+    thread.loading = true
+    try {
+      const raw = await withSession(me, (session) => api.listMessages(
+        session.domain,
+        session.accessToken,
+        chat.id,
+        "new",
+        newest.id,
+        MESSAGE_BATCH,
+      ))
+      const incoming = raw.map((message) => normalizeMessage(chat.domain, chat.id, message))
+      const known = new Set(thread.items.map((message) => message.id))
+      const newer = incoming.filter((message) => message.id !== newest.id && !known.has(message.id))
+      if (newer.length > 0) {
+        thread.items = [...thread.items, ...newer]
+        // Sliding window: prune excess older messages from the top
+        if (thread.items.length > WINDOW_LIMIT) {
+          thread.items = thread.items.slice(thread.items.length - WINDOW_LIMIT)
+          thread.hasMore = true
+        }
+      }
+      thread.hasNewer = raw.length >= MESSAGE_BATCH
+    } catch (cause) {
+      error.value = errorText(cause)
+    } finally {
+      thread.loading = false
+    }
   }
 
   async function revealMessage(messageId: string): Promise<boolean> {
@@ -940,6 +1132,7 @@ export const useAppStore = defineStore("app", () => {
     if (uploaded.length) body.attachments = uploaded
     if (repliedTo) body.replied_to = repliedTo
     await withSession(me, (session) => api.sendMessage(session.domain, session.accessToken, chat.id, body))
+    unreadSeparator.value = null
     if (uploadError) error.value = uploadError
   }
 
@@ -1037,6 +1230,17 @@ export const useAppStore = defineStore("app", () => {
         if (data.is_blacklisted) session.reachable = session.reachable.filter((name) => name !== data.username)
         else if (!session.reachable.includes(data.username)) session.reachable.push(data.username)
         persist()
+      } else if (child === "muted_chats" && typeof data.chat_id === "string") {
+        const session = findSession(username, domain)
+        if (!session) return
+        if (!session.mutedChats) session.mutedChats = []
+        if (data.is_muted && !session.mutedChats.includes(data.chat_id)) {
+          session.mutedChats.push(data.chat_id)
+        } else if (!data.is_muted) {
+          session.mutedChats = session.mutedChats.filter((id) => id !== data.chat_id)
+        }
+        persist()
+        syncNativeBridge(session)
       } else if (child === "status" && typeof data.username === "string" && typeof data.status === "string") {
         const user = userByName(domain, data.username)
         if (user) user.status = data.status
@@ -1108,6 +1312,15 @@ export const useAppStore = defineStore("app", () => {
       } else if (child === "seen" && typeof data.last_seen === "number") {
         const self = chat.participants.find((participant) => participant.username === username)
         if (self) self.lastSeenLocal = Math.max(self.lastSeenLocal, data.last_seen)
+        if (current.value && username === current.value.username) {
+          const key = `${domain}:${chat.id}`
+          unreadCounts.value[key] = 0
+          if (unreadSeparator.value?.chatId === chat.id) {
+            unreadSeparator.value = null
+          }
+          persistUnreadCounts()
+          syncNativeUnreadCounts()
+        }
       }
       return
     }
@@ -1116,6 +1329,34 @@ export const useAppStore = defineStore("app", () => {
       else if (event.type === "delete" && typeof data.message_id === "string") {
         const thread = threads.value[`${domain}:${data.chat_id}`]
         if (thread) thread.items = thread.items.filter((message) => message.id !== data.message_id)
+
+        const key = `${domain}:${data.chat_id}`
+        if (unreadCounts.value[key] && unreadCounts.value[key] > 0) {
+          unreadCounts.value[key] = Math.max(0, unreadCounts.value[key] - 1)
+          persistUnreadCounts()
+          syncNativeUnreadCounts()
+        }
+
+        if (unreadSeparator.value && unreadSeparator.value.chatId === data.chat_id) {
+          if (unreadSeparator.value.firstMessageId === data.message_id) {
+            const me = current.value
+            const chat = chats.value.find((c) => c.domain === domain && c.id === data.chat_id)
+            const selfPart = chat?.participants.find((p) => p.username === me?.username)
+            const lastSeen = selfPart?.lastSeenLocal ?? 0
+            const nextUnread = thread?.items.find((m) => m.createdAt > lastSeen && m.sender !== me?.username)
+            if (nextUnread) {
+              unreadSeparator.value.firstMessageId = nextUnread.id
+              unreadSeparator.value.count = Math.max(0, unreadSeparator.value.count - 1)
+            } else {
+              unreadSeparator.value = null
+            }
+          } else {
+            unreadSeparator.value.count = Math.max(0, unreadSeparator.value.count - 1)
+            if (unreadSeparator.value.count <= 0) {
+              unreadSeparator.value = null
+            }
+          }
+        }
       }
       return
     }
@@ -1132,13 +1373,77 @@ export const useAppStore = defineStore("app", () => {
   function addLiveMessage(domain: string, chatId: string, raw: MessageRaw) {
     const message = normalizeMessage(domain, chatId, { ...raw, chat_id: chatId })
     const thread = threads.value[`${domain}:${chatId}`]
-    if (thread?.loaded && !thread.items.some((entry) => entry.id === message.id)) thread.items.push(message)
+    if (thread?.loaded && !thread.hasNewer && !thread.items.some((entry) => entry.id === message.id)) {
+      thread.items.push(message)
+      if (thread.items.length > WINDOW_LIMIT) {
+        thread.items = thread.items.slice(thread.items.length - WINDOW_LIMIT)
+        thread.hasMore = true
+      }
+    }
     const chat = chats.value.find((entry) => entry.domain === domain && entry.id === chatId)
     if (!chat) return
     chat.lastMessageAt = Math.max(chat.lastMessageAt, message.createdAt)
     const me = current.value
-    if (me && selectedChatId.value === chatId && me.domain === domain && pane.value === "chat") {
+    const isChatOpen = selectedChatId.value !== null && pane.value === "chat"
+    const isSameChat = isChatOpen && selectedChatId.value === chatId && me?.domain === domain
+    const isForeground = typeof document !== "undefined" && !document.hidden
+
+    const isActivelyReading = isSameChat && isForeground && document.hasFocus()
+    if (isActivelyReading) {
       markRead(chat, me.username)
+      clearNotificationBuffer(`${domain}:${chatId}`)
+      if (typeof window !== "undefined" && (window as any).AndroidBridge?.clearNotification) {
+        try { (window as any).AndroidBridge.clearNotification(chatId) } catch {}
+      }
+      unreadCounts.value[`${domain}:${chatId}`] = 0
+      persistUnreadCounts()
+    } else {
+      const key = `${domain}:${chatId}`
+      unreadCounts.value[key] = (unreadCounts.value[key] ?? (unread(chat) ? 1 : 0)) + 1
+      persistUnreadCounts()
+
+      // Notification policy:
+      // Case #1 (Foreground & a chat selected): Chime + Push notification for other chats
+      // Case #2 (Foreground & NO chat selected): Chime ONLY (no push notification)
+      // Case #3 (Background/minimized): Chime (first msg) + Push notification
+      if (me && message.sender !== me.username && !isMuted(chatId)) {
+        const senderName = message.sender
+        const chatTitle = displayName(chat)
+        const text = message.content.trim() || (message.attachments.length > 0 ? "[Attachment]" : "Sent a message")
+
+        const isAndroidBridge = typeof window !== "undefined" && Boolean((window as any).AndroidBridge)
+        if (isAndroidBridge && !isForeground) {
+          // Inside Android app: When minimized or backgrounded, OuiChatPushService handles all notifications and chime.
+          // Exit early to prevent duplicate chime and sound overlapping.
+          return
+        }
+
+        let shouldPushBanner = false
+        if (isAndroidBridge) {
+          // Inside Android app in foreground: only push banner for messages from other chats (Case #1)
+          shouldPushBanner = isForeground && isChatOpen && selectedChatId.value !== chatId
+        } else {
+          // Standard desktop browser environment
+          if (isForeground) {
+            shouldPushBanner = isChatOpen && selectedChatId.value !== chatId
+          } else {
+            shouldPushBanner = true
+          }
+        }
+
+        queueDesktopNotification({
+          chatId,
+          chatKey: `${domain}:${chatId}`,
+          sender: senderName,
+          chatTitle,
+          isGroup: chat.type === "group",
+          text,
+          showPopup: shouldPushBanner,
+          onClick: () => {
+            void selectChat(chatId)
+          },
+        })
+      }
     }
   }
 
@@ -1153,8 +1458,88 @@ export const useAppStore = defineStore("app", () => {
     }
   }
 
+  function isMuted(chatId: string): boolean {
+    const me = current.value
+    if (!me || !me.mutedChats) return false
+    return me.mutedChats.includes(chatId)
+  }
+
+  async function toggleMuteChat(chatId: string) {
+    const me = requireCurrent()
+    if (!me.mutedChats) me.mutedChats = []
+    const currentlyMuted = me.mutedChats.includes(chatId)
+    const next = !currentlyMuted
+    await withSession(me, (session) => api.setMutedChat(session.domain, session.accessToken, chatId, next))
+    if (next) {
+      if (!me.mutedChats.includes(chatId)) me.mutedChats.push(chatId)
+    } else {
+      me.mutedChats = me.mutedChats.filter((id) => id !== chatId)
+    }
+    persist()
+    syncNativeBridge(me)
+  }
+
+  function syncAllNativeSessions() {
+    if (typeof window !== "undefined" && (window as any).AndroidBridge) {
+      try {
+        const payload = sessions.value.map((s) => ({
+          username: s.username,
+          domain: s.domain,
+          accessToken: s.accessToken,
+          refreshToken: s.refreshToken,
+        }))
+        if (typeof (window as any).AndroidBridge.syncSessions === "function") {
+          (window as any).AndroidBridge.syncSessions(JSON.stringify(payload))
+        } else if (payload[0] && typeof (window as any).AndroidBridge.onLoginSuccess === "function") {
+          (window as any).AndroidBridge.onLoginSuccess(payload[0].domain, payload[0].username, payload[0].accessToken)
+        }
+        if (current.value && typeof (window as any).AndroidBridge.syncMutedChats === "function") {
+          (window as any).AndroidBridge.syncMutedChats(JSON.stringify(current.value.mutedChats || []))
+        }
+      } catch (err) {
+        console.error("[NativeBridge] sync error:", err)
+      }
+    }
+  }
+
+  function syncNativeBridge(_session?: Session) {
+    syncAllNativeSessions()
+  }
+
+  function unreadBadge(chat: Chat): string | null {
+    const key = `${chat.domain}:${chat.id}`
+    const isChatUnread = unread(chat)
+    if (!isChatUnread) {
+      unreadCounts.value[key] = 0
+      return null
+    }
+    const raw = unreadCounts.value[key]
+    const count = (raw && raw > 0) ? raw : 1
+    if (count > 9) return "9+"
+    return String(count)
+  }
+
+  function deselectChat() {
+    const me = current.value
+    if (me && selectedChat.value) {
+      markRead(selectedChat.value, me.username)
+      unreadCounts.value[`${me.domain}:${selectedChat.value.id}`] = 0
+      persistUnreadCounts()
+    }
+    selectedChatId.value = null
+    unreadSeparator.value = null
+    pane.value = "users"
+  }
+
   async function init() {
-    const saved = sessionStorage.getItem(STORAGE_KEY)
+    const savedUnread = getSavedItem(UNREAD_STORAGE_KEY)
+    if (savedUnread) {
+      try {
+        unreadCounts.value = JSON.parse(savedUnread)
+      } catch {}
+    }
+
+    const saved = getSavedItem(STORAGE_KEY)
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as Session[]
@@ -1163,6 +1548,7 @@ export const useAppStore = defineStore("app", () => {
           .map((session) => ({
             ...session,
             blacklist: session.blacklist ?? [],
+            mutedChats: session.mutedChats ?? [],
             reachable: session.reachable ?? [],
             status: session.status || "Hi there!",
             pictureId: session.pictureId ?? null,
@@ -1178,20 +1564,72 @@ export const useAppStore = defineStore("app", () => {
         hub.connect(session.username, session.domain, session.accessToken)
         scheduleRefresh(session)
         kept.push(session)
-      } catch {
-        hub.disconnect(session.username, session.domain)
+      } catch (err) {
+        console.warn("[OuiChat] Could not load domain on startup for", session.username, err)
+        const ok = await recover(session, false)
+        if (ok) {
+          try {
+            await loadDomain(session, false)
+            hub.connect(session.username, session.domain, session.accessToken)
+            scheduleRefresh(session)
+            kept.push(session)
+          } catch {
+            logout(session.username, session.domain)
+          }
+        }
       }
     }
     sessions.value = kept
-    const wanted = sessionStorage.getItem(CURRENT_KEY)
+    const wanted = getSavedItem(CURRENT_KEY)
     const match = kept.find((session) => sessionKey(session.username, session.domain) === wanted)
     currentKey.value = match ? sessionKey(match.username, match.domain) : (kept[0] ? sessionKey(kept[0].username, kept[0].domain) : null)
     persist()
+    const active = match ?? kept[0]
+    if (active) {
+      syncNativeBridge(active)
+    }
     ready.value = true
+    readyResolver?.()
+    syncNativeUnreadCounts()
+
+    if (typeof window !== "undefined" && (window as any).AndroidBridge?.consumePendingChatId) {
+      const nativePending = (window as any).AndroidBridge.consumePendingChatId()
+      if (nativePending) {
+        pendingChatId.value = nativePending
+      }
+    }
+
+    if (pendingChatId.value) {
+      const target = pendingChatId.value
+      pendingChatId.value = null
+      void selectChat(target)
+    }
+
+    if (typeof window !== "undefined") {
+      (window as any).selectChatFromNative = (chatId: string) => {
+        void selectChat(chatId)
+      }
+      (window as any).markChatReadFromNative = (chatId: string) => {
+        if (!current.value) return
+        const key = `${current.value.domain}:${chatId}`
+        unreadCounts.value[key] = 0
+        if (unreadSeparator.value?.chatId === chatId) {
+          unreadSeparator.value = null
+        }
+        const chat = chats.value.find((c) => c.domain === current.value!.domain && c.id === chatId)
+        if (chat) {
+          const self = chat.participants.find((p) => p.username === current.value!.username)
+          if (self) self.lastSeenLocal = Math.max(self.lastSeenLocal, Date.now())
+        }
+        persistUnreadCounts()
+        syncNativeUnreadCounts()
+      }
+    }
   }
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return
+    syncNativeUnreadCounts()
     for (const session of sessions.value) {
       if (!accessTokenFresh(session.accessToken, REFRESH_LEAD_MS)) void recover(session, true)
     }
@@ -1199,6 +1637,7 @@ export const useAppStore = defineStore("app", () => {
 
   return {
     ready,
+    waitForReady,
     sessions,
     current,
     visibleChats,
@@ -1206,8 +1645,8 @@ export const useAppStore = defineStore("app", () => {
     domainUsers,
     selectedChat,
     pane,
+    sidebarTab,
     error,
-    relogin,
     displayName,
     displayDescription,
     chatPicture,
@@ -1228,11 +1667,17 @@ export const useAppStore = defineStore("app", () => {
     switchTo,
     logoutCurrent,
     selectChat,
+    pendingChatId,
     showUsers,
     showDetails,
     showChat,
     markSelectedRead,
+    unreadBadge,
+    isMuted,
+    toggleMuteChat,
+    deselectChat,
     loadOlder,
+    loadNewer,
     revealMessage,
     openDirect,
     createGroup,
@@ -1250,8 +1695,9 @@ export const useAppStore = defineStore("app", () => {
     deleteChatMessage,
     changeStatus,
     changeOwnIcon,
-    submitRelogin,
-    cancelRelogin,
+    unreadSeparator,
+    isChatPaused,
+    pauseChat,
     init,
   }
 })
