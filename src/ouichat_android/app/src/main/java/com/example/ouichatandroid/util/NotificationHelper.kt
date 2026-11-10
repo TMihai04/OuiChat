@@ -243,23 +243,26 @@ object NotificationHelper {
             .build()
 
         val messagingStyle = NotificationCompat.MessagingStyle(mePerson)
-            .setConversationTitle(title)
-            .setGroupConversation(true)
+            .setGroupConversation(stack.isGroup)
 
-        val displayed = stack.messages.takeLast(4)
-        val extraCount = stack.totalCount - displayed.size
-
-        if (extraCount > 0) {
-            val countStr = if (extraCount > 9) "9+" else extraCount.toString()
-            val overflowText = "... ($countStr more messages)"
-            val earliestTime = displayed.firstOrNull()?.timestamp ?: System.currentTimeMillis()
-            val overflowPerson = Person.Builder()
-                .setName("...")
-                .build()
-            messagingStyle.addMessage(overflowText, earliestTime - 1, overflowPerson)
+        if (stack.isGroup) {
+            messagingStyle.setConversationTitle(title)
         }
 
-        for (msg in displayed) {
+        val displayed = stack.messages.takeLast(4)
+        val extExtra = (stack.totalCount - displayed.size).coerceAtLeast(0)
+        val extStr = if (extExtra >= 10) "9+" else extExtra.toString()
+
+        val colCount = stack.totalCount
+        val colStr = if (colCount >= 10) "9+" else colCount.toString()
+
+        for ((index, msg) in displayed.withIndex()) {
+            val text = if (index == 0 && extExtra > 0) {
+                "... ($extStr more messages)\n${msg.content}"
+            } else {
+                msg.content
+            }
+
             val senderAvatar = (if (!msg.senderPictureId.isNullOrBlank()) {
                 AvatarManager.getCachedAvatar(context, msg.senderPictureId)
             } else null) ?: AvatarManager.getDefaultAvatar(context, isGroup = false)
@@ -271,7 +274,7 @@ object NotificationHelper {
                 .build()
 
             messagingStyle.addMessage(
-                msg.content,
+                text,
                 msg.timestamp,
                 senderPerson
             )
@@ -281,15 +284,8 @@ object NotificationHelper {
         val vibrationPattern = longArrayOf(0, 250, 200, 250)
 
         val latestMessage = displayed.lastOrNull()
-        val collapsedText = if (extraCount > 0) {
-            val countStr = if (extraCount > 9) "9+" else extraCount.toString()
-            if (latestMessage != null && stack.isGroup) {
-                "${latestMessage.sender}: ${latestMessage.content} (... $countStr more)"
-            } else if (latestMessage != null) {
-                "${latestMessage.content} (... $countStr more)"
-            } else {
-                "New message (... $countStr more)"
-            }
+        val collapsedText = if (colCount > 1) {
+            "$colStr new messages"
         } else {
             if (latestMessage != null && stack.isGroup) {
                 "${latestMessage.sender}: ${latestMessage.content}"
@@ -323,6 +319,7 @@ object NotificationHelper {
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(BRAND_COLOR)
             .setGroup(NOTIFICATION_GROUP_KEY)
+            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
             .setLargeIcon(conversationAvatar)
             .setShortcutId(chatId)
             .setContentIntent(pendingIntent)
@@ -344,7 +341,14 @@ object NotificationHelper {
             activeNotifiedChats.add(chatId)
         }
 
-        if (!stack.recipientUser.isNullOrBlank()) {
+        if (colCount > 1) {
+            val countHeader = "$colStr new messages"
+            if (!stack.recipientUser.isNullOrBlank()) {
+                notificationBuilder.setSubText("$countHeader • to @${stack.recipientUser}")
+            } else {
+                notificationBuilder.setSubText(countHeader)
+            }
+        } else if (!stack.recipientUser.isNullOrBlank()) {
             notificationBuilder.setSubText("to @${stack.recipientUser}")
         }
 
@@ -400,7 +404,7 @@ object NotificationHelper {
     fun updateGroupSummary(context: Context) {
         createChannels(context)
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (activeNotifiedChats.size > 1) {
+        if (activeNotifiedChats.size >= 2) {
             val totalMessages = chatStacks.values.sumOf { it.totalCount }
             val chatCount = activeNotifiedChats.size
             val summaryText = "$totalMessages new messages from $chatCount chats"
@@ -422,6 +426,10 @@ object NotificationHelper {
                 .setContentText(summaryText)
                 .setGroup(NOTIFICATION_GROUP_KEY)
                 .setGroupSummary(true)
+                .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+                .setOnlyAlertOnce(true)
+                .setSound(null)
+                .setVibrate(null)
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)

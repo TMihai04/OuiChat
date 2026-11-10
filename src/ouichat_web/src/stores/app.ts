@@ -1315,9 +1315,6 @@ export const useAppStore = defineStore("app", () => {
         if (current.value && username === current.value.username) {
           const key = `${domain}:${chat.id}`
           unreadCounts.value[key] = 0
-          if (unreadSeparator.value?.chatId === chat.id) {
-            unreadSeparator.value = null
-          }
           persistUnreadCounts()
           syncNativeUnreadCounts()
         }
