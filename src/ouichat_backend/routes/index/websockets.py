@@ -118,16 +118,19 @@ def _note_disconnect(username: str) -> None:
 async def global_comm_ws(
     websocket: WebSocket,
     payload: dict = Depends(ws_decode_access_token),
+    presence: bool = True,
 ):
-    logger.debug(f"weboscket connected - payload: {payload}")
+    logger.debug(f"websocket connected - payload: {payload} - presence: {presence}")
 
     username = payload.get("sub")
-    ws_manager.cancel_offline(username)
+    if presence:
+        ws_manager.cancel_offline(username)
     await ws_manager.connect(
         username,
-        websocket
+        websocket,
+        presence=presence
     )
-    if ws_manager.connection_count(username) == 1:
+    if presence and ws_manager.connection_count(username) == 1:
         await _broadcast_presence(username, True)
     await _send_presence_snapshot(websocket)
 

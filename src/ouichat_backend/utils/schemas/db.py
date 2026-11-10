@@ -27,7 +27,11 @@ class UserProfileDocument(BaseModel):
 class UserPreferencesDocument(BaseModel):
     blacklist: list[str] = Field(
         default=[],
-        description="List of usernames this user has 'blocked'"
+        description="List of usernames this user has 'blocked'",
+    )
+    muted_chats: list[str] = Field(
+        default=[],
+        description="List of conversation IDs muted by this user",
     )
 
 

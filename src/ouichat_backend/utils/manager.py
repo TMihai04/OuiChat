@@ -12,13 +12,14 @@ from typing import Awaitable, Callable, Literal
 class WebsocketManager:
     def __init__(self):
         self.active_connections = defaultdict(list)
+        self.presence_connections = defaultdict(list)
         self._offline_tasks: dict[str, asyncio.Task] = {}
 
     def connection_count(self, username: str) -> int:
-        return len(self.active_connections.get(username) or [])
+        return len(self.presence_connections.get(username) or [])
 
     def online_usernames(self) -> list[str]:
-        names = {name for name, sockets in self.active_connections.items() if sockets}
+        names = {name for name, sockets in self.presence_connections.items() if sockets}
         names.update(self._offline_tasks)
         return sorted(names)
 
@@ -47,13 +48,16 @@ class WebsocketManager:
     async def connect(
         self,
         username: str,
-        websocket: WebSocket
+        websocket: WebSocket,
+        presence: bool = True
     ) -> None:
         """Accepts the incoming websocket connection and saves the instance for the given user."""
         await websocket.accept()
         self.active_connections[username].append(websocket)
+        if presence:
+            self.presence_connections[username].append(websocket)
 
-        logger.debug(f"WSManager: Connected websocket - username: {username} - connections: {len(self.active_connections.get(username))}")
+        logger.debug(f"WSManager: Connected websocket - username: {username} - connections: {len(self.active_connections.get(username))} - presence: {presence}")
     
     async def notify(
         self,
@@ -111,7 +115,11 @@ class WebsocketManager:
     
         try:
             self.active_connections.get(username).remove(webscoket)
-        except ValueError:
+        except (ValueError, AttributeError):
+            pass
+        try:
+            self.presence_connections.get(username).remove(webscoket)
+        except (ValueError, AttributeError):
             pass
 
         logger.debug(f"WSManager: Disconnected websocket - username: {username} - connections: {len(self.active_connections.get(username))}")

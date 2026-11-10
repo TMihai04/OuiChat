@@ -5,6 +5,14 @@ from typing import Literal
 from typing_extensions import Self
 
 
+class MuteChatBody(BaseModel):
+    chat_id: str = Field(
+        ...,
+        description="ID of the conversation to mute or unmute",
+        min_length=1
+    )
+
+
 class BlacklistBody(BaseModel):
     who: str = Field(
         ...,

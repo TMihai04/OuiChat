@@ -79,7 +79,7 @@ def validate_file_id(file_id: str) -> FileId:
 async def validate_file(
     file_id: FileId = Depends(validate_file_id)
 ) -> AttachmentDocument:
-    attachment_doc = await db.get_attachment(str(file_id))
+    attachment_doc = await db.get_attachment(file_id.id)
     if not attachment_doc:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND, "Attachment not found"

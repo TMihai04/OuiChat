@@ -255,6 +255,8 @@ async def update_user(
     status: str | None = None,
     pic_id: str | None = None,
     login: int | None = None,
+    mute_add: str | None = None,
+    mute_del: str | None = None,
 ):
     upd = None
     if bl_add is not None:
@@ -304,6 +306,58 @@ async def update_user(
                 data={
                     "username": username,
                     "is_blacklisted": False
+                }
+            ),
+            mode="binary"
+        )
+    
+    if mute_add is not None:
+        upd = await _update_user(
+            username,
+            update={
+                "$addToSet": {"preferences.muted_chats": mute_add}
+            }
+        )
+        if upd.modified_count == 0:
+            return upd
+        
+        # Notify websocket of update
+        event_id = get_uuid4()
+        await ws_manager.notify_user(
+            username=username,
+            payload=WebsocketUpdate(
+                event_id=event_id,
+                type="update",
+                scope="user.muted_chats",
+                data={
+                    "chat_id": mute_add,
+                    "is_muted": True
+                }
+            ),
+            mode="binary"
+        )
+    
+    if mute_del is not None:
+        upd = await _update_user(
+            username,
+            update={
+                "$pull": {"preferences.muted_chats": {"$eq": mute_del}}
+            }
+        )
+        if upd.modified_count == 0:
+            return upd
+        
+        # Notify websocket of update
+        event_id = get_uuid4()
+        await ws_manager.notify_user(
+            username=username,
+            payload=WebsocketUpdate(
+                event_id=event_id,
+                type="update",
+                scope="user.muted_chats",
+                data={
+                    "chat_id": mute_del,
+                    "is_muted": False
                 }
             ),
             mode="binary"
@@ -792,6 +846,12 @@ async def add_message(
     # FIFO MODIFIED
     ws_data = new_message.model_dump()
     ws_data["chat_id"] = chat.conversation_id
+    ws_data["chat_type"] = chat.type
+    ws_data["chat_name"] = chat.profile.name if chat.type == "group" else None
+    sender_user = await get_user(new_message.sender)
+    sender_pic = sender_user.profile.picture_id if sender_user and sender_user.profile else None
+    ws_data["sender_picture_id"] = sender_pic
+    ws_data["chat_picture_id"] = chat.profile.picture_id if chat.type == "group" else sender_pic
 
     for part in chat.preferences.participants:
         await ws_manager.notify_user(

@@ -31,7 +31,7 @@ router = APIRouter(
     tags=[EndpointTags.MESSAGES]
 )
 
-_SEND_WINDOW_SECONDS = 2
+_SEND_WINDOW_SECONDS = 1
 _SEND_LIMIT = 5
 _SEND_TIMEOUT_SECONDS = 10
 _send_times: dict[tuple[str, str], list[float]] = {}
@@ -246,6 +246,7 @@ async def send_message(
     logger.debug(f"Sending message - username: {username} - chat_id: {chat.conversation_id} - content: {content_preview} - attachments: {body.attachments}")
 
     message_id = str(uuid.uuid4())
+    now = timestamp_now()
 
     new_message = MessageDocument(
         message_id=message_id,
@@ -253,8 +254,8 @@ async def send_message(
         content=body.content,
         attachments=body.attachments,
         replied_to=body.replied_to,
-        created_at=timestamp_now(),
-        updated_at=timestamp_now()
+        created_at=now,
+        updated_at=now
     )
 
     await db.add_message(
