@@ -184,7 +184,7 @@ object NotificationHelper {
         renderNotification(context, chatId, stack, alertOnce = isAlreadyNotified)
     }
 
-    private fun renderNotification(
+    private fun postChildNotification(
         context: Context,
         chatId: String,
         stack: ChatNotificationStack,
@@ -249,20 +249,10 @@ object NotificationHelper {
             messagingStyle.setConversationTitle(title)
         }
 
-        val displayed = stack.messages.takeLast(4)
-        val extExtra = (stack.totalCount - displayed.size).coerceAtLeast(0)
-        val extStr = if (extExtra >= 10) "9+" else extExtra.toString()
-
+        val displayed = stack.messages.takeLast(7)
         val colCount = stack.totalCount
-        val colStr = if (colCount >= 10) "9+" else colCount.toString()
 
-        for ((index, msg) in displayed.withIndex()) {
-            val text = if (index == 0 && extExtra > 0) {
-                "... ($extStr more messages)\n${msg.content}"
-            } else {
-                msg.content
-            }
-
+        for (msg in displayed) {
             val senderAvatar = (if (!msg.senderPictureId.isNullOrBlank()) {
                 AvatarManager.getCachedAvatar(context, msg.senderPictureId)
             } else null) ?: AvatarManager.getDefaultAvatar(context, isGroup = false)
@@ -274,7 +264,7 @@ object NotificationHelper {
                 .build()
 
             messagingStyle.addMessage(
-                text,
+                msg.content,
                 msg.timestamp,
                 senderPerson
             )
@@ -284,14 +274,10 @@ object NotificationHelper {
         val vibrationPattern = longArrayOf(0, 250, 200, 250)
 
         val latestMessage = displayed.lastOrNull()
-        val collapsedText = if (colCount > 1) {
-            "$colStr new messages"
+        val collapsedText = if (latestMessage != null && stack.isGroup) {
+            "${latestMessage.sender}: ${latestMessage.content}"
         } else {
-            if (latestMessage != null && stack.isGroup) {
-                "${latestMessage.sender}: ${latestMessage.content}"
-            } else {
-                latestMessage?.content ?: "New message"
-            }
+            latestMessage?.content ?: "New message"
         }
 
         // Mark as read action
@@ -317,14 +303,17 @@ object NotificationHelper {
             .setContentText(collapsedText)
             .setStyle(messagingStyle)
             .setSmallIcon(R.drawable.ic_notification)
+            .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
             .setColor(BRAND_COLOR)
             .setGroup(NOTIFICATION_GROUP_KEY)
+            .setGroupSummary(false)
             .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
             .setLargeIcon(conversationAvatar)
             .setShortcutId(chatId)
             .setContentIntent(pendingIntent)
             .addAction(markAsReadAction)
             .setAutoCancel(true)
+            .setNumber(colCount)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -338,23 +327,29 @@ object NotificationHelper {
                 .setSound(soundUri)
                 .setVibrate(vibrationPattern)
                 .setOnlyAlertOnce(false)
-            activeNotifiedChats.add(chatId)
         }
 
-        if (colCount > 1) {
-            val countHeader = "$colStr new messages"
-            if (!stack.recipientUser.isNullOrBlank()) {
-                notificationBuilder.setSubText("$countHeader • to @${stack.recipientUser}")
-            } else {
-                notificationBuilder.setSubText(countHeader)
-            }
-        } else if (!stack.recipientUser.isNullOrBlank()) {
+        if (!stack.recipientUser.isNullOrBlank()) {
             notificationBuilder.setSubText("to @${stack.recipientUser}")
         }
 
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(notifId, notificationBuilder.build())
-        updateGroupSummary(context)
+    }
+
+    private fun renderNotification(
+        context: Context,
+        chatId: String,
+        stack: ChatNotificationStack,
+        alertOnce: Boolean
+    ) {
+        activeNotifiedChats.add(chatId)
+
+        // 1. Post/update Group Summary FIRST and resync any existing sibling children
+        updateGroupSummary(context, excludeChatId = chatId)
+
+        // 2. Post incoming Child notification SECOND into the active bundle
+        postChildNotification(context, chatId, stack, alertOnce = alertOnce)
     }
 
     fun updateNotificationIcon(context: Context, chatId: String, bitmap: Bitmap) {
@@ -401,13 +396,25 @@ object NotificationHelper {
         }
     }
 
-    fun updateGroupSummary(context: Context) {
+    fun updateGroupSummary(context: Context, excludeChatId: String? = null) {
         createChannels(context)
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (activeNotifiedChats.size >= 2) {
             val totalMessages = chatStacks.values.sumOf { it.totalCount }
             val chatCount = activeNotifiedChats.size
+            val summaryTitle = "OuiChat"
             val summaryText = "$totalMessages new messages from $chatCount chats"
+
+            val inboxStyle = NotificationCompat.InboxStyle()
+                .setBigContentTitle(summaryTitle)
+                .setSummaryText(summaryText)
+
+            for (chat in activeNotifiedChats) {
+                val s = chatStacks[chat] ?: continue
+                val lastMsg = s.messages.lastOrNull() ?: continue
+                val senderName = if (s.isGroup) "${lastMsg.sender} (${s.roomTitle ?: "Group"})" else lastMsg.sender
+                inboxStyle.addLine("$senderName: ${lastMsg.content}")
+            }
 
             val summaryIntent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -421,13 +428,16 @@ object NotificationHelper {
 
             val summaryNotification = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
                 .setSmallIcon(R.drawable.ic_notification)
+                .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
                 .setColor(BRAND_COLOR)
-                .setContentTitle("OuiChat")
+                .setContentTitle(summaryTitle)
                 .setContentText(summaryText)
+                .setStyle(inboxStyle)
                 .setGroup(NOTIFICATION_GROUP_KEY)
                 .setGroupSummary(true)
                 .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
                 .setOnlyAlertOnce(true)
+                .setNumber(totalMessages)
                 .setSound(null)
                 .setVibrate(null)
                 .setContentIntent(pendingIntent)
@@ -436,8 +446,24 @@ object NotificationHelper {
                 .build()
 
             manager.notify(SUMMARY_NOTIFICATION_ID, summaryNotification)
+
+            // Resync all sibling active chats so Android immediately binds them into the new summary bundle
+            for (otherChatId in activeNotifiedChats) {
+                if (otherChatId != excludeChatId) {
+                    val otherStack = chatStacks[otherChatId] ?: continue
+                    postChildNotification(context, otherChatId, otherStack, alertOnce = true)
+                }
+            }
         } else {
             manager.cancel(SUMMARY_NOTIFICATION_ID)
+            // If transitioning to exactly 1 active chat, re-notify it so it displays as a clean standalone card
+            val remainingChatId = activeNotifiedChats.firstOrNull()
+            if (remainingChatId != null && remainingChatId != excludeChatId) {
+                val remainingStack = chatStacks[remainingChatId]
+                if (remainingStack != null) {
+                    postChildNotification(context, remainingChatId, remainingStack, alertOnce = true)
+                }
+            }
         }
     }
 
