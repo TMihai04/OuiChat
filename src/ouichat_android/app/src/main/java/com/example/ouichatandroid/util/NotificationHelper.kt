@@ -396,14 +396,24 @@ object NotificationHelper {
         }
     }
 
-    fun updateGroupSummary(context: Context, excludeChatId: String? = null) {
+    fun updateGroupSummary(context: Context, excludeChatId: String? = null, isDismissal: Boolean = false) {
         createChannels(context)
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (activeNotifiedChats.size >= 2) {
+        if (activeNotifiedChats.isNotEmpty()) {
             val totalMessages = chatStacks.values.sumOf { it.totalCount }
             val chatCount = activeNotifiedChats.size
             val summaryTitle = "OuiChat"
-            val summaryText = "$totalMessages new messages from $chatCount chats"
+            val summaryText = if (chatCount > 1) {
+                "$totalMessages new messages from $chatCount chats"
+            } else {
+                val s = activeNotifiedChats.firstOrNull()?.let { chatStacks[it] }
+                val title = if (s?.isGroup == true && !s.roomTitle.isNullOrBlank()) {
+                    s.roomTitle
+                } else {
+                    s?.messages?.lastOrNull()?.sender ?: "OuiChat"
+                }
+                if (totalMessages > 1) "$totalMessages new messages from $title" else "1 new message from $title"
+            }
 
             val inboxStyle = NotificationCompat.InboxStyle()
                 .setBigContentTitle(summaryTitle)
@@ -447,23 +457,17 @@ object NotificationHelper {
 
             manager.notify(SUMMARY_NOTIFICATION_ID, summaryNotification)
 
-            // Resync all sibling active chats so Android immediately binds them into the new summary bundle
-            for (otherChatId in activeNotifiedChats) {
-                if (otherChatId != excludeChatId) {
-                    val otherStack = chatStacks[otherChatId] ?: continue
-                    postChildNotification(context, otherChatId, otherStack, alertOnce = true)
+            // Resync sibling active chats only on incoming messages, NEVER on dismissal
+            if (!isDismissal) {
+                for (otherChatId in activeNotifiedChats) {
+                    if (otherChatId != excludeChatId) {
+                        val otherStack = chatStacks[otherChatId] ?: continue
+                        postChildNotification(context, otherChatId, otherStack, alertOnce = true)
+                    }
                 }
             }
         } else {
             manager.cancel(SUMMARY_NOTIFICATION_ID)
-            // If transitioning to exactly 1 active chat, re-notify it so it displays as a clean standalone card
-            val remainingChatId = activeNotifiedChats.firstOrNull()
-            if (remainingChatId != null && remainingChatId != excludeChatId) {
-                val remainingStack = chatStacks[remainingChatId]
-                if (remainingStack != null) {
-                    postChildNotification(context, remainingChatId, remainingStack, alertOnce = true)
-                }
-            }
         }
     }
 
@@ -481,7 +485,7 @@ object NotificationHelper {
         val notifId = chatId.hashCode() and 0x7FFFFFFF
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.cancel(notifId)
-        updateGroupSummary(context)
+        updateGroupSummary(context, isDismissal = true)
     }
 
     fun cancelAllMessageNotifications(context: Context) {

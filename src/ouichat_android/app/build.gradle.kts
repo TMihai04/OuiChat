@@ -41,11 +41,11 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
-            isMinifyEnabled = false
-            optimization {
-                enable = true
-                packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
-            }
+            isMinifyEnabled = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
     compileOptions {
@@ -76,4 +76,17 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
+}
+
+// Automatically syncs the compiled web dist files into Android assets before build
+tasks.register<Copy>("syncWebDistToAssets") {
+    val webDist = rootProject.projectDir.resolve("../ouichat_web/dist")
+    val assetsDir = projectDir.resolve("src/main/assets")
+    from(webDist)
+    into(assetsDir)
+    onlyIf { webDist.exists() }
+}
+
+tasks.named("preBuild") {
+    dependsOn("syncWebDistToAssets")
 }

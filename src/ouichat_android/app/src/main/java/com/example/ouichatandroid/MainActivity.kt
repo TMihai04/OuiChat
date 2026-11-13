@@ -16,6 +16,7 @@ import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -26,6 +27,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.webkit.WebViewAssetLoader
 import com.example.ouichatandroid.bridge.AndroidBridge
 import com.example.ouichatandroid.sensor.LightSensorManager
 import com.example.ouichatandroid.sensor.PocketSensorManager
@@ -54,6 +56,18 @@ class MainActivity : ComponentActivity() {
     // Supports both Emulator (10.0.2.2) and Physical USB Phone (localhost via adb reverse)
     private val devUrl: String
         get() = DeviceUtils.resolveHost("http://localhost:5173")
+
+    // If embedded web assets exist, load directly from inside the APK.
+    // Otherwise fall back to local dev server (Vite on port 5173).
+    private val appUrl: String
+        get() {
+            return try {
+                assets.open("index.html").close()
+                "https://appassets.androidplatform.net/index.html"
+            } catch (_: Exception) {
+                devUrl
+            }
+        }
 
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -101,6 +115,11 @@ class MainActivity : ComponentActivity() {
         bridge = AndroidBridge(this, lightSensorManager)
 
         // 3. Set up root container and WebView
+        val assetLoader = WebViewAssetLoader.Builder()
+            .setDomain("appassets.androidplatform.net")
+            .addPathHandler("/", WebViewAssetLoader.AssetsPathHandler(this))
+            .build()
+
         rootLayout = FrameLayout(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -129,6 +148,14 @@ class MainActivity : ComponentActivity() {
             addJavascriptInterface(bridge, "AndroidBridge")
 
             webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(
+                    view: WebView?,
+                    request: WebResourceRequest?
+                ): WebResourceResponse? {
+                    return request?.url?.let { assetLoader.shouldInterceptRequest(it) }
+                        ?: super.shouldInterceptRequest(view, request)
+                }
+
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     val savedMode = PreferenceManager.getThemeMode(this@MainActivity)
@@ -142,7 +169,7 @@ class MainActivity : ComponentActivity() {
                     error: WebResourceError?
                 ) {
                     super.onReceivedError(view, request, error)
-                    if (request?.isForMainFrame == true) {
+                    if (request?.isForMainFrame == true && !appUrl.startsWith("https://appassets.androidplatform.net")) {
                         showDevServerNotice(view)
                     }
                 }
@@ -202,7 +229,7 @@ class MainActivity : ComponentActivity() {
         })
 
         // 6. Load App URL
-        webView.loadUrl(devUrl)
+        webView.loadUrl(appUrl)
     }
 
     private fun checkNotificationPermission() {
@@ -289,6 +316,11 @@ class MainActivity : ComponentActivity() {
         pocketSensorManager.start()
         val savedMode = PreferenceManager.getThemeMode(this)
         lightSensorManager.setAutoModeEnabled(savedMode == "auto")
+        webView.onResume()
+        webView.evaluateJavascript(
+            "if (window.onNativeAppResumed) window.onNativeAppResumed()",
+            null
+        )
     }
 
     override fun onPause() {
@@ -296,6 +328,7 @@ class MainActivity : ComponentActivity() {
         OuiChatPushService.isAppInForeground = false
         pocketSensorManager.stop()
         lightSensorManager.stop()
+        webView.onPause()
     }
 
     override fun onNewIntent(intent: Intent) {
