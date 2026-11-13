@@ -1074,19 +1074,48 @@ button.reply-quote:hover:not(:disabled) {
     min-height: 48px;
   }
 
-  .dialog-actions {
-    display: flex;
-    gap: 8px;
-    width: 100%;
-    margin-top: 12px;
+  .check-row {
+    min-height: 48px;
+    gap: 12px;
+    font-size: 16px;
+    cursor: pointer;
+    user-select: none;
+    padding: 6px 12px;
+    margin: 10px 0 14px;
   }
 
+  .check-row input[type="checkbox"] {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    min-height: 24px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .form-actions,
+  .dialog-actions {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+    margin-top: 14px;
+  }
+
+  .form-actions button,
+  .form-actions .accent-button,
+  .form-actions .mid-button,
+  .dialog-actions button,
+  .dialog-actions .accent-button,
   .dialog-actions .mid-button {
     flex: 1;
-    height: 46px;
-    font-size: 15px;
+    min-height: 48px;
+    height: 48px;
+    font-size: 16px;
     font-weight: 600;
+    display: inline-flex;
+    align-items: center;
     justify-content: center;
+    border-radius: var(--radius-sm);
   }
 
   .member-search-wrap .search {

@@ -59,6 +59,10 @@ async function boot() {
       return false
     }
 
+    ;(window as any).onNativeAppResumed = () => {
+      store.onAppResumed?.()
+    }
+
     ;(window as any).selectChatFromNative = async (chatId: string) => {
       if (!store.ready) {
         await store.waitForReady()

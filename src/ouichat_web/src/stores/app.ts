@@ -1399,6 +1399,18 @@ export const useAppStore = defineStore("app", () => {
       unreadCounts.value[key] = (unreadCounts.value[key] ?? (unread(chat) ? 1 : 0)) + 1
       persistUnreadCounts()
 
+      if (isSameChat && me && message.sender !== me.username) {
+        if (!unreadSeparator.value || unreadSeparator.value.chatId !== chatId) {
+          unreadSeparator.value = {
+            chatId,
+            firstMessageId: message.id,
+            count: 1,
+          }
+        } else {
+          unreadSeparator.value.count += 1
+        }
+      }
+
       // Notification policy:
       // Case #1 (Foreground & a chat selected): Chime + Push notification for other chats
       // Case #2 (Foreground & NO chat selected): Chime ONLY (no push notification)
@@ -1624,12 +1636,26 @@ export const useAppStore = defineStore("app", () => {
     }
   }
 
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "visible") return
+  function onAppResumed() {
     syncNativeUnreadCounts()
     for (const session of sessions.value) {
       if (!accessTokenFresh(session.accessToken, REFRESH_LEAD_MS)) void recover(session, true)
     }
+    const me = current.value
+    if (me && selectedChat.value) {
+      const chatId = selectedChat.value.id
+      markRead(selectedChat.value, me.username)
+      unreadCounts.value[`${me.domain}:${chatId}`] = 0
+      persistUnreadCounts()
+      if (typeof window !== "undefined" && (window as any).AndroidBridge?.clearNotification) {
+        try { (window as any).AndroidBridge.clearNotification(chatId) } catch {}
+      }
+    }
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return
+    onAppResumed()
   })
 
   return {
@@ -1695,6 +1721,7 @@ export const useAppStore = defineStore("app", () => {
     unreadSeparator,
     isChatPaused,
     pauseChat,
+    onAppResumed,
     init,
   }
 })

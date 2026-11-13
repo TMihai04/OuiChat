@@ -12,14 +12,23 @@ export function isLocalEnvironment(): boolean {
   const configured = import.meta.env.VITE_ENVIRONMENT
   if (configured === "production") return false
   if (configured === "local") return true
+  if (typeof window !== "undefined" && window.location.hostname === "appassets.androidplatform.net") {
+    return true
+  }
   return window.location.protocol !== "https:"
 }
 
 export function httpOrigin(domain: string): string {
+  if (domain.startsWith("http://") || domain.startsWith("https://")) {
+    return `${domain.replace(/\/+$/, "")}/api`
+  }
   return `${isLocalEnvironment() ? "http" : "https"}://${domain}/api`
 }
 
 export function wsOrigin(domain: string): string {
+  if (domain.startsWith("ws://") || domain.startsWith("wss://")) {
+    return domain.replace(/\/+$/, "")
+  }
   return `${isLocalEnvironment() ? "ws" : "wss"}://${domain}`
 }
 
