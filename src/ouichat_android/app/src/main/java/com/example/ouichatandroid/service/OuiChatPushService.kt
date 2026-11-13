@@ -160,21 +160,13 @@ class OuiChatPushService : Service() {
         if (isDestroyed) return
         val key = "${session.username}@${session.domain}"
 
-        val rawDomain = session.domain
-        val wsProtocol = if (rawDomain.startsWith("https://") || rawDomain.startsWith("wss://")) "wss://" else "ws://"
-        val cleanHost = rawDomain
-            .removePrefix("https://")
-            .removePrefix("http://")
-            .removePrefix("wss://")
-            .removePrefix("ws://")
-
-        val resolvedHost = DeviceUtils.resolveHost(cleanHost)
+        val target = DeviceUtils.parseDomainTarget(session.domain)
         val encodedToken = try {
             URLEncoder.encode(session.accessToken, "UTF-8")
         } catch (_: Exception) {
             session.accessToken
         }
-        val wsUrl = "$wsProtocol$resolvedHost/ws/global?token=$encodedToken&presence=false"
+        val wsUrl = "${target.wsUrl}/ws/global?token=$encodedToken&presence=false"
 
         Log.i(TAG, "Connecting WebSocket for $key to $wsUrl")
         val request = Request.Builder().url(wsUrl).build()
@@ -401,14 +393,8 @@ class OuiChatPushService : Service() {
             sessions.firstOrNull()
         } ?: return
 
-        val rawDomain = session.domain
-        val httpProtocol = if (rawDomain.startsWith("https://")) "https://" else "http://"
-        val cleanHost = rawDomain
-            .removePrefix("https://")
-            .removePrefix("http://")
-            .trimEnd('/')
-        val resolvedHost = DeviceUtils.resolveHost(cleanHost)
-        val url = "$httpProtocol$resolvedHost/api/chats/participant/seen?chat_id=$chatId"
+        val target = DeviceUtils.parseDomainTarget(session.domain)
+        val url = "${target.httpUrl}/api/chats/participant/seen?chat_id=$chatId"
 
         val emptyBody = "".toRequestBody("application/json".toMediaType())
         val request = Request.Builder()
@@ -439,13 +425,8 @@ class OuiChatPushService : Service() {
         val key = "${session.username}@${session.domain}"
         Log.i(TAG, "Refreshing token in background for $key")
 
-        val rawDomain = session.domain
-        val httpProtocol = if (rawDomain.startsWith("https://")) "https://" else "http://"
-        val cleanHost = rawDomain
-            .removePrefix("https://")
-            .removePrefix("http://")
-        val resolvedHost = DeviceUtils.resolveHost(cleanHost)
-        val refreshUrl = "$httpProtocol$resolvedHost/api/refresh"
+        val target = DeviceUtils.parseDomainTarget(session.domain)
+        val refreshUrl = "${target.httpUrl}/api/refresh"
 
         val emptyBody = "".toRequestBody("application/json".toMediaType())
         val request = Request.Builder()

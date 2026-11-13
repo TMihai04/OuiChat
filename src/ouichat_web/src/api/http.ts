@@ -18,18 +18,39 @@ export function isLocalEnvironment(): boolean {
   return window.location.protocol !== "https:"
 }
 
-export function httpOrigin(domain: string): string {
-  if (domain.startsWith("http://") || domain.startsWith("https://")) {
-    return `${domain.replace(/\/+$/, "")}/api`
+export function parseDomainTarget(raw: string): { isSecure: boolean; cleanHost: string } {
+  const trimmed = raw.trim()
+  if (trimmed.startsWith("https://")) {
+    return { isSecure: true, cleanHost: trimmed.slice(8).replace(/\/+$/, "") }
   }
-  return `${isLocalEnvironment() ? "http" : "https"}://${domain}/api`
+  if (trimmed.startsWith("wss://")) {
+    return { isSecure: true, cleanHost: trimmed.slice(6).replace(/\/+$/, "") }
+  }
+  if (trimmed.startsWith("http://")) {
+    return { isSecure: false, cleanHost: trimmed.slice(7).replace(/\/+$/, "") }
+  }
+  if (trimmed.startsWith("ws://")) {
+    return { isSecure: false, cleanHost: trimmed.slice(5).replace(/\/+$/, "") }
+  }
+  const cleanHost = trimmed.replace(/\/+$/, "")
+  const isLocalHost =
+    cleanHost.startsWith("localhost") ||
+    cleanHost.startsWith("127.0.0.1") ||
+    cleanHost.startsWith("10.0.2.2") ||
+    cleanHost.startsWith("192.168.") ||
+    cleanHost.startsWith("10.") ||
+    cleanHost.endsWith(".local")
+  return { isSecure: !isLocalHost, cleanHost }
+}
+
+export function httpOrigin(domain: string): string {
+  const { isSecure, cleanHost } = parseDomainTarget(domain)
+  return `${isSecure ? "https" : "http"}://${cleanHost}/api`
 }
 
 export function wsOrigin(domain: string): string {
-  if (domain.startsWith("ws://") || domain.startsWith("wss://")) {
-    return domain.replace(/\/+$/, "")
-  }
-  return `${isLocalEnvironment() ? "ws" : "wss"}://${domain}`
+  const { isSecure, cleanHost } = parseDomainTarget(domain)
+  return `${isSecure ? "wss" : "ws"}://${cleanHost}`
 }
 
 export interface RequestOptions {

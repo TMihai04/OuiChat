@@ -123,14 +123,8 @@ object AvatarManager {
             return
         }
 
-        val rawDomain = session.domain
-        val httpProtocol = if (rawDomain.startsWith("https://")) "https://" else "http://"
-        val cleanHost = rawDomain
-            .removePrefix("https://")
-            .removePrefix("http://")
-            .trimEnd('/')
-        val resolvedHost = DeviceUtils.resolveHost(cleanHost)
-        val url = "$httpProtocol$resolvedHost/api/attachments/download?file_id=$pictureId"
+        val target = DeviceUtils.parseDomainTarget(session.domain)
+        val url = "${target.httpUrl}/api/attachments/download?file_id=$pictureId"
 
         val request = Request.Builder()
             .url(url)

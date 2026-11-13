@@ -56,4 +56,42 @@ object DeviceUtils {
 
         return "$matchedPrefix$resolved"
     }
+
+    data class DomainTarget(
+        val isSecure: Boolean,
+        val cleanHost: String
+    ) {
+        val httpUrl: String get() = "${if (isSecure) "https://" else "http://"}$cleanHost"
+        val wsUrl: String get() = "${if (isSecure) "wss://" else "ws://"}$cleanHost"
+    }
+
+    fun parseDomainTarget(rawDomain: String): DomainTarget {
+        val trimmed = rawDomain.trim()
+        val isSecureExplicit = trimmed.startsWith("https://", ignoreCase = true) || trimmed.startsWith("wss://", ignoreCase = true)
+        val isInsecureExplicit = trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("ws://", ignoreCase = true)
+
+        val cleanHost = trimmed
+            .removePrefix("https://")
+            .removePrefix("http://")
+            .removePrefix("wss://")
+            .removePrefix("ws://")
+            .trimEnd('/')
+
+        val resolvedHost = resolveHost(cleanHost)
+
+        val isLocalHost = resolvedHost.startsWith("localhost", ignoreCase = true) ||
+                resolvedHost.startsWith("127.0.0.1") ||
+                resolvedHost.startsWith("10.0.2.2") ||
+                resolvedHost.startsWith("192.168.") ||
+                resolvedHost.startsWith("10.") ||
+                resolvedHost.endsWith(".local", ignoreCase = true)
+
+        val isSecure = when {
+            isSecureExplicit -> true
+            isInsecureExplicit -> false
+            else -> !isLocalHost
+        }
+
+        return DomainTarget(isSecure, resolvedHost)
+    }
 }
