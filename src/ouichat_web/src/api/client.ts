@@ -302,19 +302,35 @@ export async function uploadFile(
   file: File,
   fileType: "attachment" | "icon",
 ) {
-  const bytes = await readBlobAsArrayBuffer(file)
-  const response = await request(domain, {
-    method: "POST",
-    path: "/attachments/upload",
-    accessToken,
-    query: { file_type: fileType },
-    body: bytes,
-    headers: {
-      "Content-Type": "application/octet-stream",
-      "X-Original-Filename": encodeURIComponent(file.name || "unknown_file"),
-    },
-  }) as ItemResponse<{ file_id: string }>
-  return response.item.file_id
+  const headers = {
+    "Content-Type": "application/octet-stream",
+    "X-Original-Filename": encodeURIComponent(file.name || "unknown_file"),
+  }
+
+  // Attempt 1: Stream file/Blob directly (zero JS heap memory duplication)
+  try {
+    const response = await request(domain, {
+      method: "POST",
+      path: "/attachments/upload",
+      accessToken,
+      query: { file_type: fileType },
+      body: file,
+      headers,
+    }) as ItemResponse<{ file_id: string }>
+    return response.item.file_id
+  } catch (firstErr) {
+    // Attempt 2: Fallback to reading ArrayBuffer if direct Blob streaming failed
+    const bytes = await readBlobAsArrayBuffer(file)
+    const response = await request(domain, {
+      method: "POST",
+      path: "/attachments/upload",
+      accessToken,
+      query: { file_type: fileType },
+      body: bytes,
+      headers,
+    }) as ItemResponse<{ file_id: string }>
+    return response.item.file_id
+  }
 }
 
 export function downloadFile(domain: string, accessToken: string, fileId: string) {

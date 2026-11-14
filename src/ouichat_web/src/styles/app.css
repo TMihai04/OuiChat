@@ -761,6 +761,48 @@ button.reply-quote:hover:not(:disabled) {
   max-width: 100%;
 }
 
+.staged-chip .staged-remove-btn {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 6px;
+  margin: -4px -4px -4px 2px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.staged-chip .staged-remove-btn:hover:not(:disabled) {
+  background: var(--surface);
+}
+
+.upload-progress-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  min-height: 36px;
+}
+
+.upload-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--accent);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex: none;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 .file-chip {
   display: flex;
   width: 100%;

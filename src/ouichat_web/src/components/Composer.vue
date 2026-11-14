@@ -23,6 +23,7 @@ const targetSnip = ref("")
 const fileInput = ref<HTMLInputElement | null>(null)
 const box = ref<HTMLTextAreaElement | null>(null)
 const busy = ref(false)
+const uploadStatus = ref<string | null>(null)
 
 const writable = computed(() => store.selectedChat ? store.isWritable(store.selectedChat) : false)
 const visible = computed(() => store.pane === "chat" && !!store.selectedChat && writable.value)
@@ -47,6 +48,7 @@ function reset() {
   targetId.value = null
   targetSender.value = ""
   targetSnip.value = ""
+  uploadStatus.value = null
 }
 
 function onCompose(event: Event) {
@@ -143,11 +145,21 @@ async function send() {
     return
   }
   busy.value = true
+  if (files.value.length > 0) {
+    uploadStatus.value = `Uploaded 0/${files.value.length} files...`
+  }
   try {
     if (mode.value === "edit" && targetId.value) {
       await store.editChatMessage(targetId.value, value)
     } else {
-      await store.sendChatMessage(value, files.value, mode.value === "reply" ? targetId.value : null)
+      await store.sendChatMessage(
+        value,
+        files.value,
+        mode.value === "reply" ? targetId.value : null,
+        (current, total) => {
+          uploadStatus.value = `Uploaded ${current}/${total} files...`
+        },
+      )
     }
     reset()
     await nextTick()
@@ -158,6 +170,7 @@ async function send() {
     else store.error = errorText(cause)
   } finally {
     busy.value = false
+    uploadStatus.value = null
   }
 }
 </script>
@@ -179,14 +192,20 @@ async function send() {
       />
       <span class="row-label">{{ targetSender }}: {{ targetSnip }}</span>
     </div>
-    <div v-if="files.length" class="staged-row">
-      <span v-for="(file, index) in files" :key="`${file.name}-${index}`" class="staged-chip">
-        <img src="/icons/file_uploaded_icon.png" width="14" height="14" alt="" />
-        <span>{{ file.name }}</span>
-        <button class="icon-button" type="button" @click="files.splice(index, 1)">
-          <img src="/icons/close_icon.png" width="12" height="12" alt="" />
-        </button>
-      </span>
+    <div v-if="files.length || uploadStatus" class="staged-row">
+      <div v-if="uploadStatus" class="upload-progress-status">
+        <span class="upload-spinner" />
+        <span>{{ uploadStatus }}</span>
+      </div>
+      <template v-else>
+        <span v-for="(file, index) in files" :key="`${file.name}-${index}`" class="staged-chip">
+          <img src="/icons/file_uploaded_icon.png" width="14" height="14" alt="" />
+          <span>{{ file.name }}</span>
+          <button class="icon-button staged-remove-btn" type="button" title="Remove" @click="files.splice(index, 1)">
+            <img src="/icons/close_icon.png" width="16" height="16" alt="Remove" />
+          </button>
+        </span>
+      </template>
     </div>
     <div class="composer-row">
       <button class="square" type="button" :disabled="mode === 'edit'" title="Attach" @click="fileInput?.click()">

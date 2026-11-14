@@ -1132,46 +1132,58 @@ export const useAppStore = defineStore("app", () => {
     persist()
   }
 
-  async function sendChatMessage(text: string, files: File[], repliedTo: string | null) {
+  async function sendChatMessage(
+    text: string,
+    files: File[],
+    repliedTo: string | null,
+    onProgress?: (uploadedCount: number, totalCount: number) => void,
+  ) {
     const me = requireCurrent()
     const chat = selectedChat.value
     if (!chat) return
     const uploaded: string[] = []
     let uploadError: string | null = null
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       if (i > 0) {
         // Micro-pause to allow keep-alive TCP sockets to settle between uploads
-        await new Promise((resolve) => setTimeout(resolve, 50))
+        await new Promise((resolve) => setTimeout(resolve, 150))
       }
+      onProgress?.(uploaded.length, files.length)
       try {
-        let fileId: string
-        try {
-          fileId = await withSession(me, (session) => api.uploadFile(session.domain, session.accessToken, file, "attachment"))
-        } catch (firstErr) {
-          // If socket was reset or connection dropped during sequential uploads, retry once on a fresh socket
-          if (firstErr instanceof ApiError && firstErr.status === 0) {
-            await new Promise((resolve) => setTimeout(resolve, 100))
+        let fileId: string | null = null
+        let lastErr: unknown = null
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            if (attempt > 0) {
+              await new Promise((resolve) => setTimeout(resolve, attempt * 250))
+            }
             fileId = await withSession(me, (session) => api.uploadFile(session.domain, session.accessToken, file, "attachment"))
-          } else {
-            throw firstErr
+            break
+          } catch (err) {
+            lastErr = err
+            if (!(err instanceof ApiError && err.status === 0)) {
+              throw err
+            }
           }
         }
+        if (!fileId) throw lastErr
         attachmentNames.set(`${me.domain}:${fileId}`, file.name)
         uploaded.push(fileId)
+        onProgress?.(uploaded.length, files.length)
       } catch (cause) {
-        uploadError = errorText(cause)
+        uploadError = `Failed to upload "${file.name}": ${errorText(cause)}`
         break
       }
     }
-    if (uploadError && !text && uploaded.length === 0) throw new Error(uploadError)
+    if (uploadError) throw new Error(uploadError)
     const body: { content?: string; attachments?: string[]; replied_to?: string } = {}
     if (text) body.content = text
     if (uploaded.length) body.attachments = uploaded
     if (repliedTo) body.replied_to = repliedTo
     await withSession(me, (session) => api.sendMessage(session.domain, session.accessToken, chat.id, body))
     unreadSeparator.value = null
-    if (uploadError) error.value = uploadError
   }
 
   async function editChatMessage(messageId: string, text: string) {

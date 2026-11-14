@@ -159,6 +159,8 @@ class MainActivity : ComponentActivity() {
             setBackgroundColor(Color.parseColor("#343232"))
         }
 
+        WebView.setWebContentsDebuggingEnabled(true)
+
         webView = WebView(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
