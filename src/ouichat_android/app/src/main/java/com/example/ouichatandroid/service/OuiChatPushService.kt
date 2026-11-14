@@ -46,6 +46,7 @@ class OuiChatPushService : Service() {
 
     private var client: OkHttpClient? = null
     private val activeSockets = ConcurrentHashMap<String, WebSocket>()
+    private val activeSessions = ConcurrentHashMap<String, UserSession>()
     private val retryCounts = ConcurrentHashMap<String, Int>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var isDestroyed = false
@@ -137,6 +138,7 @@ class OuiChatPushService : Service() {
                 Log.i(TAG, "Disconnecting socket for removed account $key")
                 activeSockets[key]?.cancel()
                 activeSockets.remove(key)
+                activeSessions.remove(key)
                 retryCounts.remove(key)
             }
         }
@@ -167,6 +169,7 @@ class OuiChatPushService : Service() {
     private fun connectWebSocket(session: UserSession) {
         if (isDestroyed) return
         val key = "${session.username}@${session.domain}"
+        activeSessions[key] = session
 
         val target = DeviceUtils.parseDomainTarget(session.domain)
         val encodedToken = try {
@@ -201,7 +204,8 @@ class OuiChatPushService : Service() {
 
                 if (statusCode == 401 || statusCode == 403 || t.message?.contains("401") == true) {
                     Log.i(TAG, "Authorization error on $key, attempting background token refresh")
-                    refreshTokensInBackground(session)
+                    val currentSession = activeSessions[key] ?: session
+                    refreshTokensInBackground(currentSession)
                 } else {
                     scheduleReconnect(session)
                 }
@@ -210,8 +214,10 @@ class OuiChatPushService : Service() {
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.i(TAG, "WebSocket closed for $key: code=$code, reason=$reason")
                 activeSockets.remove(key)
-                if (code == 4001 || code == 401) {
-                    refreshTokensInBackground(session)
+                if (code == 1008 || code == 4001 || code == 401 || reason.contains("expired", ignoreCase = true)) {
+                    Log.i(TAG, "WebSocket closed due to expired token for $key; refreshing tokens")
+                    val currentSession = activeSessions[key] ?: session
+                    refreshTokensInBackground(currentSession)
                 } else {
                     scheduleReconnect(session)
                 }
@@ -224,6 +230,8 @@ class OuiChatPushService : Service() {
     }
 
     private fun handleWebSocketMessage(session: UserSession, payload: String) {
+        val key = "${session.username}@${session.domain}"
+        val currentSession = activeSessions[key] ?: session
         try {
             val json = JSONObject(payload)
             val type = json.optString("type")
@@ -233,6 +241,13 @@ class OuiChatPushService : Service() {
             val parts = scope.split(".")
             val root = parts.getOrNull(0) ?: ""
             val child = parts.getOrNull(1)
+
+            // Handle backend access token expiration warning
+            if (root == "token" && (child == "access" || child == null)) {
+                Log.i(TAG, "Received token expiry notification from backend for ${currentSession.username}; refreshing...")
+                refreshTokensInBackground(currentSession)
+                return
+            }
 
             // Handle server-side mute update event
             if (root == "user" && type == "update" && child == "muted_chats") {
@@ -303,7 +318,7 @@ class OuiChatPushService : Service() {
                 val chatId = data.optString("conversation_id")
                 val pictureId = data.optString("picture_id").takeIf { it.isNotBlank() && it != "null" }
                 if (chatId.isNotBlank() && pictureId != null) {
-                    AvatarManager.fetchAvatar(applicationContext, session, pictureId) { bitmap ->
+                    AvatarManager.fetchAvatar(applicationContext, currentSession, pictureId) { bitmap ->
                         NotificationHelper.updateNotificationIcon(applicationContext, chatId, bitmap)
                     }
                 }
@@ -315,7 +330,7 @@ class OuiChatPushService : Service() {
                 val username = data.optString("username")
                 val pictureId = data.optString("picture_id").takeIf { it.isNotBlank() && it != "null" }
                 if (username.isNotBlank() && pictureId != null) {
-                    AvatarManager.fetchAvatar(applicationContext, session, pictureId) { bitmap ->
+                    AvatarManager.fetchAvatar(applicationContext, currentSession, pictureId) { bitmap ->
                         NotificationHelper.updateUserAvatar(applicationContext, username, pictureId, bitmap)
                     }
                 }
@@ -335,7 +350,7 @@ class OuiChatPushService : Service() {
                 val senderPictureId = if (data.isNull("sender_picture_id")) null else data.optString("sender_picture_id").takeIf { it.isNotBlank() && it != "null" }
 
                 // Skip own messages
-                if (sender == session.username) return
+                if (sender == currentSession.username) return
 
                 // Increment background unread count
                 PreferenceManager.incrementUnreadCount(this, chatId)
@@ -343,7 +358,7 @@ class OuiChatPushService : Service() {
                 // Check if chat is muted
                 val muted = PreferenceManager.getMutedChats(this)
                 if (muted.contains(chatId)) {
-                    Log.d(TAG, "Message from muted chat $chatId suppressed for ${session.username}")
+                    Log.d(TAG, "Message from muted chat $chatId suppressed for ${currentSession.username}")
                     return
                 }
 
@@ -359,7 +374,7 @@ class OuiChatPushService : Service() {
                 }
 
                 val totalSessions = PreferenceManager.getSessions(this).size
-                val recipientTag = if (totalSessions > 1) session.username else null
+                val recipientTag = if (totalSessions > 1) currentSession.username else null
 
                 mainHandler.post {
                     NotificationHelper.showMessageNotification(
@@ -376,20 +391,20 @@ class OuiChatPushService : Service() {
                     )
 
                     if (pictureId != null) {
-                        AvatarManager.fetchAvatar(applicationContext, session, pictureId) { bitmap ->
+                        AvatarManager.fetchAvatar(applicationContext, currentSession, pictureId) { bitmap ->
                             NotificationHelper.updateNotificationIcon(applicationContext, chatId, bitmap)
                         }
                     }
 
                     if (senderPictureId != null) {
-                        AvatarManager.fetchAvatar(applicationContext, session, senderPictureId) { _ ->
+                        AvatarManager.fetchAvatar(applicationContext, currentSession, senderPictureId) { _ ->
                             NotificationHelper.updateSenderAvatar(applicationContext, chatId)
                         }
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error handling message for ${session.username}", e)
+            Log.e(TAG, "Error handling message for ${currentSession.username}", e)
         }
     }
 
@@ -467,7 +482,18 @@ class OuiChatPushService : Service() {
                             )
                             Log.i(TAG, "Successfully refreshed tokens in background for $key")
                             val updatedSession = UserSession(session.username, session.domain, newAccess, newRefresh)
-                            connectWebSocket(updatedSession)
+                            activeSessions[key] = updatedSession
+
+                            val liveSocket = activeSockets[key]
+                            val tokenPayload = JSONObject().apply { put("access_token", newAccess) }
+                            val sent = liveSocket?.send(ByteString.encodeUtf8(tokenPayload.toString())) ?: false
+                            if (sent) {
+                                Log.i(TAG, "Sent refreshed access token over active WebSocket for $key")
+                                retryCounts[key] = 0
+                            } else {
+                                Log.i(TAG, "Active socket not available; reconnecting WebSocket for $key")
+                                connectWebSocket(updatedSession)
+                            }
                         } catch (e: Exception) {
                             Log.e(TAG, "Failed parsing refresh response for $key", e)
                         }
@@ -507,6 +533,7 @@ class OuiChatPushService : Service() {
             socket.cancel()
         }
         activeSockets.clear()
+        activeSessions.clear()
         retryCounts.clear()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -531,6 +558,7 @@ class OuiChatPushService : Service() {
             socket.cancel()
         }
         activeSockets.clear()
+        activeSessions.clear()
         retryCounts.clear()
         Log.i(TAG, "OuiChatPushService destroyed")
     }
