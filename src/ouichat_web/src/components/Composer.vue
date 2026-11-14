@@ -49,6 +49,9 @@ function reset() {
   targetSender.value = ""
   targetSnip.value = ""
   uploadStatus.value = null
+  if (fileInput.value) {
+    fileInput.value.value = ""
+  }
 }
 
 function onCompose(event: Event) {
@@ -98,8 +101,14 @@ function stage(picked: File[]) {
 function addFiles(event: Event) {
   const input = event.target as HTMLInputElement
   const picked = Array.from(input.files ?? [])
-  input.value = ""
   stage(picked)
+}
+
+function removeStagedFile(index: number) {
+  files.value.splice(index, 1)
+  if (files.value.length === 0 && fileInput.value) {
+    fileInput.value.value = ""
+  }
 }
 
 function onExternalFiles(event: Event) {
@@ -201,7 +210,7 @@ async function send() {
         <span v-for="(file, index) in files" :key="`${file.name}-${index}`" class="staged-chip">
           <img src="/icons/file_uploaded_icon.png" width="14" height="14" alt="" />
           <span>{{ file.name }}</span>
-          <button class="icon-button staged-remove-btn" type="button" title="Remove" @click="files.splice(index, 1)">
+          <button class="icon-button staged-remove-btn" type="button" title="Remove" @click="removeStagedFile(index)">
             <img src="/icons/close_icon.png" width="16" height="16" alt="Remove" />
           </button>
         </span>

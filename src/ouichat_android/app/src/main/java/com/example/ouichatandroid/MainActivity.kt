@@ -82,9 +82,6 @@ class MainActivity : ComponentActivity() {
                     val uri = clip.getItemAt(i).uri
                     if (uri != null) {
                         try {
-                            grantUriPermission(packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        } catch (_: Exception) {}
-                        try {
                             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         } catch (_: Exception) {}
                         list.add(uri)
@@ -94,9 +91,6 @@ class MainActivity : ComponentActivity() {
             }
             data.data != null -> {
                 val uri = data.data!!
-                try {
-                    grantUriPermission(packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                } catch (_: Exception) {}
                 try {
                     contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 } catch (_: Exception) {}
@@ -174,6 +168,9 @@ class MainActivity : ComponentActivity() {
                 useWideViewPort = true
                 loadWithOverviewMode = true
                 allowFileAccess = true
+                allowContentAccess = true
+                allowFileAccessFromFileURLs = true
+                allowUniversalAccessFromFileURLs = true
                 mediaPlaybackRequiresUserGesture = false
                 mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             }
@@ -217,24 +214,36 @@ class MainActivity : ComponentActivity() {
                     fileUploadCallback?.onReceiveValue(null)
                     fileUploadCallback = filePathCallback
 
-                    val intent = (fileChooserParams?.createIntent() ?: Intent(Intent.ACTION_GET_CONTENT)).apply {
+                    val isMultiple = fileChooserParams?.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE
+
+                    // Prefer ACTION_OPEN_DOCUMENT with persistable permissions for reliable multi-file reading
+                    val openDocIntent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                         addCategory(Intent.CATEGORY_OPENABLE)
                         type = "*/*"
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                        if (isMultiple) {
+                            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                        }
                     }
-                    if (fileChooserParams?.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
-                        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                        @Suppress("DEPRECATION")
-                        val target = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
-                        target?.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        target?.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                    }
+
                     try {
-                        filePickerLauncher.launch(intent)
+                        filePickerLauncher.launch(openDocIntent)
                     } catch (_: Exception) {
-                        fileUploadCallback?.onReceiveValue(null)
-                        fileUploadCallback = null
-                        return false
+                        try {
+                            val fallbackIntent = (fileChooserParams?.createIntent() ?: Intent(Intent.ACTION_GET_CONTENT)).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type = "*/*"
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                if (isMultiple) {
+                                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                                }
+                            }
+                            filePickerLauncher.launch(fallbackIntent)
+                        } catch (_: Exception) {
+                            fileUploadCallback?.onReceiveValue(null)
+                            fileUploadCallback = null
+                            return false
+                        }
                     }
                     return true
                 }
