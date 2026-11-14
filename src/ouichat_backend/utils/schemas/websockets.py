@@ -2,11 +2,12 @@
 
 from pydantic import BaseModel, Field
 from typing import Literal
+import uuid
 
 
 class WebsocketUpdate(BaseModel):
     event_id: str = Field(
-        ...,
+        default_factory=lambda: str(uuid.uuid4()),
         description="Unique identifier for this event",
         min_length=1
     )

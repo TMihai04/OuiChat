@@ -55,6 +55,7 @@ async def _token_expiration_notifier(
         await ws_manager.notify(
             websocket,
             payload=WebsocketUpdate(
+                event_id=get_uuid4(),
                 type="system",
                 scope="token.access",
                 data={
@@ -75,7 +76,7 @@ async def _token_expiration_notifier(
             reason="Access token expired",
             close=True
         )
-    except Exception:
+    except Exception as e:
         logger.error(f"Error occured when closing websocket due to access token expiring: {e}")
         pass
 
