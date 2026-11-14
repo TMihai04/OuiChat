@@ -110,7 +110,7 @@ class WebsocketManager:
         if close:
             try:
                 await webscoket.close(code, reason)
-            except WebSocketDisconnect:
+            except (WebSocketDisconnect, RuntimeError):
                 pass
     
         try:

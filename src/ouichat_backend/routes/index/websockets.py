@@ -21,6 +21,7 @@ from ouichat_backend.utils.methods import (
 from . import _bodies
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, WebSocketException, status
+from starlette.websockets import WebSocketState
 from datetime import datetime, timezone, timedelta
 from json.decoder import JSONDecodeError
 
@@ -76,6 +77,7 @@ async def _token_expiration_notifier(
             reason="Access token expired",
             close=True
         )
+        _note_disconnect(username)
     except Exception as e:
         logger.error(f"Error occured when closing websocket due to access token expiring: {e}")
         pass
@@ -141,64 +143,63 @@ async def global_comm_ws(
         exp_time=datetime_from_timestamp(payload.get("exp"))
     ))
     
-    while True:
-        # logger.debug(f"debug - webscoket: {websocket}")
-        try:
-            recv_js = await asyncio.wait_for(
-                websocket.receive_json(mode="binary"),
-                1
-            )
-
-            if recv_js.get("access_token"):
-                try:
-                    decoded_token = decode_token(recv_js.get("access_token"))
-
-                    # TODO: Check if new token's owner is the same as old owner
-                except Exception as e:
-                    raise WS_CREDENTIALS_EXCEPTION
-
-                try:
-                    notifier_task.cancel()
-                except Exception:
-                    pass
-
-                notifier_task = asyncio.create_task(_token_expiration_notifier(
-                    username=payload.get("sub"),
-                    websocket=websocket,
-                    exp_time=datetime_from_timestamp(decoded_token.get("exp"))
-                ))
-        except TimeoutError:
-            pass
-        except JSONDecodeError:
-            logger.warning("Non JSON byte frame received")
-        except KeyError:
-            logger.warning("Non binary frame received")
-        except WebSocketDisconnect as e:
-            logger.error(f"WebsocketDisconnect error: {str(e)}")
-
-            await ws_manager.disconnect(
-                username=payload.get("sub"),
-                webscoket=websocket,
-                close=False
-            )
-            _note_disconnect(payload.get("sub"))
-            break
-        except WebSocketException as e:
-            logger.error(f"WebsocketException: {str(e)}")
-
-            await ws_manager.disconnect(
-                username=payload.get("sub"),
-                webscoket=websocket,
-                code=e.code,
-                reason=e.reason,
-                close=True
-            )
-            _note_disconnect(payload.get("sub"))
-            break
-    
     try:
-        notifier_task.cancel()
-    except Exception:
-        pass
+        while True:
+            if (
+                websocket.client_state == WebSocketState.DISCONNECTED
+                or websocket.application_state == WebSocketState.DISCONNECTED
+            ):
+                break
+
+            try:
+                recv_js = await asyncio.wait_for(
+                    websocket.receive_json(mode="binary"),
+                    1
+                )
+
+                if recv_js.get("access_token"):
+                    try:
+                        decoded_token = decode_token(recv_js.get("access_token"))
+
+                        # TODO: Check if new token's owner is the same as old owner
+                    except Exception as e:
+                        raise WS_CREDENTIALS_EXCEPTION
+
+                    try:
+                        notifier_task.cancel()
+                    except Exception:
+                        pass
+
+                    notifier_task = asyncio.create_task(_token_expiration_notifier(
+                        username=payload.get("sub"),
+                        websocket=websocket,
+                        exp_time=datetime_from_timestamp(decoded_token.get("exp"))
+                    ))
+            except TimeoutError:
+                pass
+            except JSONDecodeError:
+                logger.warning("Non JSON byte frame received")
+            except KeyError:
+                logger.warning("Non binary frame received")
+    except (WebSocketDisconnect, RuntimeError) as e:
+        logger.debug(f"Websocket connection closed or disconnected: {e}")
+    except WebSocketException as e:
+        logger.error(f"WebsocketException: {str(e)}")
+        try:
+            await websocket.close(code=e.code, reason=e.reason)
+        except Exception:
+            pass
+    finally:
+        try:
+            notifier_task.cancel()
+        except Exception:
+            pass
+
+        await ws_manager.disconnect(
+            username=payload.get("sub"),
+            webscoket=websocket,
+            close=False
+        )
+        _note_disconnect(payload.get("sub"))
 
         
