@@ -121,12 +121,18 @@ object NotificationHelper {
             stopPendingIntent
         ).build()
 
+        val restoreIntent = Intent(context, com.example.ouichatandroid.service.OuiChatPushService::class.java).apply {
+            action = com.example.ouichatandroid.service.OuiChatPushService.ACTION_RESTORE_NOTIFICATION
+        }
+        val deletePendingIntent = PendingIntent.getService(context, 1003, restoreIntent, flags)
+
         val notification = NotificationCompat.Builder(context, CHANNEL_SERVICE)
             .setContentTitle("OuiChat")
             .setContentText(statusText)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
             .addAction(stopAction)
+            .setDeleteIntent(deletePendingIntent)
             .setOngoing(true)
             .setAutoCancel(false)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)

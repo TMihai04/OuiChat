@@ -38,6 +38,7 @@ class OuiChatPushService : Service() {
         const val ACTION_START = "com.example.ouichatandroid.action.START"
         const val ACTION_STOP = "com.example.ouichatandroid.action.STOP"
         const val ACTION_MARK_AS_READ = "com.example.ouichatandroid.action.MARK_AS_READ"
+        const val ACTION_RESTORE_NOTIFICATION = "com.example.ouichatandroid.action.RESTORE_NOTIFICATION"
 
         @Volatile
         var isAppInForeground: Boolean = false
@@ -59,6 +60,13 @@ class OuiChatPushService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_RESTORE_NOTIFICATION) {
+            Log.i(TAG, "Persistent notification was dismissed; immediately restoring it")
+            val count = PreferenceManager.getSessions(this).size.coerceAtLeast(1)
+            updateNotificationStatus(count)
+            return START_STICKY
+        }
+
         if (intent?.action == ACTION_MARK_AS_READ) {
             val chatId = intent.getStringExtra("chat_id")
             val recipientUser = intent.getStringExtra("recipient_user")

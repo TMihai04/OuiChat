@@ -72,7 +72,21 @@ class MainActivity : ComponentActivity() {
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        val uris = WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
+        val data = result.data
+        val uris: Array<Uri>? = when {
+            result.resultCode != RESULT_OK || data == null -> null
+            data.clipData != null -> {
+                val clip = data.clipData!!
+                val list = mutableListOf<Uri>()
+                for (i in 0 until clip.itemCount) {
+                    val uri = clip.getItemAt(i).uri
+                    if (uri != null) list.add(uri)
+                }
+                if (list.isNotEmpty()) list.toTypedArray() else null
+            }
+            data.data != null -> arrayOf(data.data!!)
+            else -> WebChromeClient.FileChooserParams.parseResult(result.resultCode, data)
+        }
         fileUploadCallback?.onReceiveValue(uris)
         fileUploadCallback = null
     }
@@ -186,7 +200,12 @@ class MainActivity : ComponentActivity() {
 
                     val intent = fileChooserParams?.createIntent() ?: Intent(Intent.ACTION_GET_CONTENT).apply {
                         type = "*/*"
-                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    }
+                    if (fileChooserParams?.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
+                        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                        @Suppress("DEPRECATION")
+                        val target = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+                        target?.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                     }
                     try {
                         filePickerLauncher.launch(intent)
