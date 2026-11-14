@@ -445,8 +445,20 @@ class OuiChatPushService : Service() {
     }
 
     private fun refreshTokensInBackground(session: UserSession) {
-        if (isDestroyed || session.refreshToken.isBlank()) return
+        if (isDestroyed) return
         val key = "${session.username}@${session.domain}"
+        if (session.refreshToken.isBlank()) {
+            Log.w(TAG, "No refresh token available for $key. Ceasing reconnect attempts.")
+            activeSockets[key]?.cancel()
+            activeSockets.remove(key)
+            activeSessions.remove(key)
+            retryCounts.remove(key)
+            val remaining = PreferenceManager.getSessions(this)
+                .filterNot { it.username == session.username && it.domain == session.domain }
+            PreferenceManager.saveSessions(this, remaining)
+            if (remaining.isEmpty()) stopForegroundService() else updateNotificationStatus(remaining.size)
+            return
+        }
         Log.i(TAG, "Refreshing token in background for $key")
 
         val target = DeviceUtils.parseDomainTarget(session.domain)
@@ -500,7 +512,23 @@ class OuiChatPushService : Service() {
                         }
                     } else {
                         Log.w(TAG, "Refresh endpoint returned status ${response.code} for $key")
-                        scheduleReconnect(session)
+                        if (response.code == 401 || response.code == 403) {
+                            Log.w(TAG, "Refresh token expired or invalid for $key (HTTP ${response.code}). Ceasing reconnect attempts.")
+                            activeSockets[key]?.cancel()
+                            activeSockets.remove(key)
+                            activeSessions.remove(key)
+                            retryCounts.remove(key)
+                            val remaining = PreferenceManager.getSessions(this@OuiChatPushService)
+                                .filterNot { it.username == session.username && it.domain == session.domain }
+                            PreferenceManager.saveSessions(this@OuiChatPushService, remaining)
+                            if (remaining.isEmpty()) {
+                                stopForegroundService()
+                            } else {
+                                updateNotificationStatus(remaining.size)
+                            }
+                        } else {
+                            scheduleReconnect(session)
+                        }
                     }
                 }
             }
