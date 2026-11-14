@@ -4,9 +4,15 @@ import { errorText } from "../api/http"
 import { useAppStore } from "../stores/app"
 import Avatar from "./Avatar.vue"
 import ContextMenu from "./ContextMenu.vue"
-import { getNotificationPermission, isNotificationSupported, requestNotificationPermission } from "../notifications"
+import {
+  dismissNotificationBanner,
+  getNotificationPermission,
+  isNotificationBannerDismissed,
+  isNotificationSupported,
+  requestNotificationPermission,
+} from "../notifications"
 
-const notifDismissed = ref(typeof localStorage !== "undefined" && localStorage.getItem("ouichat.notif_dismissed") === "true")
+const notifDismissed = ref(isNotificationBannerDismissed())
 const notifPermission = ref(getNotificationPermission())
 
 const showNotifBanner = computed(() => {
@@ -18,11 +24,9 @@ async function enableNotifs() {
   notifPermission.value = perm
 }
 
-function dismissNotifBanner() {
+function dismissNotifBannerAction() {
   notifDismissed.value = true
-  if (typeof localStorage !== "undefined") {
-    localStorage.setItem("ouichat.notif_dismissed", "true")
-  }
+  dismissNotificationBanner()
 }
 
 const store = useAppStore()
@@ -158,11 +162,11 @@ async function pick(action: string) {
 
     <div v-if="showNotifBanner" class="notif-banner">
       <div class="notif-banner-text">
-        <strong>Desktop Notifications</strong>
+        <strong>Web Notifications</strong>
         <span>Get alerted for new messages</span>
       </div>
       <button type="button" class="notif-banner-btn" @click="enableNotifs">Enable</button>
-      <button type="button" class="notif-banner-close" title="Dismiss" @click="dismissNotifBanner">✕</button>
+      <button type="button" class="notif-banner-close" title="Dismiss" @click="dismissNotifBannerAction">✕</button>
     </div>
 
     <!-- Chats Tab -->

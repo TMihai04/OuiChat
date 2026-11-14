@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { errorText } from "../api/http"
 import { formatDay, formatTime } from "../format"
 import { useAppStore, type ChatMessage } from "../stores/app"
@@ -183,10 +183,28 @@ function scrollToUnreadOrBottom() {
   }
 }
 
+function handleViewportResize() {
+  if (!scroller.value) return
+  if (stick.value) {
+    pinToBottom()
+  }
+}
+
 onMounted(async () => {
+  if (typeof window !== "undefined") {
+    window.visualViewport?.addEventListener("resize", handleViewportResize)
+    window.addEventListener("resize", handleViewportResize)
+  }
   await nextTick()
   scrollToUnreadOrBottom()
   requestAnimationFrame(scrollToUnreadOrBottom)
+})
+
+onBeforeUnmount(() => {
+  if (typeof window !== "undefined") {
+    window.visualViewport?.removeEventListener("resize", handleViewportResize)
+    window.removeEventListener("resize", handleViewportResize)
+  }
 })
 
 watch(() => store.selectedChat?.id, async () => {

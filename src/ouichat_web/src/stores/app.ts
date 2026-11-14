@@ -536,6 +536,26 @@ export const useAppStore = defineStore("app", () => {
     const file = await withSession(me, (session) => api.downloadFile(session.domain, session.accessToken, fileId))
     const cached = attachmentNames.get(`${me.domain}:${fileId}`)
     const filename = file.filename !== "download" ? file.filename : cached || file.filename
+
+    if (typeof window !== "undefined" && (window as any).AndroidBridge?.saveBlob) {
+      try {
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(file.blob)
+        })
+        const handled = (window as any).AndroidBridge.saveBlob(
+          base64,
+          file.blob.type || "application/octet-stream",
+          filename
+        )
+        if (handled) return
+      } catch (e) {
+        console.error("AndroidBridge.saveBlob failed, falling back to browser download", e)
+      }
+    }
+
     const url = URL.createObjectURL(file.blob)
     const link = document.createElement("a")
     link.href = url

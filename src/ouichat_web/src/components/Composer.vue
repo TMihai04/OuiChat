@@ -144,6 +144,8 @@ async function send() {
       await store.sendChatMessage(value, files.value, mode.value === "reply" ? targetId.value : null)
     }
     reset()
+    await nextTick()
+    box.value?.focus()
   } catch (cause) {
     const chatId = store.selectedChat?.id
     if (cause instanceof ApiError && cause.status === 429 && chatId) store.pauseChat(chatId)
@@ -192,7 +194,14 @@ async function send() {
         maxlength="512"
         @keydown="onKeydown"
       />
-      <button class="square" type="submit" :disabled="busy || paused" title="Send">
+      <button
+        class="square"
+        type="submit"
+        :disabled="busy || paused"
+        title="Send"
+        @pointerdown.prevent
+        @mousedown.prevent
+      >
         <img src="/icons/send_message_icon.png" width="22" height="22" alt="" />
       </button>
     </div>

@@ -26,6 +26,22 @@ if (typeof window !== "undefined") {
 }
 
 const NOTIF_ENABLED_KEY = "ouichat.notifications_enabled"
+const NOTIF_DISMISSED_KEY = "ouichat.notif_dismissed"
+
+export function isNotificationBannerDismissed(): boolean {
+  if (typeof window === "undefined") return false
+  return localStorage.getItem(NOTIF_DISMISSED_KEY) === "true"
+}
+
+export function dismissNotificationBanner() {
+  if (typeof window === "undefined") return
+  localStorage.setItem(NOTIF_DISMISSED_KEY, "true")
+}
+
+export function resetNotificationBanner() {
+  if (typeof window === "undefined") return
+  localStorage.removeItem(NOTIF_DISMISSED_KEY)
+}
 
 export function isNotificationsGloballyEnabled(): boolean {
   if (typeof window === "undefined") return true

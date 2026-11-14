@@ -4,10 +4,12 @@ import { useRouter } from "vue-router"
 import { getSavedThemeMode, isNativeBridgeAvailable, setThemeMode, type ThemeMode } from "../theme"
 import {
   getNotificationPermission,
+  isNotificationBannerDismissed,
   isNotificationSupported,
   isNotificationsGloballyEnabled,
   playNotificationChime,
   requestNotificationPermission,
+  resetNotificationBanner,
   setNotificationsGloballyEnabled,
 } from "../notifications"
 
@@ -23,6 +25,7 @@ function chooseTheme(mode: ThemeMode) {
 
 const notifPermission = ref(getNotificationPermission())
 const notifEnabled = ref(isNotificationsGloballyEnabled())
+const bannerDismissed = ref(isNotificationBannerDismissed())
 
 const notifPermissionLabel = computed(() => {
   if (!isNotificationSupported()) return "Not supported in this browser"
@@ -37,7 +40,19 @@ async function toggleNotifs(enabled: boolean) {
   if (enabled && isNotificationSupported() && getNotificationPermission() === "default") {
     const perm = await requestNotificationPermission()
     notifPermission.value = perm
+    bannerDismissed.value = isNotificationBannerDismissed()
   }
+}
+
+async function requestPermissionDirectly() {
+  const perm = await requestNotificationPermission()
+  notifPermission.value = perm
+  bannerDismissed.value = isNotificationBannerDismissed()
+}
+
+function restoreBannerPrompt() {
+  resetNotificationBanner()
+  bannerDismissed.value = false
 }
 
 function testSound() {
@@ -129,7 +144,7 @@ function testSound() {
 
       <section class="settings-card" style="margin-top: 16px;">
         <h3 class="card-title">Notifications</h3>
-        <p class="card-subtitle">Desktop alerts and sound when messages arrive.</p>
+        <p class="card-subtitle">Web alerts and sound when messages arrive.</p>
 
         <div class="notif-box">
           <div class="selection-bar notif-toggle-bar">
@@ -161,6 +176,25 @@ function testSound() {
               @click="testSound"
             >
               Test Sound
+            </button>
+          </div>
+
+          <div v-if="notifEnabled && isNotificationSupported()" class="notif-actions-row">
+            <button
+              v-if="notifPermission === 'default'"
+              type="button"
+              class="mid-button"
+              @click="requestPermissionDirectly"
+            >
+              Request Browser Permission
+            </button>
+            <button
+              v-if="bannerDismissed"
+              type="button"
+              class="mid-button"
+              @click="restoreBannerPrompt"
+            >
+              Restore Banner Prompt
             </button>
           </div>
         </div>
@@ -315,5 +349,13 @@ function testSound() {
 .notif-status-info {
   font-size: 13px;
   opacity: 0.75;
+}
+
+.notif-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 4px;
 }
 </style>
