@@ -132,6 +132,10 @@ onBeforeUnmount(() => {
 })
 
 function onKeydown(event: KeyboardEvent) {
+  if (busy.value) {
+    event.preventDefault()
+    return
+  }
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault()
     void send()
@@ -139,7 +143,7 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 async function send() {
-  if (paused.value) return
+  if (paused.value || busy.value) return
   if (box.value) {
     text.value = box.value.value
   }
@@ -153,6 +157,8 @@ async function send() {
     store.error = "Message text must not be empty"
     return
   }
+  const hadText = value.length > 0
+  let sendSucceeded = false
   busy.value = true
   if (files.value.length > 0) {
     uploadStatus.value = `Uploaded 0/${files.value.length} files...`
@@ -171,8 +177,7 @@ async function send() {
       )
     }
     reset()
-    await nextTick()
-    box.value?.focus()
+    sendSucceeded = true
   } catch (cause) {
     const chatId = store.selectedChat?.id
     if (cause instanceof ApiError && cause.status === 429 && chatId) store.pauseChat(chatId)
@@ -180,6 +185,12 @@ async function send() {
   } finally {
     busy.value = false
     uploadStatus.value = null
+  }
+  if (sendSucceeded && hadText) {
+    await nextTick()
+    box.value?.focus()
+  } else {
+    box.value?.blur()
   }
 }
 </script>
@@ -217,12 +228,13 @@ async function send() {
       </template>
     </div>
     <div class="composer-row">
-      <button class="square" type="button" :disabled="mode === 'edit'" title="Attach" @click="fileInput?.click()">
+      <button class="square" type="button" :disabled="mode === 'edit' || busy || paused" title="Attach" @click="fileInput?.click()">
         <img src="/icons/upload_file_icon.png" width="22" height="22" alt="" />
       </button>
       <textarea
         ref="box"
         :value="text"
+        :disabled="busy || paused"
         placeholder="Start typing..."
         rows="1"
         maxlength="512"
