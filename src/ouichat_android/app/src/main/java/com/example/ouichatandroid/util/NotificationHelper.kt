@@ -121,18 +121,20 @@ object NotificationHelper {
             stopPendingIntent
         ).build()
 
-        val deletePendingIntent = PendingIntent.getService(context, 1003, stopIntent, flags)
-
-        return NotificationCompat.Builder(context, CHANNEL_SERVICE)
+        val notification = NotificationCompat.Builder(context, CHANNEL_SERVICE)
             .setContentTitle("OuiChat")
             .setContentText(statusText)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
             .addAction(stopAction)
-            .setDeleteIntent(deletePendingIntent)
             .setOngoing(true)
+            .setAutoCancel(false)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
+
+        notification.flags = notification.flags or Notification.FLAG_ONGOING_EVENT or Notification.FLAG_NO_CLEAR
+        return notification
     }
 
     fun showMessageNotification(

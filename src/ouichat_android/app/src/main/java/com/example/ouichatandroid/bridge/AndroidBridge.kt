@@ -1,17 +1,22 @@
 package com.example.ouichatandroid.bridge
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.SoundPool
 import android.os.Build
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.provider.MediaStore
+import android.util.Base64
 import android.util.Log
 import android.webkit.JavascriptInterface
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import com.example.ouichatandroid.R
 import com.example.ouichatandroid.sensor.LightSensorManager
@@ -19,6 +24,8 @@ import com.example.ouichatandroid.service.OuiChatPushService
 import com.example.ouichatandroid.util.NotificationHelper
 import com.example.ouichatandroid.util.PreferenceManager
 import com.example.ouichatandroid.util.UserSession
+import java.io.File
+import java.io.FileOutputStream
 import org.json.JSONArray
 
 class AndroidBridge(
@@ -229,6 +236,57 @@ class AndroidBridge(
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error triggering vibration", e)
+        }
+    }
+
+    @JavascriptInterface
+    fun saveBlob(base64Data: String, mimeType: String, fileName: String): Boolean {
+        return try {
+            val cleanBase64 = if (base64Data.contains(",")) {
+                base64Data.substringAfter(",")
+            } else {
+                base64Data
+            }
+            val bytes = Base64.decode(cleanBase64, Base64.DEFAULT)
+            val cleanMime = if (mimeType.isBlank()) "application/octet-stream" else mimeType
+            val cleanName = if (fileName.isBlank()) "download" else fileName
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, cleanName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, cleanMime)
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                }
+                val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                if (uri != null) {
+                    context.contentResolver.openOutputStream(uri)?.use { os ->
+                        os.write(bytes)
+                        os.flush()
+                    }
+                } else {
+                    throw IllegalStateException("Failed to create download record in MediaStore")
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                if (!dir.exists()) dir.mkdirs()
+                val targetFile = File(dir, cleanName)
+                FileOutputStream(targetFile).use { fos ->
+                    fos.write(bytes)
+                    fos.flush()
+                }
+            }
+
+            mainHandler.post {
+                Toast.makeText(context, "Saved to Downloads: $cleanName", Toast.LENGTH_LONG).show()
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving file: ${e.message}", e)
+            mainHandler.post {
+                Toast.makeText(context, "Failed to download $fileName: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+            false
         }
     }
 }
