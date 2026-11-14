@@ -25,6 +25,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
+import okio.ByteString.Companion.encodeUtf8
 import org.json.JSONObject
 import java.io.IOException
 import java.net.URLEncoder
@@ -486,7 +487,7 @@ class OuiChatPushService : Service() {
 
                             val liveSocket = activeSockets[key]
                             val tokenPayload = JSONObject().apply { put("access_token", newAccess) }
-                            val sent = liveSocket?.send(ByteString.encodeUtf8(tokenPayload.toString())) ?: false
+                            val sent = liveSocket?.send(tokenPayload.toString().encodeUtf8()) ?: false
                             if (sent) {
                                 Log.i(TAG, "Sent refreshed access token over active WebSocket for $key")
                                 retryCounts[key] = 0
