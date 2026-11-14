@@ -283,13 +283,26 @@ export async function listMessages(
   return messages
 }
 
+async function readBlobAsArrayBuffer(file: File): Promise<ArrayBuffer> {
+  try {
+    return await file.arrayBuffer()
+  } catch {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as ArrayBuffer)
+      reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"))
+      reader.readAsArrayBuffer(file)
+    })
+  }
+}
+
 export async function uploadFile(
   domain: string,
   accessToken: string,
   file: File,
   fileType: "attachment" | "icon",
 ) {
-  const bytes = await file.arrayBuffer()
+  const bytes = await readBlobAsArrayBuffer(file)
   const response = await request(domain, {
     method: "POST",
     path: "/attachments/upload",

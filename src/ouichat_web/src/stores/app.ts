@@ -1138,9 +1138,25 @@ export const useAppStore = defineStore("app", () => {
     if (!chat) return
     const uploaded: string[] = []
     let uploadError: string | null = null
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      if (i > 0) {
+        // Micro-pause to allow keep-alive TCP sockets to settle between uploads
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
       try {
-        const fileId = await withSession(me, (session) => api.uploadFile(session.domain, session.accessToken, file, "attachment"))
+        let fileId: string
+        try {
+          fileId = await withSession(me, (session) => api.uploadFile(session.domain, session.accessToken, file, "attachment"))
+        } catch (firstErr) {
+          // If socket was reset or connection dropped during sequential uploads, retry once on a fresh socket
+          if (firstErr instanceof ApiError && firstErr.status === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 100))
+            fileId = await withSession(me, (session) => api.uploadFile(session.domain, session.accessToken, file, "attachment"))
+          } else {
+            throw firstErr
+          }
+        }
         attachmentNames.set(`${me.domain}:${fileId}`, file.name)
         uploaded.push(fileId)
       } catch (cause) {

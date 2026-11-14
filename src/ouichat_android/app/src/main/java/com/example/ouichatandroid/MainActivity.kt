@@ -80,11 +80,28 @@ class MainActivity : ComponentActivity() {
                 val list = mutableListOf<Uri>()
                 for (i in 0 until clip.itemCount) {
                     val uri = clip.getItemAt(i).uri
-                    if (uri != null) list.add(uri)
+                    if (uri != null) {
+                        try {
+                            grantUriPermission(packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        } catch (_: Exception) {}
+                        try {
+                            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        } catch (_: Exception) {}
+                        list.add(uri)
+                    }
                 }
                 if (list.isNotEmpty()) list.toTypedArray() else null
             }
-            data.data != null -> arrayOf(data.data!!)
+            data.data != null -> {
+                val uri = data.data!!
+                try {
+                    grantUriPermission(packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (_: Exception) {}
+                try {
+                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (_: Exception) {}
+                arrayOf(uri)
+            }
             else -> WebChromeClient.FileChooserParams.parseResult(result.resultCode, data)
         }
         fileUploadCallback?.onReceiveValue(uris)
@@ -198,13 +215,16 @@ class MainActivity : ComponentActivity() {
                     fileUploadCallback?.onReceiveValue(null)
                     fileUploadCallback = filePathCallback
 
-                    val intent = fileChooserParams?.createIntent() ?: Intent(Intent.ACTION_GET_CONTENT).apply {
+                    val intent = (fileChooserParams?.createIntent() ?: Intent(Intent.ACTION_GET_CONTENT)).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
                         type = "*/*"
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                     if (fileChooserParams?.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
                         intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                         @Suppress("DEPRECATION")
                         val target = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+                        target?.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         target?.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                     }
                     try {

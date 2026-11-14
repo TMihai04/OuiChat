@@ -141,7 +141,8 @@ export async function request(domain: string, options: RequestOptions): Promise<
     if (cause instanceof DOMException && cause.name === "AbortError") {
       throw cause
     }
-    throw new ApiError(0, "Cannot establish a connection with the server.")
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    throw new ApiError(0, `Cannot establish a connection with the server (${detail}).`)
   }
 
   if (!response.ok) {
