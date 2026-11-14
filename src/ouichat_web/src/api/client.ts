@@ -298,7 +298,7 @@ export async function uploadFile(
     body: bytes,
     headers: {
       "Content-Type": "application/octet-stream",
-      "X-Original-Filename": file.name || "unknown_file",
+      "X-Original-Filename": encodeURIComponent(file.name || "unknown_file"),
     },
   }) as ItemResponse<{ file_id: string }>
   return response.item.file_id

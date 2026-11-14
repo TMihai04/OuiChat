@@ -28,6 +28,7 @@ const notifEnabled = ref(isNotificationsGloballyEnabled())
 const bannerDismissed = ref(isNotificationBannerDismissed())
 
 const notifPermissionLabel = computed(() => {
+  if (isNative.value) return "Active in Android app"
   if (!isNotificationSupported()) return "Not supported in this browser"
   if (notifPermission.value === "granted") return "Allowed by browser"
   if (notifPermission.value === "denied") return "Blocked in browser site settings"

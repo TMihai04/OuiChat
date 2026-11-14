@@ -25,6 +25,8 @@ from pathlib import Path
 
 import aiofiles
 import os
+import re
+import urllib.parse
 
 
 router = APIRouter(
@@ -81,7 +83,10 @@ async def upload_new_file(
         )
     
     file_id = get_uuid4()
-    disk_filename = f"{file_id}_{x_original_filename}"
+    raw_filename = urllib.parse.unquote(x_original_filename)
+    safe_basename = os.path.basename(raw_filename.replace("\\", "/"))
+    clean_filename = re.sub(r'[\\/*?:"<>|]', "_", safe_basename).strip() or "attachment"
+    disk_filename = f"{file_id}_{clean_filename}"
 
     file_path = os.path.join(
         ATTACHMENTS_DIR if file_type == "attachment" else ICONS_DIR, disk_filename

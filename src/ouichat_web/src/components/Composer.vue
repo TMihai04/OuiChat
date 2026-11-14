@@ -39,6 +39,9 @@ const replyPicture = computed(() => {
 
 function reset() {
   text.value = ""
+  if (box.value) {
+    box.value.value = ""
+  }
   files.value = []
   mode.value = null
   targetId.value = null
@@ -126,11 +129,14 @@ function onKeydown(event: KeyboardEvent) {
 
 async function send() {
   if (paused.value) return
-  if (text.value.length > MESSAGE_LIMIT) {
+  if (box.value) {
+    text.value = box.value.value
+  }
+  const value = (box.value?.value ?? text.value).trim()
+  if (value.length > MESSAGE_LIMIT) {
     store.error = "A message can be at most 512 characters"
     return
   }
-  const value = text.value.trim()
   if (!value && files.value.length === 0) return
   if (mode.value === "edit" && !value) {
     store.error = "Message text must not be empty"
@@ -188,10 +194,11 @@ async function send() {
       </button>
       <textarea
         ref="box"
-        v-model="text"
+        :value="text"
         placeholder="Start typing..."
         rows="1"
         maxlength="512"
+        @input="text = ($event.target as HTMLTextAreaElement).value"
         @keydown="onKeydown"
       />
       <button
