@@ -2,16 +2,19 @@ package com.example.ouichatandroid
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ContentResolver
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.webkit.MimeTypeMap
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -27,6 +30,8 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.webkit.WebViewAssetLoader
 import com.example.ouichatandroid.bridge.AndroidBridge
 import com.example.ouichatandroid.sensor.LightSensorManager
@@ -35,6 +40,11 @@ import com.example.ouichatandroid.service.OuiChatPushService
 import com.example.ouichatandroid.util.DeviceUtils
 import com.example.ouichatandroid.util.NotificationHelper
 import com.example.ouichatandroid.util.PreferenceManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.UUID
 
 class MainActivity : ComponentActivity() {
 
@@ -72,34 +82,54 @@ class MainActivity : ComponentActivity() {
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        val data = result.data
-        val uris: Array<Uri>? = when {
-            result.resultCode != RESULT_OK || data == null -> null
-            data.clipData != null -> {
-                val clip = data.clipData!!
-                val list = mutableListOf<Uri>()
-                for (i in 0 until clip.itemCount) {
-                    val uri = clip.getItemAt(i).uri
-                    if (uri != null) {
-                        try {
-                            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        } catch (_: Exception) {}
-                        list.add(uri)
-                    }
-                }
-                if (list.isNotEmpty()) list.toTypedArray() else null
-            }
-            data.data != null -> {
-                val uri = data.data!!
-                try {
-                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                } catch (_: Exception) {}
-                arrayOf(uri)
-            }
-            else -> WebChromeClient.FileChooserParams.parseResult(result.resultCode, data)
-        }
-        fileUploadCallback?.onReceiveValue(uris)
+        val callback = fileUploadCallback
         fileUploadCallback = null
+
+        val data = result.data
+        if (result.resultCode != RESULT_OK || data == null) {
+            callback?.onReceiveValue(null)
+            return@registerForActivityResult
+        }
+
+        val rawUris = mutableListOf<Uri>()
+        if (data.clipData != null) {
+            val clip = data.clipData!!
+            for (i in 0 until clip.itemCount) {
+                val uri = clip.getItemAt(i).uri
+                if (uri != null) {
+                    rawUris.add(uri)
+                }
+            }
+        } else if (data.data != null) {
+            rawUris.add(data.data!!)
+        }
+
+        if (rawUris.isEmpty()) {
+            val parsed = WebChromeClient.FileChooserParams.parseResult(result.resultCode, data)
+            if (parsed != null) {
+                rawUris.addAll(parsed)
+            }
+        }
+
+        if (rawUris.isEmpty()) {
+            callback?.onReceiveValue(null)
+            return@registerForActivityResult
+        }
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            val safeUris = mutableListOf<Uri>()
+            for (uri in rawUris) {
+                val safeUri = copyUriToCache(uri)
+                if (safeUri != null) {
+                    safeUris.add(safeUri)
+                }
+            }
+            withContext(Dispatchers.Main) {
+                callback?.onReceiveValue(
+                    if (safeUris.isNotEmpty()) safeUris.toTypedArray() else null
+                )
+            }
+        }
     }
 
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -122,6 +152,7 @@ class MainActivity : ComponentActivity() {
         NotificationHelper.createChannels(this)
         checkNotificationPermission()
         startPushServiceIfLoggedIn()
+        cleanOldStagedUploads()
 
         // 1. Initialize Sensor Managers
         lightSensorManager = LightSensorManager(this) { theme ->
@@ -216,29 +247,27 @@ class MainActivity : ComponentActivity() {
 
                     val isMultiple = fileChooserParams?.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE
 
-                    // Prefer ACTION_OPEN_DOCUMENT with persistable permissions for reliable multi-file reading
-                    val openDocIntent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    val contentIntent = (fileChooserParams?.createIntent() ?: Intent(Intent.ACTION_GET_CONTENT)).apply {
                         addCategory(Intent.CATEGORY_OPENABLE)
-                        type = "*/*"
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                        if (type.isNullOrEmpty()) {
+                            type = "*/*"
+                        }
+                        if (isMultiple) {
+                            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                        }
+                    }
+
+                    val chooserIntent = Intent.createChooser(contentIntent, "Select File").apply {
                         if (isMultiple) {
                             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                         }
                     }
 
                     try {
-                        filePickerLauncher.launch(openDocIntent)
+                        filePickerLauncher.launch(chooserIntent)
                     } catch (_: Exception) {
                         try {
-                            val fallbackIntent = (fileChooserParams?.createIntent() ?: Intent(Intent.ACTION_GET_CONTENT)).apply {
-                                addCategory(Intent.CATEGORY_OPENABLE)
-                                type = "*/*"
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                if (isMultiple) {
-                                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                                }
-                            }
-                            filePickerLauncher.launch(fallbackIntent)
+                            filePickerLauncher.launch(contentIntent)
                         } catch (_: Exception) {
                             fileUploadCallback?.onReceiveValue(null)
                             fileUploadCallback = null
@@ -410,6 +439,81 @@ class MainActivity : ComponentActivity() {
                 "if (window.markChatReadFromNative) window.markChatReadFromNative('$chatId')",
                 null
             )
+        }
+    }
+
+    private fun getFileNameFromUri(uri: Uri): String {
+        var name: String? = null
+        if (uri.scheme == ContentResolver.SCHEME_CONTENT) {
+            try {
+                contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (index >= 0) {
+                            name = cursor.getString(index)
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        if (name.isNullOrBlank()) {
+            name = uri.lastPathSegment
+        }
+        if (name.isNullOrBlank()) {
+            name = "file_${System.currentTimeMillis()}"
+        }
+        if (!name.contains(".") || name.endsWith(".")) {
+            try {
+                val mimeType = contentResolver.getType(uri)
+                val ext = if (mimeType != null) MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) else null
+                if (!ext.isNullOrBlank()) {
+                    name = if (name.endsWith(".")) "$name$ext" else "$name.$ext"
+                }
+            } catch (_: Exception) {}
+        }
+        val sanitized = name.replace("[/\\\\:*?\"<>|]".toRegex(), "_").trim()
+        return if (sanitized.isNotEmpty()) sanitized else "file_${System.currentTimeMillis()}"
+    }
+
+    private fun copyUriToCache(uri: Uri): Uri? {
+        return try {
+            val fileName = getFileNameFromUri(uri)
+            val subFolder = File(cacheDir, "staged_uploads/${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}")
+            if (!subFolder.exists()) {
+                subFolder.mkdirs()
+            }
+            val destFile = File(subFolder, fileName)
+
+            contentResolver.openInputStream(uri)?.use { inputStream ->
+                destFile.outputStream().use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            } ?: return null
+
+            val providerUri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", destFile)
+            grantUriPermission(packageName, providerUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            providerUri
+        } catch (e: Exception) {
+            android.util.Log.e("OuiChat", "Failed to cache picked file from uri: $uri", e)
+            null
+        }
+    }
+
+    private fun cleanOldStagedUploads() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val stagedDir = File(cacheDir, "staged_uploads")
+                if (stagedDir.exists() && stagedDir.isDirectory) {
+                    val oneDayAgo = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+                    stagedDir.listFiles()?.forEach { file ->
+                        if (file.lastModified() < oneDayAgo) {
+                            file.deleteRecursively()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("OuiChat", "Failed to clean old staged uploads", e)
+            }
         }
     }
 

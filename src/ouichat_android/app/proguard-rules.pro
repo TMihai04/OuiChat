@@ -22,3 +22,6 @@
 -dontwarn okio.**
 -dontwarn javax.annotation.**
 -dontwarn org.conscrypt.**
+
+# 5. FileProvider
+-keep class androidx.core.content.FileProvider { *; }

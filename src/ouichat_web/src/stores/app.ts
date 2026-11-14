@@ -1173,7 +1173,12 @@ export const useAppStore = defineStore("app", () => {
         uploaded.push(fileId)
         onProgress?.(uploaded.length, files.length)
       } catch (cause) {
-        uploadError = `Failed to upload "${file.name}": ${errorText(cause)}`
+        let msg = errorText(cause)
+        if (file.size > 1024 * 1024 && (msg.includes("Failed to fetch") || (cause instanceof ApiError && cause.status === 0))) {
+          const mb = (file.size / (1024 * 1024)).toFixed(1)
+          msg = `File is ${mb}MB and server rejected it. If using Nginx on ${me.domain}, add 'client_max_body_size 50M;' to the Nginx config.`
+        }
+        uploadError = `Failed to upload "${file.name}": ${msg}`
         break
       }
     }

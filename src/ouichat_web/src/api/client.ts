@@ -296,13 +296,80 @@ async function readBlobAsArrayBuffer(file: File): Promise<ArrayBuffer> {
   }
 }
 
+async function prepareUploadPayload(file: File): Promise<{ bytes: ArrayBuffer; filename: string }> {
+  if (
+    typeof window !== "undefined" &&
+    file.type.startsWith("image/") &&
+    file.type !== "image/gif" &&
+    file.type !== "image/svg+xml"
+  ) {
+    try {
+      let bitmap: ImageBitmap | HTMLImageElement | null = null
+      let w = 0
+      let h = 0
+
+      if (typeof createImageBitmap === "function") {
+        bitmap = await createImageBitmap(file)
+        w = bitmap.width
+        h = bitmap.height
+      } else {
+        const url = URL.createObjectURL(file)
+        bitmap = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const img = new Image()
+          img.onload = () => resolve(img)
+          img.onerror = reject
+          img.src = url
+        })
+        w = bitmap.naturalWidth
+        h = bitmap.naturalHeight
+        URL.revokeObjectURL(url)
+      }
+
+      const maxDim = 1920
+      if (w > maxDim || h > maxDim) {
+        if (w > h) {
+          h = Math.round((h * maxDim) / w)
+          w = maxDim
+        } else {
+          w = Math.round((w * maxDim) / h)
+          h = maxDim
+        }
+      }
+
+      const canvas = document.createElement("canvas")
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext("2d")
+      if (ctx && bitmap) {
+        ctx.drawImage(bitmap, 0, 0, w, h)
+        if ("close" in bitmap && typeof bitmap.close === "function") {
+          bitmap.close()
+        }
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82))
+        if (blob && blob.size < file.size) {
+          const bytes = await blob.arrayBuffer()
+          const baseName = file.name.replace(/\.[^/.]+$/, "")
+          return { bytes, filename: `${baseName || "photo"}.jpg` }
+        }
+      } else if (bitmap && "close" in bitmap && typeof bitmap.close === "function") {
+        bitmap.close()
+      }
+    } catch (e) {
+      console.warn("Client-side image compression skipped:", e)
+    }
+  }
+
+  const bytes = await readBlobAsArrayBuffer(file)
+  return { bytes, filename: file.name }
+}
+
 export async function uploadFile(
   domain: string,
   accessToken: string,
   file: File,
   fileType: "attachment" | "icon",
 ) {
-  const bytes = await readBlobAsArrayBuffer(file)
+  const { bytes, filename } = await prepareUploadPayload(file)
   const response = await request(domain, {
     method: "POST",
     path: "/attachments/upload",
@@ -311,7 +378,7 @@ export async function uploadFile(
     body: bytes,
     headers: {
       "Content-Type": "application/octet-stream",
-      "X-Original-Filename": encodeURIComponent(file.name || "unknown_file"),
+      "X-Original-Filename": encodeURIComponent(filename || "unknown_file"),
     },
   }) as ItemResponse<{ file_id: string }>
   return response.item.file_id
