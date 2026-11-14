@@ -104,6 +104,11 @@ function addFiles(event: Event) {
   stage(picked)
 }
 
+function onInput(event: Event) {
+  if (busy.value) return
+  text.value = (event.target as HTMLTextAreaElement).value
+}
+
 function removeStagedFile(index: number) {
   files.value.splice(index, 1)
   if (files.value.length === 0 && fileInput.value) {
@@ -234,11 +239,12 @@ async function send() {
       <textarea
         ref="box"
         :value="text"
-        :disabled="busy || paused"
+        :readonly="busy"
+        :disabled="paused"
         placeholder="Start typing..."
         rows="1"
         maxlength="512"
-        @input="text = ($event.target as HTMLTextAreaElement).value"
+        @input="onInput"
         @keydown="onKeydown"
       />
       <button

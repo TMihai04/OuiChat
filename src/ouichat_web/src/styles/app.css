@@ -890,9 +890,9 @@ button.reply-quote:hover:not(:disabled) {
   padding: 8px;
 }
 
-.composer textarea:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.composer textarea:disabled,
+.composer textarea[readonly] {
+  opacity: 0.7;
 }
 
 .pause-note {
