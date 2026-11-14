@@ -138,6 +138,7 @@ class MainActivity : ComponentActivity() {
         if (isGranted) {
             startPushServiceIfLoggedIn()
         }
+        notifyNotificationPermissionChanged()
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -400,6 +401,7 @@ class MainActivity : ComponentActivity() {
             "if (window.onNativeAppResumed) window.onNativeAppResumed()",
             null
         )
+        notifyNotificationPermissionChanged()
     }
 
     override fun onPause() {
@@ -439,6 +441,42 @@ class MainActivity : ComponentActivity() {
                 "if (window.markChatReadFromNative) window.markChatReadFromNative('$chatId')",
                 null
             )
+        }
+    }
+
+    fun notifyNotificationPermissionChanged() {
+        runOnUiThread {
+            webView.evaluateJavascript(
+                "if (window.onNotificationPermissionChanged) window.onNotificationPermissionChanged()",
+                null
+            )
+        }
+    }
+
+    fun requestOrOpenNotificationSettings() {
+        runOnUiThread {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val hasPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+                if (!hasPermission) {
+                    if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        return@runOnUiThread
+                    }
+                }
+            }
+            try {
+                val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                    putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+                }
+                startActivity(intent)
+            } catch (_: Exception) {
+                try {
+                    val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.fromParts("package", packageName, null)
+                    }
+                    startActivity(intent)
+                } catch (_: Exception) {}
+            }
         }
     }
 

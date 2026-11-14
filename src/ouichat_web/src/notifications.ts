@@ -117,18 +117,36 @@ export async function playNotificationChime(force = false) {
 }
 
 export function isNotificationSupported(): boolean {
-  return typeof window !== "undefined" && "Notification" in window
+  if (typeof window === "undefined") return false
+  if ((window as any).AndroidBridge) return true
+  return "Notification" in window
 }
 
 export function getNotificationPermission(): NotificationPermission {
+  if (typeof window !== "undefined" && typeof (window as any).AndroidBridge?.areNotificationsEnabled === "function") {
+    try {
+      const allowed = (window as any).AndroidBridge.areNotificationsEnabled()
+      return allowed ? "granted" : "denied"
+    } catch {
+      return "denied"
+    }
+  }
   if (!isNotificationSupported()) return "denied"
-  return Notification.permission
+  return typeof Notification !== "undefined" ? Notification.permission : "denied"
 }
 
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
+  if (typeof window !== "undefined" && typeof (window as any).AndroidBridge?.requestNotificationPermission === "function") {
+    try {
+      (window as any).AndroidBridge.requestNotificationPermission()
+      return getNotificationPermission()
+    } catch {
+      return "denied"
+    }
+  }
   if (!isNotificationSupported()) return "denied"
   try {
-    return await Notification.requestPermission()
+    return typeof Notification !== "undefined" ? await Notification.requestPermission() : "denied"
   } catch {
     return "denied"
   }

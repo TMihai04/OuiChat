@@ -891,8 +891,14 @@ button.reply-quote:hover:not(:disabled) {
 }
 
 .composer textarea:disabled,
-.composer textarea[readonly] {
+.composer textarea[readonly],
+.composer textarea.composer-locked {
   opacity: 0.7;
+}
+
+.composer textarea.composer-locked {
+  caret-color: transparent;
+  user-select: none;
 }
 
 .pause-note {

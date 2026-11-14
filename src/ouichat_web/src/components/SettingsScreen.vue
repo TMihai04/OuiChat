@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import { getSavedThemeMode, isNativeBridgeAvailable, setThemeMode, type ThemeMode } from "../theme"
 import {
@@ -27,28 +27,63 @@ const notifPermission = ref(getNotificationPermission())
 const notifEnabled = ref(isNotificationsGloballyEnabled())
 const bannerDismissed = ref(isNotificationBannerDismissed())
 
+function refreshNotifState() {
+  const perm = getNotificationPermission()
+  notifPermission.value = perm
+  bannerDismissed.value = isNotificationBannerDismissed()
+  if (perm === "denied") {
+    notifEnabled.value = false
+    setNotificationsGloballyEnabled(false)
+  } else {
+    notifEnabled.value = isNotificationsGloballyEnabled()
+  }
+}
+
 const notifPermissionLabel = computed(() => {
-  if (isNative.value) return "Active in Android app"
-  if (!isNotificationSupported()) return "Not supported in this browser"
-  if (notifPermission.value === "granted") return "Allowed by browser"
-  if (notifPermission.value === "denied") return "Blocked in browser site settings"
-  return "Permission not requested"
+  if (notifPermission.value === "denied") {
+    return isNative.value
+      ? "Permission blocked in Android system settings"
+      : "Permission blocked in browser site settings"
+  }
+  if (notifPermission.value === "default") {
+    return "Permission not requested"
+  }
+  if (!isNotificationSupported()) {
+    return "Not supported in this environment"
+  }
+  return isNative.value ? "Active in Android app" : "Allowed by browser"
 })
 
 async function toggleNotifs(enabled: boolean) {
-  notifEnabled.value = enabled
-  setNotificationsGloballyEnabled(enabled)
-  if (enabled && isNotificationSupported() && getNotificationPermission() === "default") {
+  if (enabled && notifPermission.value === "denied") {
+    await requestPermissionDirectly()
+    refreshNotifState()
+    return
+  }
+  if (enabled && notifPermission.value === "default") {
     const perm = await requestNotificationPermission()
     notifPermission.value = perm
-    bannerDismissed.value = isNotificationBannerDismissed()
+    if (perm === "denied") {
+      notifEnabled.value = false
+      setNotificationsGloballyEnabled(false)
+      return
+    }
   }
+  notifEnabled.value = enabled
+  setNotificationsGloballyEnabled(enabled)
 }
 
 async function requestPermissionDirectly() {
   const perm = await requestNotificationPermission()
   notifPermission.value = perm
   bannerDismissed.value = isNotificationBannerDismissed()
+  if (perm === "granted") {
+    notifEnabled.value = true
+    setNotificationsGloballyEnabled(true)
+  } else if (perm === "denied") {
+    notifEnabled.value = false
+    setNotificationsGloballyEnabled(false)
+  }
 }
 
 function restoreBannerPrompt() {
@@ -59,6 +94,25 @@ function restoreBannerPrompt() {
 function testSound() {
   playNotificationChime(true)
 }
+
+onMounted(() => {
+  refreshNotifState()
+  if (typeof window !== "undefined") {
+    ;(window as any).onNotificationPermissionChanged = () => {
+      refreshNotifState()
+    }
+    window.addEventListener("focus", refreshNotifState)
+  }
+})
+
+onBeforeUnmount(() => {
+  if (typeof window !== "undefined") {
+    if ((window as any).onNotificationPermissionChanged) {
+      delete (window as any).onNotificationPermissionChanged
+    }
+    window.removeEventListener("focus", refreshNotifState)
+  }
+})
 </script>
 
 <template>
@@ -152,7 +206,7 @@ function testSound() {
             <button
               type="button"
               class="selection-tab"
-              :class="{ active: notifEnabled }"
+              :class="{ active: notifEnabled && notifPermission === 'granted' }"
               @click="toggleNotifs(true)"
             >
               Enabled
@@ -160,7 +214,7 @@ function testSound() {
             <button
               type="button"
               class="selection-tab"
-              :class="{ active: !notifEnabled }"
+              :class="{ active: !notifEnabled || notifPermission !== 'granted' }"
               @click="toggleNotifs(false)"
             >
               Disabled
@@ -169,7 +223,7 @@ function testSound() {
 
           <div class="notif-meta-row">
             <span class="notif-status-info">
-              Status: {{ notifEnabled ? notifPermissionLabel : 'Disabled in OuiChat settings' }}
+              Status: {{ (notifEnabled && notifPermission === 'granted') ? notifPermissionLabel : (notifPermission === 'denied' ? notifPermissionLabel : 'Disabled in OuiChat settings') }}
             </span>
             <button
               type="button"
@@ -180,17 +234,17 @@ function testSound() {
             </button>
           </div>
 
-          <div v-if="notifEnabled && isNotificationSupported()" class="notif-actions-row">
+          <div class="notif-actions-row">
             <button
-              v-if="notifPermission === 'default'"
+              v-if="notifPermission !== 'granted'"
               type="button"
-              class="mid-button"
+              class="mid-button notif-enable-btn"
               @click="requestPermissionDirectly"
             >
-              Request Browser Permission
+              {{ isNative ? "Enable Notification Permission (Android Settings)" : "Request Browser Permission" }}
             </button>
             <button
-              v-if="bannerDismissed"
+              v-if="bannerDismissed && !isNative"
               type="button"
               class="mid-button"
               @click="restoreBannerPrompt"

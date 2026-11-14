@@ -73,7 +73,7 @@ const composerMax = 140
 function fitComposer() {
   const element = box.value
   if (!element) return
-  element.style.height = "0px"
+  element.style.height = `${composerMin}px`
   const next = Math.min(composerMax, Math.max(composerMin, element.scrollHeight))
   element.style.height = `${next}px`
 }
@@ -105,8 +105,23 @@ function addFiles(event: Event) {
 }
 
 function onInput(event: Event) {
-  if (busy.value) return
+  if (busy.value) {
+    if (box.value) box.value.value = text.value
+    return
+  }
   text.value = (event.target as HTMLTextAreaElement).value
+}
+
+function onBeforeInput(event: InputEvent) {
+  if (busy.value) {
+    event.preventDefault()
+  }
+}
+
+function onPaste(event: ClipboardEvent) {
+  if (busy.value) {
+    event.preventDefault()
+  }
 }
 
 function removeStagedFile(index: number) {
@@ -147,6 +162,15 @@ function onKeydown(event: KeyboardEvent) {
   }
 }
 
+function onSendTouch(event: TouchEvent) {
+  event.preventDefault()
+  const hasText = (box.value?.value ?? text.value).trim().length > 0
+  if (hasText && box.value) {
+    box.value.focus()
+  }
+  void send()
+}
+
 async function send() {
   if (paused.value || busy.value) return
   if (box.value) {
@@ -163,6 +187,9 @@ async function send() {
     return
   }
   const hadText = value.length > 0
+  if (hadText && box.value) {
+    box.value.focus()
+  }
   let sendSucceeded = false
   busy.value = true
   if (files.value.length > 0) {
@@ -239,21 +266,27 @@ async function send() {
       <textarea
         ref="box"
         :value="text"
-        :readonly="busy"
         :disabled="paused"
+        :class="{ 'composer-locked': busy }"
         placeholder="Start typing..."
         rows="1"
         maxlength="512"
-        @input="onInput"
+        @beforeinput="onBeforeInput"
         @keydown="onKeydown"
+        @paste="onPaste"
+        @input="onInput"
       />
       <button
         class="square"
-        type="submit"
+        type="button"
+        tabindex="-1"
         :disabled="busy || paused"
         title="Send"
+        @touchstart.prevent
+        @touchend.prevent="onSendTouch"
         @pointerdown.prevent
         @mousedown.prevent
+        @click="send"
       >
         <img src="/icons/send_message_icon.png" width="22" height="22" alt="" />
       </button>

@@ -1,8 +1,10 @@
 package com.example.ouichatandroid.bridge
 
+import android.Manifest
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.SoundPool
 import android.os.Build
@@ -17,7 +19,9 @@ import android.util.Base64
 import android.util.Log
 import android.webkit.JavascriptInterface
 import android.widget.Toast
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import com.example.ouichatandroid.MainActivity
 import com.example.ouichatandroid.R
 import com.example.ouichatandroid.sensor.LightSensorManager
 import com.example.ouichatandroid.service.OuiChatPushService
@@ -205,6 +209,25 @@ class AndroidBridge(
     @JavascriptInterface
     fun isDynamicSensorSupported(): Boolean {
         return lightSensorManager.isSensorAvailable()
+    }
+
+    @JavascriptInterface
+    fun areNotificationsEnabled(): Boolean {
+        val manager = NotificationManagerCompat.from(context)
+        val systemEnabled = manager.areNotificationsEnabled()
+        val postGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+        return systemEnabled && postGranted
+    }
+
+    @JavascriptInterface
+    fun requestNotificationPermission() {
+        mainHandler.post {
+            MainActivity.activeInstance?.requestOrOpenNotificationSettings()
+        }
     }
 
     @JavascriptInterface
