@@ -66,14 +66,14 @@ async function confirmPicker(usernames: string[]) {
           />
           <span class="row-label">{{ store.current?.username }} ({{ store.current?.domain }})</span>
         </button>
-        <button class="square" type="button" title="Profile" @click="router.push('/profile')">
+        <button class="square" type="button" title="Profile" @click="accountOpen = false; router.push('/profile')">
           <img src="/icons/user_settings_icon.png" width="22" height="22" alt="" />
         </button>
-        <button class="square" type="button" title="Settings" @click="router.push('/settings')">
+        <button class="square" type="button" title="Settings" @click="accountOpen = false; router.push('/settings')">
           <img src="/icons/settings_icon.png" width="22" height="22" alt="" />
         </button>
       </div>
-      <div v-if="accountOpen" class="account-menu" style="left: 18px; bottom: 62px; width: 220px; z-index: 50;">
+      <div v-if="accountOpen" class="account-menu" style="left: 18px; bottom: 62px; width: 220px; z-index: 50;" @pointerdown.stop>
         <button
           v-for="session in store.sessions"
           :key="session.username + session.domain"

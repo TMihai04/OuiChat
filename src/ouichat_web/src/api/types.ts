@@ -40,6 +40,7 @@ export interface MessageRaw {
   sender: string
   content?: string | null
   attachments?: string[]
+  attachment_names?: string[]
   replied_to?: string | null
   created_at: number
   updated_at: number

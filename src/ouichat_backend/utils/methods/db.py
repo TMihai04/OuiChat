@@ -20,6 +20,7 @@ from ouichat_backend.utils.methods import (
 from pymongo import AsyncMongoClient, collation
 
 import asyncio
+from pathlib import Path
 
 
 async def _ensure_connected(db_uri: str):
@@ -852,6 +853,18 @@ async def add_message(
     sender_pic = sender_user.profile.picture_id if sender_user and sender_user.profile else None
     ws_data["sender_picture_id"] = sender_pic
     ws_data["chat_picture_id"] = chat.profile.picture_id if chat.type == "group" else sender_pic
+
+    attachment_names = []
+    if new_message.attachments:
+        for file_id in new_message.attachments:
+            att_doc = await get_attachment(file_id)
+            if att_doc and att_doc.path:
+                disk_name = Path(att_doc.path).name
+                original_name = "_".join(disk_name.split("_")[1:]) if "_" in disk_name else disk_name
+                attachment_names.append(original_name)
+            else:
+                attachment_names.append("attachment")
+    ws_data["attachment_names"] = attachment_names
 
     for part in chat.preferences.participants:
         await ws_manager.notify_user(

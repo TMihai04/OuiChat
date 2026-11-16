@@ -39,6 +39,7 @@ object NotificationHelper {
 
     data class ChatNotificationStack(
         val chatId: String,
+        val userKey: String = "default",
         var roomTitle: String? = null,
         var isGroup: Boolean = false,
         var pictureId: String? = null,
@@ -50,6 +51,21 @@ object NotificationHelper {
 
     private val activeNotifiedChats = ConcurrentHashMap.newKeySet<String>()
     private val chatStacks = ConcurrentHashMap<String, ChatNotificationStack>()
+
+    fun getStackKey(userKey: String, chatId: String): String = "$userKey:$chatId"
+
+    fun getGroupKey(userKey: String): String {
+        val safeKey = userKey.replace(":", "_").replace("@", "_")
+        return "com.example.ouichatandroid.GROUP_$safeKey"
+    }
+
+    fun getSummaryNotificationId(userKey: String): Int {
+        return ("summary_$userKey").hashCode() and 0x7FFFFFFF
+    }
+
+    fun getChildNotificationId(userKey: String, chatId: String): Int {
+        return ("$userKey:$chatId").hashCode() and 0x7FFFFFFF
+    }
 
     fun createChannels(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -153,14 +169,16 @@ object NotificationHelper {
         isGroup: Boolean = false,
         pictureId: String? = null,
         senderPictureId: String? = null,
-        recipientUser: String? = null
+        recipientUser: String? = null,
+        userKey: String = recipientUser ?: "default"
     ) {
         val cleanGroupTitle = if (!groupTitle.isNullOrBlank() && groupTitle != "null") groupTitle else null
         val cleanPictureId = if (!pictureId.isNullOrBlank() && pictureId != "null") pictureId else null
         val cleanSenderPictureId = if (!senderPictureId.isNullOrBlank() && senderPictureId != "null") senderPictureId else null
 
-        val stack = chatStacks.compute(chatId) { _, existing ->
-            val s = existing ?: ChatNotificationStack(chatId = chatId)
+        val stackKey = getStackKey(userKey, chatId)
+        val stack = chatStacks.compute(stackKey) { _, existing ->
+            val s = existing ?: ChatNotificationStack(chatId = chatId, userKey = userKey)
             if (cleanGroupTitle != null) {
                 s.roomTitle = cleanGroupTitle
             }
@@ -188,23 +206,25 @@ object NotificationHelper {
             stack.iconBitmap = AvatarManager.getCachedAvatar(context, stack.pictureId!!)
         }
 
-        val isAlreadyNotified = activeNotifiedChats.contains(chatId)
-        renderNotification(context, chatId, stack, alertOnce = isAlreadyNotified)
+        val isAlreadyNotified = activeNotifiedChats.contains(stackKey)
+        renderNotification(context, stackKey, stack, alertOnce = isAlreadyNotified)
     }
 
     private fun postChildNotification(
         context: Context,
-        chatId: String,
+        stackKey: String,
         stack: ChatNotificationStack,
         alertOnce: Boolean
     ) {
         createChannels(context)
-        val notifId = chatId.hashCode() and 0x7FFFFFFF
+        val notifId = getChildNotificationId(stack.userKey, stack.chatId)
 
         val intent = Intent(context, MainActivity::class.java).apply {
-            action = "com.example.ouichatandroid.ACTION_OPEN_CHAT_$chatId"
+            action = "com.example.ouichatandroid.ACTION_OPEN_CHAT_${stack.userKey}_${stack.chatId}"
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra("chat_id", chatId)
+            putExtra("chat_id", stack.chatId)
+            putExtra("user_key", stack.userKey)
+            putExtra("recipient_user", stack.recipientUser)
         }
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
@@ -213,23 +233,28 @@ object NotificationHelper {
         }
         val pendingIntent = PendingIntent.getActivity(context, notifId, intent, flags)
 
-        val title = if (stack.isGroup && !stack.roomTitle.isNullOrBlank()) {
+        val targetUser = (stack.recipientUser ?: stack.userKey.substringBefore("@")).trim()
+        val hasTargetUser = targetUser.isNotBlank() && targetUser != "default"
+
+        val rawTitle = if (stack.isGroup && !stack.roomTitle.isNullOrBlank()) {
             stack.roomTitle!!
         } else {
             stack.messages.lastOrNull()?.sender ?: "OuiChat"
         }
+        val title = if (hasTargetUser) "$rawTitle (to @$targetUser)" else rawTitle
 
         // Conversation avatar bitmap: custom picture or default (group or user)
         val conversationAvatar = stack.iconBitmap ?: AvatarManager.getDefaultAvatar(context, stack.isGroup)
 
         // Publish dynamic conversation shortcut for Android 11+ Conversation space & collapsed avatar
+        val shortcutKey = "${stack.userKey}:${stack.chatId}"
         val chatPerson = Person.Builder()
             .setName(title)
-            .setKey(chatId)
+            .setKey(shortcutKey)
             .setIcon(IconCompat.createWithBitmap(conversationAvatar))
             .build()
 
-        val shortcut = ShortcutInfoCompat.Builder(context, chatId)
+        val shortcut = ShortcutInfoCompat.Builder(context, shortcutKey)
             .setShortLabel(title)
             .setLongLabel(title)
             .setIcon(IconCompat.createWithBitmap(conversationAvatar))
@@ -246,7 +271,7 @@ object NotificationHelper {
 
         // MessagingStyle user and conversation setup
         val mePerson = Person.Builder()
-            .setName("Me")
+            .setName(if (hasTargetUser) targetUser else "Me")
             .setKey(stack.recipientUser ?: "me")
             .build()
 
@@ -282,21 +307,27 @@ object NotificationHelper {
         val vibrationPattern = longArrayOf(0, 250, 200, 250)
 
         val latestMessage = displayed.lastOrNull()
-        val collapsedText = if (latestMessage != null && stack.isGroup) {
+        val baseCollapsed = if (latestMessage != null && stack.isGroup) {
             "${latestMessage.sender}: ${latestMessage.content}"
         } else {
             latestMessage?.content ?: "New message"
+        }
+        val collapsedText = if (hasTargetUser) {
+            "[to @$targetUser] $baseCollapsed"
+        } else {
+            baseCollapsed
         }
 
         // Mark as read action
         val markAsReadIntent = Intent(context, com.example.ouichatandroid.service.OuiChatPushService::class.java).apply {
             action = com.example.ouichatandroid.service.OuiChatPushService.ACTION_MARK_AS_READ
-            putExtra("chat_id", chatId)
+            putExtra("chat_id", stack.chatId)
+            putExtra("user_key", stack.userKey)
             putExtra("recipient_user", stack.recipientUser)
         }
         val markAsReadPendingIntent = PendingIntent.getService(
             context,
-            ("read_$chatId").hashCode() and 0x7FFFFFFF,
+            ("read_${stack.userKey}_${stack.chatId}").hashCode() and 0x7FFFFFFF,
             markAsReadIntent,
             flags
         )
@@ -306,6 +337,8 @@ object NotificationHelper {
             markAsReadPendingIntent
         ).build()
 
+        val userGroupKey = getGroupKey(stack.userKey)
+
         val notificationBuilder = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
             .setContentTitle(title)
             .setContentText(collapsedText)
@@ -313,11 +346,11 @@ object NotificationHelper {
             .setSmallIcon(R.drawable.ic_notification)
             .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
             .setColor(BRAND_COLOR)
-            .setGroup(NOTIFICATION_GROUP_KEY)
+            .setGroup(userGroupKey)
             .setGroupSummary(false)
             .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
             .setLargeIcon(conversationAvatar)
-            .setShortcutId(chatId)
+            .setShortcutId(shortcutKey)
             .setContentIntent(pendingIntent)
             .addAction(markAsReadAction)
             .setAutoCancel(true)
@@ -337,8 +370,8 @@ object NotificationHelper {
                 .setOnlyAlertOnce(false)
         }
 
-        if (!stack.recipientUser.isNullOrBlank()) {
-            notificationBuilder.setSubText("to @${stack.recipientUser}")
+        if (hasTargetUser) {
+            notificationBuilder.setSubText("to @$targetUser")
         }
 
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -347,159 +380,237 @@ object NotificationHelper {
 
     private fun renderNotification(
         context: Context,
-        chatId: String,
+        stackKey: String,
         stack: ChatNotificationStack,
         alertOnce: Boolean
     ) {
-        activeNotifiedChats.add(chatId)
+        activeNotifiedChats.add(stackKey)
 
-        // 1. Post/update Group Summary FIRST and resync any existing sibling children
-        updateGroupSummary(context, excludeChatId = chatId)
+        // 1. Post/update Group Summary FIRST for this user and resync any existing sibling children
+        updateGroupSummary(context, stack.userKey, excludeStackKey = stackKey)
 
-        // 2. Post incoming Child notification SECOND into the active bundle
-        postChildNotification(context, chatId, stack, alertOnce = alertOnce)
+        // 2. Post incoming Child notification SECOND into the active user's bundle
+        postChildNotification(context, stackKey, stack, alertOnce = alertOnce)
     }
 
     fun updateNotificationIcon(context: Context, chatId: String, bitmap: Bitmap) {
-        val stack = chatStacks[chatId] ?: return
-        stack.iconBitmap = bitmap
-        renderNotification(context, chatId, stack, alertOnce = true)
+        for ((key, stack) in chatStacks) {
+            if (stack.chatId == chatId) {
+                stack.iconBitmap = bitmap
+                renderNotification(context, key, stack, alertOnce = true)
+            }
+        }
     }
 
     fun updateUserAvatar(context: Context, username: String, pictureId: String, bitmap: Bitmap) {
-        for ((chatId, stack) in chatStacks) {
+        for ((key, stack) in chatStacks) {
             if (!stack.isGroup && stack.messages.any { it.sender == username }) {
                 stack.pictureId = pictureId
                 stack.iconBitmap = bitmap
-                renderNotification(context, chatId, stack, alertOnce = true)
+                renderNotification(context, key, stack, alertOnce = true)
             }
         }
     }
 
     fun updateChatName(context: Context, chatId: String, newName: String) {
-        val stack = chatStacks[chatId] ?: return
-        stack.roomTitle = newName
-        renderNotification(context, chatId, stack, alertOnce = true)
+        for ((key, stack) in chatStacks) {
+            if (stack.chatId == chatId) {
+                stack.roomTitle = newName
+                renderNotification(context, key, stack, alertOnce = true)
+            }
+        }
     }
 
     fun updateMessageContent(context: Context, chatId: String, messageId: String, newContent: String) {
-        val stack = chatStacks[chatId] ?: return
-        val msg = stack.messages.find { it.messageId == messageId } ?: return
-        msg.content = "$newContent (edited)"
-        renderNotification(context, chatId, stack, alertOnce = true)
+        for ((key, stack) in chatStacks) {
+            if (stack.chatId == chatId) {
+                val msg = stack.messages.find { it.messageId == messageId }
+                if (msg != null) {
+                    msg.content = "$newContent (edited)"
+                    renderNotification(context, key, stack, alertOnce = true)
+                }
+            }
+        }
     }
 
-    fun deleteMessage(context: Context, chatId: String, messageId: String): Boolean {
-        val stack = chatStacks[chatId] ?: return false
+    fun deleteMessage(context: Context, userKey: String, chatId: String, messageId: String): Boolean {
+        val stackKey = getStackKey(userKey, chatId)
+        val stack = chatStacks[stackKey] ?: return false
         val removed = stack.messages.removeAll { it.messageId == messageId }
         if (removed) {
             stack.totalCount = (stack.totalCount - 1).coerceAtLeast(0)
         }
         if (stack.messages.isEmpty() || stack.totalCount <= 0) {
-            cancelMessageNotification(context, chatId)
+            cancelMessageNotification(context, userKey, chatId)
             return true
         } else {
-            renderNotification(context, chatId, stack, alertOnce = true)
+            renderNotification(context, stackKey, stack, alertOnce = true)
             return false
         }
     }
 
-    fun updateGroupSummary(context: Context, excludeChatId: String? = null, isDismissal: Boolean = false) {
+    fun deleteMessage(context: Context, chatId: String, messageId: String): Boolean {
+        var anyCleared = false
+        val matchingKeys = activeNotifiedChats.filter { it.endsWith(":$chatId") || it == chatId }
+        for (key in matchingKeys) {
+            val stack = chatStacks[key] ?: continue
+            val cleared = deleteMessage(context, stack.userKey, chatId, messageId)
+            if (cleared) anyCleared = true
+        }
+        return anyCleared
+    }
+
+    fun updateGroupSummary(context: Context, userKey: String, excludeStackKey: String? = null, isDismissal: Boolean = false) {
         createChannels(context)
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (activeNotifiedChats.isNotEmpty()) {
-            val totalMessages = chatStacks.values.sumOf { it.totalCount }
-            val chatCount = activeNotifiedChats.size
-            val summaryTitle = "OuiChat"
+        val userChatKeys = activeNotifiedChats.filter { it.startsWith("$userKey:") }
+        val summaryId = getSummaryNotificationId(userKey)
+
+        if (userChatKeys.isNotEmpty()) {
+            val userTotalMessages = userChatKeys.sumOf { chatStacks[it]?.totalCount ?: 0 }
+            val globalTotal = PreferenceManager.getTotalUnreadCount(context).coerceAtLeast(chatStacks.values.sumOf { it.totalCount })
+            val firstStack = chatStacks[userChatKeys.first()]
+            val userDisplayName = (firstStack?.recipientUser ?: userKey.substringBefore("@")).trim()
+            val hasUser = userDisplayName.isNotBlank() && userDisplayName != "default"
+            val summaryTitle = if (hasUser) "Messages for @$userDisplayName" else "OuiChat"
+            val chatCount = userChatKeys.size
             val summaryText = if (chatCount > 1) {
-                "$totalMessages new messages from $chatCount chats"
+                "$userTotalMessages new messages from $chatCount chats"
             } else {
-                val s = activeNotifiedChats.firstOrNull()?.let { chatStacks[it] }
+                val s = firstStack
                 val title = if (s?.isGroup == true && !s.roomTitle.isNullOrBlank()) {
                     s.roomTitle
                 } else {
                     s?.messages?.lastOrNull()?.sender ?: "OuiChat"
                 }
-                if (totalMessages > 1) "$totalMessages new messages from $title" else "1 new message from $title"
+                if (userTotalMessages > 1) "$userTotalMessages new messages from $title" else "1 new message from $title"
             }
 
             val inboxStyle = NotificationCompat.InboxStyle()
                 .setBigContentTitle(summaryTitle)
-                .setSummaryText(summaryText)
+                .setSummaryText(if (hasUser) "to @$userDisplayName" else summaryText)
 
-            for (chat in activeNotifiedChats) {
-                val s = chatStacks[chat] ?: continue
+            for (chatKey in userChatKeys) {
+                val s = chatStacks[chatKey] ?: continue
                 val lastMsg = s.messages.lastOrNull() ?: continue
                 val senderName = if (s.isGroup) "${lastMsg.sender} (${s.roomTitle ?: "Group"})" else lastMsg.sender
                 inboxStyle.addLine("$senderName: ${lastMsg.content}")
             }
 
             val summaryIntent = Intent(context, MainActivity::class.java).apply {
+                action = "com.example.ouichatandroid.ACTION_OPEN_USER_$userKey"
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("user_key", userKey)
+                putExtra("recipient_user", firstStack?.recipientUser)
             }
             val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             } else {
                 PendingIntent.FLAG_UPDATE_CURRENT
             }
-            val pendingIntent = PendingIntent.getActivity(context, SUMMARY_NOTIFICATION_ID, summaryIntent, flags)
+            val pendingIntent = PendingIntent.getActivity(context, summaryId, summaryIntent, flags)
 
-            val summaryNotification = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
+            val summaryBuilder = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
                 .setColor(BRAND_COLOR)
                 .setContentTitle(summaryTitle)
                 .setContentText(summaryText)
                 .setStyle(inboxStyle)
-                .setGroup(NOTIFICATION_GROUP_KEY)
+                .setGroup(getGroupKey(userKey))
                 .setGroupSummary(true)
                 .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
                 .setOnlyAlertOnce(true)
-                .setNumber(totalMessages)
+                .setNumber(globalTotal) // Sets app icon badge to sum of all accounts!
                 .setSound(null)
                 .setVibrate(null)
                 .setContentIntent(pendingIntent)
-                .setAutoCancel(true)
+                .setAutoCancel(false)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .build()
 
-            manager.notify(SUMMARY_NOTIFICATION_ID, summaryNotification)
+            if (hasUser) {
+                summaryBuilder.setSubText("to @$userDisplayName")
+            }
 
-            // Resync sibling active chats only on incoming messages, NEVER on dismissal
+            val summaryNotification = summaryBuilder.build()
+            manager.notify(summaryId, summaryNotification)
+
+            // Resync sibling active chats for this user only on incoming messages, NEVER on dismissal
             if (!isDismissal) {
-                for (otherChatId in activeNotifiedChats) {
-                    if (otherChatId != excludeChatId) {
-                        val otherStack = chatStacks[otherChatId] ?: continue
-                        postChildNotification(context, otherChatId, otherStack, alertOnce = true)
+                for (otherKey in userChatKeys) {
+                    if (otherKey != excludeStackKey) {
+                        val otherStack = chatStacks[otherKey] ?: continue
+                        postChildNotification(context, otherKey, otherStack, alertOnce = true)
                     }
                 }
             }
         } else {
-            manager.cancel(SUMMARY_NOTIFICATION_ID)
+            manager.cancel(summaryId)
+        }
+
+        // On dismissal, refresh the badge number on any other active user summaries
+        if (isDismissal) {
+            refreshOtherSummariesBadge(context, excludeUserKey = userKey)
+        }
+    }
+
+    private fun refreshOtherSummariesBadge(context: Context, excludeUserKey: String? = null) {
+        val uniqueUsers = chatStacks.values.map { it.userKey }.distinct()
+        for (u in uniqueUsers) {
+            if (u != excludeUserKey) {
+                val userChatKeys = activeNotifiedChats.filter { it.startsWith("$u:") }
+                if (userChatKeys.isNotEmpty()) {
+                    updateGroupSummary(context, u, isDismissal = false)
+                }
+            }
         }
     }
 
     fun updateSenderAvatar(context: Context, chatId: String) {
-        val stack = chatStacks[chatId] ?: return
-        renderNotification(context, chatId, stack, alertOnce = true)
+        for ((key, stack) in chatStacks) {
+            if (stack.chatId == chatId) {
+                renderNotification(context, key, stack, alertOnce = true)
+            }
+        }
+    }
+
+    fun cancelMessageNotification(context: Context, userKey: String, chatId: String) {
+        val stackKey = getStackKey(userKey, chatId)
+        chatStacks.remove(stackKey)
+        activeNotifiedChats.remove(stackKey)
+        try {
+            ShortcutManagerCompat.removeDynamicShortcuts(context, listOf(stackKey, chatId))
+        } catch (_: Exception) {}
+        val notifId = getChildNotificationId(userKey, chatId)
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.cancel(notifId)
+        updateGroupSummary(context, userKey, isDismissal = true)
     }
 
     fun cancelMessageNotification(context: Context, chatId: String) {
-        chatStacks.remove(chatId)
-        activeNotifiedChats.remove(chatId)
-        try {
-            ShortcutManagerCompat.removeDynamicShortcuts(context, listOf(chatId))
-        } catch (_: Exception) {}
-        val notifId = chatId.hashCode() and 0x7FFFFFFF
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.cancel(notifId)
-        updateGroupSummary(context, isDismissal = true)
+        val matchingKeys = activeNotifiedChats.filter { it.endsWith(":$chatId") || it == chatId }
+        if (matchingKeys.isEmpty()) {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.cancel(chatId.hashCode() and 0x7FFFFFFF)
+            return
+        }
+        for (key in matchingKeys) {
+            val stack = chatStacks[key]
+            val userKey = stack?.userKey ?: key.substringBefore(":")
+            cancelMessageNotification(context, userKey, chatId)
+        }
     }
 
     fun cancelAllMessageNotifications(context: Context) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        for (chatId in activeNotifiedChats) {
-            manager.cancel(chatId.hashCode() and 0x7FFFFFFF)
+        for (chatKey in activeNotifiedChats) {
+            val stack = chatStacks[chatKey]
+            val notifId = if (stack != null) getChildNotificationId(stack.userKey, stack.chatId) else (chatKey.hashCode() and 0x7FFFFFFF)
+            manager.cancel(notifId)
+        }
+        val uniqueUsers = chatStacks.values.map { it.userKey }.distinct()
+        for (u in uniqueUsers) {
+            manager.cancel(getSummaryNotificationId(u))
         }
         manager.cancel(SUMMARY_NOTIFICATION_ID)
         try {

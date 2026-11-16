@@ -424,15 +424,42 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleNotificationIntent(intent: Intent?) {
-        val chatId = intent?.getStringExtra("chat_id") ?: return
-        intent.removeExtra("chat_id")
-        bridge.pendingChatId = chatId
-        NotificationHelper.cancelMessageNotification(this, chatId)
-        PreferenceManager.clearUnreadCount(this, chatId)
-        webView.evaluateJavascript(
-            "if (window.selectChatFromNative) window.selectChatFromNative('$chatId')",
-            null
-        )
+        val chatId = intent?.getStringExtra("chat_id")
+        val userKey = intent?.getStringExtra("user_key")
+        val recipientUser = intent?.getStringExtra("recipient_user")
+        intent?.removeExtra("chat_id")
+        intent?.removeExtra("user_key")
+        intent?.removeExtra("recipient_user")
+
+        val targetUsername = recipientUser ?: userKey?.substringBefore("@")
+
+        if (!chatId.isNullOrBlank()) {
+            bridge.pendingChatId = chatId
+            if (!userKey.isNullOrBlank()) {
+                NotificationHelper.cancelMessageNotification(this, userKey, chatId)
+                PreferenceManager.clearUnreadCount(this, userKey, chatId)
+            } else {
+                NotificationHelper.cancelMessageNotification(this, chatId)
+                PreferenceManager.clearUnreadCount(this, chatId)
+            }
+            if (!targetUsername.isNullOrBlank()) {
+                webView.evaluateJavascript(
+                    "if (window.selectChatForUserFromNative) window.selectChatForUserFromNative('$chatId', '$targetUsername'); else if (window.selectChatFromNative) window.selectChatFromNative('$chatId')",
+                    null
+                )
+            } else {
+                webView.evaluateJavascript(
+                    "if (window.selectChatFromNative) window.selectChatFromNative('$chatId')",
+                    null
+                )
+            }
+        } else if (!targetUsername.isNullOrBlank()) {
+            // Tapped group summary notification: switch to this user's account without dismissing notifications
+            webView.evaluateJavascript(
+                "if (window.switchToUserFromNative) window.switchToUserFromNative('$targetUsername')",
+                null
+            )
+        }
     }
 
     fun markChatReadInWebView(chatId: String) {

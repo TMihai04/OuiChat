@@ -71,11 +71,17 @@ class OuiChatPushService : Service() {
 
         if (intent?.action == ACTION_MARK_AS_READ) {
             val chatId = intent.getStringExtra("chat_id")
+            val userKey = intent.getStringExtra("user_key")
             val recipientUser = intent.getStringExtra("recipient_user")
             if (!chatId.isNullOrBlank()) {
                 Log.i(TAG, "Marking chat as read from notification: $chatId")
-                NotificationHelper.cancelMessageNotification(this, chatId)
-                PreferenceManager.clearUnreadCount(this, chatId)
+                if (!userKey.isNullOrBlank()) {
+                    NotificationHelper.cancelMessageNotification(this, userKey, chatId)
+                    PreferenceManager.clearUnreadCount(this, userKey, chatId)
+                } else {
+                    NotificationHelper.cancelMessageNotification(this, chatId)
+                    PreferenceManager.clearUnreadCount(this, chatId)
+                }
                 com.example.ouichatandroid.MainActivity.activeInstance?.markChatReadInWebView(chatId)
                 markChatSeenInBackground(chatId, recipientUser)
             }
@@ -250,13 +256,15 @@ class OuiChatPushService : Service() {
                 return
             }
 
+            val userKey = "${currentSession.username}@${currentSession.domain}"
+
             // Handle server-side mute update event
             if (root == "user" && type == "update" && child == "muted_chats") {
                 val chatId = data.optString("chat_id")
                 val isMuted = data.optBoolean("is_muted", false)
-                val currentMuted = PreferenceManager.getMutedChats(this).toMutableSet()
+                val currentMuted = PreferenceManager.getMutedChats(this, userKey).toMutableSet()
                 if (isMuted) currentMuted.add(chatId) else currentMuted.remove(chatId)
-                PreferenceManager.saveMutedChats(this, org.json.JSONArray(currentMuted).toString())
+                PreferenceManager.saveMutedChats(this, userKey, currentMuted)
                 return
             }
 
@@ -279,11 +287,11 @@ class OuiChatPushService : Service() {
                 val messageId = data.optString("message_id")
                 if (chatId.isNotBlank() && messageId.isNotBlank()) {
                     mainHandler.post {
-                        val allCleared = NotificationHelper.deleteMessage(applicationContext, chatId, messageId)
+                        val allCleared = NotificationHelper.deleteMessage(applicationContext, userKey, chatId, messageId)
                         if (allCleared) {
-                            PreferenceManager.clearUnreadCount(applicationContext, chatId)
+                            PreferenceManager.clearUnreadCount(applicationContext, userKey, chatId)
                         } else {
-                            PreferenceManager.decrementUnreadCount(applicationContext, chatId)
+                            PreferenceManager.decrementUnreadCount(applicationContext, userKey, chatId)
                         }
                     }
                 }
@@ -294,9 +302,9 @@ class OuiChatPushService : Service() {
             if (root == "conversation" && child == null && type == "delete") {
                 val chatId = data.optString("conversation_id")
                 if (chatId.isNotBlank()) {
-                    PreferenceManager.clearUnreadCount(applicationContext, chatId)
+                    PreferenceManager.clearUnreadCount(applicationContext, userKey, chatId)
                     mainHandler.post {
-                        NotificationHelper.cancelMessageNotification(applicationContext, chatId)
+                        NotificationHelper.cancelMessageNotification(applicationContext, userKey, chatId)
                     }
                 }
                 return
@@ -353,29 +361,45 @@ class OuiChatPushService : Service() {
                 // Skip own messages
                 if (sender == currentSession.username) return
 
-                // Increment background unread count
-                PreferenceManager.incrementUnreadCount(this, chatId)
+                val userKey = "${currentSession.username}@${currentSession.domain}"
 
-                // Check if chat is muted
-                val muted = PreferenceManager.getMutedChats(this)
+                // Increment background unread count for this specific user
+                PreferenceManager.incrementUnreadCount(this, userKey, chatId)
+
+                // Check if chat is muted for this user
+                val muted = PreferenceManager.getMutedChats(this, userKey)
                 if (muted.contains(chatId)) {
-                    Log.d(TAG, "Message from muted chat $chatId suppressed for ${currentSession.username}")
+                    Log.d(TAG, "Message from muted chat $chatId suppressed for $userKey")
                     return
                 }
 
-                // If app is currently in foreground, skip the system notification card
-                if (isAppInForeground) {
-                    Log.d(TAG, "App is in foreground - skipping system heads-up notification")
+                // If app is currently in foreground and this message is for the active selected user, skip system notification
+                val activeUser = PreferenceManager.getActiveUser(this)
+                val isCurrentSelectedUser = (activeUser != null && activeUser == userKey)
+                if (isAppInForeground && isCurrentSelectedUser) {
+                    Log.d(TAG, "App is in foreground and user $userKey is currently selected - skipping system notification")
                     return
                 }
 
-                val content = data.optString("content").trim().ifEmpty {
-                    val attachments = data.optJSONArray("attachments")
-                    if (attachments != null && attachments.length() > 0) "[Attachment]" else "Sent a message"
+                val textContent = if (!data.isNull("content")) data.optString("content", "").trim() else ""
+                val namesArray = data.optJSONArray("attachment_names")
+                val attachmentsPart = if (namesArray != null && namesArray.length() > 0) {
+                    (0 until namesArray.length()).map { "<${namesArray.getString(it)}>" }.joinToString(" ")
+                } else {
+                    val rawAttachments = data.optJSONArray("attachments")
+                    if (rawAttachments != null && rawAttachments.length() > 0) {
+                        (0 until rawAttachments.length()).map { "<attachment>" }.joinToString(" ")
+                    } else ""
                 }
 
-                val totalSessions = PreferenceManager.getSessions(this).size
-                val recipientTag = if (totalSessions > 1) currentSession.username else null
+                val content = when {
+                    textContent.isNotEmpty() && attachmentsPart.isNotEmpty() -> "$textContent $attachmentsPart"
+                    textContent.isNotEmpty() -> textContent
+                    attachmentsPart.isNotEmpty() -> attachmentsPart
+                    else -> "Sent a message"
+                }
+
+                val recipientTag = currentSession.username
 
                 mainHandler.post {
                     NotificationHelper.showMessageNotification(
@@ -388,7 +412,8 @@ class OuiChatPushService : Service() {
                         isGroup = isGroup,
                         pictureId = pictureId,
                         senderPictureId = senderPictureId,
-                        recipientUser = recipientTag
+                        recipientUser = recipientTag,
+                        userKey = userKey
                     )
 
                     if (pictureId != null) {

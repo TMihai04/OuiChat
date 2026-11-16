@@ -74,6 +74,34 @@ async function boot() {
         store.pendingChatId = chatId
       }
     }
+
+    ;(window as any).selectChatForUserFromNative = async (chatId: string, targetUsername: string) => {
+      if (!store.ready) {
+        await store.waitForReady()
+      }
+      if (store.current !== null) {
+        void router.push("/app")
+        void store.selectChat(chatId, targetUsername)
+      } else {
+        store.pendingChatId = chatId
+      }
+    }
+
+    ;(window as any).switchToUserFromNative = async (targetUsername: string) => {
+      if (!store.ready) {
+        await store.waitForReady()
+      }
+      const targetSession = store.sessions.find((s) => s.username === targetUsername)
+      if (targetSession) {
+        void router.push("/app")
+        if (store.current?.username !== targetUsername || store.current?.domain !== targetSession.domain) {
+          await store.switchTo(targetSession.username, targetSession.domain)
+        } else {
+          store.deselectChat()
+        }
+        store.sidebarTab = "chats"
+      }
+    }
   }
 
   await store.init()

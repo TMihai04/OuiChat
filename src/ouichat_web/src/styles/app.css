@@ -515,6 +515,8 @@ button.row.unread:not(.selected):hover:not(:disabled) {
   display: grid;
   grid-template-columns: 1fr 40px 40px;
   gap: 6px;
+  position: relative;
+  z-index: 25;
 }
 
 .account-button, .square {

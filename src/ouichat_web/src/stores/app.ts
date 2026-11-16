@@ -5,7 +5,7 @@ import { ApiError, errorText } from "../api/http"
 import type { ConversationRaw, MessageRaw, UserRaw, WsEvent } from "../api/types"
 import { sessionKey } from "../format"
 import { SocketHub } from "../ws/hub"
-import { clearNotificationBuffer, queueDesktopNotification } from "../notifications"
+import { clearAllNotificationBuffers, clearNotificationBuffer, queueDesktopNotification } from "../notifications"
 
 export const MAX_SESSIONS = 3
 const MESSAGE_BATCH = 30
@@ -788,6 +788,9 @@ export const useAppStore = defineStore("app", () => {
     if (remaining.length === 0) {
       removeSavedItem(STORAGE_KEY)
       removeSavedItem(CURRENT_KEY)
+      removeSavedItem(UNREAD_STORAGE_KEY)
+      unreadCounts.value = {}
+      clearAllNotificationBuffers()
       if (typeof window !== "undefined" && (window as any).AndroidBridge) {
         try {
           (window as any).AndroidBridge.onLogout()
@@ -796,6 +799,15 @@ export const useAppStore = defineStore("app", () => {
         }
       }
     } else {
+      const validChatKeys = new Set(chats.value.map((c) => `${c.domain}:${c.id}`))
+      const nextUnread: Record<string, number> = {}
+      for (const [key, count] of Object.entries(unreadCounts.value)) {
+        if (validChatKeys.has(key)) {
+          nextUnread[key] = count
+        }
+      }
+      unreadCounts.value = nextUnread
+      persistUnreadCounts()
       syncAllNativeSessions()
     }
     persist()
@@ -807,10 +819,16 @@ export const useAppStore = defineStore("app", () => {
     logout(me.username, me.domain)
   }
 
-  async function selectChat(chatId: string) {
+  async function selectChat(chatId: string, targetUsername?: string) {
     if (!ready.value) {
       pendingChatId.value = chatId
       return
+    }
+    if (targetUsername) {
+      const targetSession = sessions.value.find((s) => s.username === targetUsername)
+      if (targetSession && (current.value?.username !== targetUsername || current.value?.domain !== targetSession.domain)) {
+        await switchTo(targetSession.username, targetSession.domain)
+      }
     }
     let me = current.value
     if (!me && sessions.value.length > 0) {
@@ -1423,6 +1441,15 @@ export const useAppStore = defineStore("app", () => {
   }
 
   function addLiveMessage(domain: string, chatId: string, raw: MessageRaw) {
+    if (Array.isArray(raw.attachment_names) && Array.isArray(raw.attachments)) {
+      for (let i = 0; i < raw.attachment_names.length; i++) {
+        const fileId = raw.attachments[i]
+        const name = raw.attachment_names[i]
+        if (fileId && typeof name === "string" && name.trim()) {
+          attachmentNames.set(`${domain}:${fileId}`, name.trim())
+        }
+      }
+    }
     const message = normalizeMessage(domain, chatId, { ...raw, chat_id: chatId })
     const thread = threads.value[`${domain}:${chatId}`]
     if (thread?.loaded && !thread.hasNewer && !thread.items.some((entry) => entry.id === message.id)) {
@@ -1473,7 +1500,35 @@ export const useAppStore = defineStore("app", () => {
       if (me && message.sender !== me.username && !isMuted(chatId)) {
         const senderName = message.sender
         const chatTitle = displayName(chat)
-        const text = message.content.trim() || (message.attachments.length > 0 ? "[Attachment]" : "Sent a message")
+        const textContent = typeof raw.content === "string" ? raw.content.trim() : ""
+        const namesList: string[] = []
+        if (Array.isArray(raw.attachment_names) && raw.attachment_names.length > 0) {
+          for (const name of raw.attachment_names) {
+            if (typeof name === "string" && name.trim()) {
+              namesList.push(name.trim())
+            }
+          }
+        }
+        let attachmentsPart = ""
+        if (namesList.length > 0) {
+          attachmentsPart = namesList.map((n) => `<${n}>`).join(" ")
+        } else if (message.attachments.length > 0) {
+          attachmentsPart = message.attachments.map((id) => {
+            const cached = attachmentNames.get(`${domain}:${id}`)
+            return cached ? `<${cached}>` : "<attachment>"
+          }).join(" ")
+        }
+
+        let text = ""
+        if (textContent && attachmentsPart) {
+          text = `${textContent} ${attachmentsPart}`
+        } else if (textContent) {
+          text = textContent
+        } else if (attachmentsPart) {
+          text = attachmentsPart
+        } else {
+          text = "Sent a message"
+        }
 
         const isAndroidBridge = typeof window !== "undefined" && Boolean((window as any).AndroidBridge)
         if (isAndroidBridge && !isForeground) {
@@ -1557,8 +1612,15 @@ export const useAppStore = defineStore("app", () => {
         } else if (payload[0] && typeof (window as any).AndroidBridge.onLoginSuccess === "function") {
           (window as any).AndroidBridge.onLoginSuccess(payload[0].domain, payload[0].username, payload[0].accessToken)
         }
-        if (current.value && typeof (window as any).AndroidBridge.syncMutedChats === "function") {
-          (window as any).AndroidBridge.syncMutedChats(JSON.stringify(current.value.mutedChats || []))
+        if (current.value && typeof (window as any).AndroidBridge.setActiveUser === "function") {
+          (window as any).AndroidBridge.setActiveUser(`${current.value.username}@${current.value.domain}`)
+        }
+        if (typeof (window as any).AndroidBridge.syncMutedChats === "function") {
+          const mutedMap: Record<string, string[]> = {}
+          for (const s of sessions.value) {
+            mutedMap[`${s.username}@${s.domain}`] = s.mutedChats ?? []
+          }
+          (window as any).AndroidBridge.syncMutedChats(JSON.stringify(mutedMap))
         }
       } catch (err) {
         console.error("[NativeBridge] sync error:", err)
@@ -1672,6 +1734,9 @@ export const useAppStore = defineStore("app", () => {
     if (typeof window !== "undefined") {
       (window as any).selectChatFromNative = (chatId: string) => {
         void selectChat(chatId)
+      }
+      (window as any).selectChatForUserFromNative = (chatId: string, targetUsername: string) => {
+        void selectChat(chatId, targetUsername)
       }
       (window as any).markChatReadFromNative = (chatId: string) => {
         if (!current.value) return

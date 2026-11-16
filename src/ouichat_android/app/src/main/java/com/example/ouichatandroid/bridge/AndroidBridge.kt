@@ -78,6 +78,12 @@ class AndroidBridge(
             }
 
             PreferenceManager.saveSessions(context, list)
+            if (list.isNotEmpty()) {
+                val currentActive = PreferenceManager.getActiveUser(context)
+                if (currentActive == null || list.none { "${it.username}@${it.domain}" == currentActive }) {
+                    PreferenceManager.setActiveUser(context, "${list[0].username}@${list[0].domain}")
+                }
+            }
             Log.i(TAG, "syncSessions: Saved ${list.size} session(s)")
 
             if (list.isNotEmpty()) {
@@ -129,6 +135,7 @@ class AndroidBridge(
     fun onLogout() {
         try {
             PreferenceManager.clearAllSessions(context)
+            NotificationHelper.cancelAllMessageNotifications(context)
 
             mainHandler.post {
                 val serviceIntent = Intent(context.applicationContext, OuiChatPushService::class.java).apply {
@@ -154,13 +161,33 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
+    fun setActiveUser(userKey: String) {
+        PreferenceManager.setActiveUser(context, userKey)
+    }
+
+    @JavascriptInterface
     fun getUnreadCounts(): String {
         return PreferenceManager.getUnreadCountsJson(context)
     }
 
     @JavascriptInterface
+    fun getUnreadCountsForUser(userKey: String): String {
+        return PreferenceManager.getUnreadCountsJsonForUser(context, userKey)
+    }
+
+    @JavascriptInterface
+    fun getTotalUnreadCount(): Int {
+        return PreferenceManager.getTotalUnreadCount(context)
+    }
+
+    @JavascriptInterface
     fun clearUnreadCount(chatId: String) {
         PreferenceManager.clearUnreadCount(context, chatId)
+    }
+
+    @JavascriptInterface
+    fun clearUnreadCountForUser(userKey: String, chatId: String) {
+        PreferenceManager.clearUnreadCount(context, userKey, chatId)
     }
 
     @JavascriptInterface
@@ -191,8 +218,16 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
-    fun syncMutedChats(jsonArrayString: String) {
-        PreferenceManager.saveMutedChats(context, jsonArrayString)
+    fun syncMutedChats(jsonString: String) {
+        try {
+            if (jsonString.trim().startsWith("{")) {
+                PreferenceManager.saveAllMutedChats(context, jsonString)
+            } else {
+                PreferenceManager.saveMutedChats(context, jsonString)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in syncMutedChats", e)
+        }
     }
 
     @JavascriptInterface
